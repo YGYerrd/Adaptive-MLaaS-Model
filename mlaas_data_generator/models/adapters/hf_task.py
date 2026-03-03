@@ -125,7 +125,11 @@ class SequenceClassificationSpec(HFTaskSpec):
         if yb is not None:
             dtype = torch.float32 if (batch_multilabel or label_mode == "single_onehot") else torch.long
             labels_t = torch.tensor(yb, dtype=dtype, device=device)
-        return enc, labels_t, {"multilabel": batch_multilabel, "label_mode": label_mode}
+        return enc, labels_t, {
+            "multilabel": batch_multilabel,
+            "label_mode": label_mode,
+            "ignore_index": int(ignore_index),
+        }
 
     def loss_fn(self, torch, logits, labels_t, extra):
         label_mode = extra.get("label_mode", "unknown")
@@ -262,7 +266,11 @@ class TokenClassificationSpec(HFTaskSpec):
 
         batch_multilabel = bool(self.multilabel or batch_multilabel)
 
-        return enc, labels_t, {"multilabel": batch_multilabel, "label_mode": label_mode}
+        return enc, labels_t, {
+            "multilabel": batch_multilabel,
+            "label_mode": label_mode,
+            "ignore_index": int(ignore_index),
+        }
 
     def loss_fn(self, torch, logits, labels_t, extra):
         use_multilabel = bool(extra.get("multilabel", self.multilabel))
@@ -270,7 +278,17 @@ class TokenClassificationSpec(HFTaskSpec):
             if labels_t.dtype not in (torch.float16, torch.float32, torch.float64, torch.bfloat16):
                 labels_t = labels_t.float()
             return torch.nn.functional.binary_cross_entropy_with_logits(logits, labels_t)
-        return torch.nn.functional.cross_entropy(logits, labels_t)
+        ignore_index = int(extra.get("ignore_index", -100))
+
+        if logits.ndim == 3 and labels_t.ndim == 2:
+            return torch.nn.functional.cross_entropy(
+                logits.transpose(1, 2),
+                labels_t,
+                ignore_index=ignore_index,
+            )
+
+        return torch.nn.functional.cross_entropy(logits, labels_t, ignore_index=ignore_index)
+
 
     def preds_from_logits(self, torch, logits, extra):
         return torch.argmax(logits, dim=-1)  # [B, T]

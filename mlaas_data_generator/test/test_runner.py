@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import json
 from datetime import datetime
+import random
 
 from ..federated.orchestrator import FederatedDataGenerator
 
@@ -43,7 +44,206 @@ def run_benchmarks(db_path="outputs/federated_bench.db"):
     # but we can include both to see behaviour differences.
     cases = [
         
-        # =========================================================
+        
+
+        # Topic classification (multiclass)
+        _case(
+            name="dbpedia14_distilbert_base_uncased_seqcls",
+            dataset_args={
+                "dataset_name": "dbpedia_14",
+                "train_split": "train",
+                "test_split": "test",
+                "text_column": "content",
+                "label_column": "label",
+                "max_samples": 1500,
+                "max_length": 128,
+                "hf_model_id": "distilbert-base-uncased",
+                "hf_task": "sequence_classification",
+            },
+            config_overrides={
+                "learning_rate": 5e-5,
+            },
+        ),
+        _case(
+            name="yahoo_answers_topics_bert_base_uncased_seqcls",
+            dataset_args={
+                "dataset_name": "yahoo_answers_topics",
+                "train_split": "train",
+                "test_split": "test",
+                # Yahoo has "question_title", "question_content", "best_answer".
+                # If your loader supports only a single text column, you can start with "question_content".
+                "text_column": "question_content",
+                "label_column": "topic",
+                "max_samples": 1500,
+                "max_length": 128,
+                "hf_model_id": "bert-base-uncased",
+                "hf_task": "sequence_classification",
+            },
+            config_overrides={
+                "learning_rate": 3e-5,
+            },
+        ),
+
+        _case(
+            name="wnut17_bert_base_cased_token",
+            dataset_args={
+                "dataset_name": "wnut_17",
+                "train_split": "train",
+                "test_split": "validation",
+                "tokens_column": "tokens",
+                "label_column": "ner_tags",
+                "max_samples": 600,
+                "max_length": 128,
+                "hf_model_id": "bert-base-cased",
+                "hf_task": "token_classification",
+            },
+            config_overrides={
+                "learning_rate": 5e-5,
+            },
+        ),
+        _case(
+            name="wnut17_distilbert_token",
+            dataset_args={
+                "dataset_name": "wnut_17",
+                "train_split": "train",
+                "test_split": "validation",
+                "tokens_column": "tokens",
+                "label_column": "ner_tags",
+                "max_samples": 500,
+                "max_length": 128,
+                "hf_model_id": "distilbert-base-uncased",
+                "hf_task": "token_classification",
+            },
+            config_overrides={
+                "learning_rate": 5e-5,
+            },
+        ),
+        _case(
+            name="sst2_distilbert_base",
+            dataset_args={
+                "dataset_name": "glue",
+                "dataset_config": "sst2",
+                "train_split": "train",
+                "test_split": "validation",
+                "text_column": "sentence",
+                "label_column": "label",
+                "max_samples": 600,
+                "max_length": 128,
+                "hf_model_id": "distilbert-base-uncased",
+            },
+            config_overrides={
+                "learning_rate": 5e-5,
+            },
+        ),
+        _case(
+            name="sst2_distilbert_preft",
+            dataset_args={
+                "dataset_name": "glue",
+                "dataset_config": "sst2",
+                "train_split": "train",
+                "test_split": "validation",
+                "text_column": "sentence",
+                "label_column": "label",
+                "max_samples": 600,
+                "max_length": 128,
+                "hf_model_id": "distilbert-base-uncased-finetuned-sst-2-english",
+            },
+            config_overrides={
+                "learning_rate": 2e-5,
+            },
+        ),
+        
+        _case(
+            name="ag_news_distilbert_base",
+            dataset_args={
+                "dataset_name": "ag_news",
+                "dataset_config": None,
+                "train_split": "train",
+                "test_split": "test",
+                "text_column": "text",
+                "label_column": "label",
+                "max_samples": 800,
+                "max_length": 128,
+                "hf_model_id": "distilbert-base-uncased",
+            },
+            config_overrides={
+                "learning_rate": 5e-5,
+            },
+        ),
+
+        _case(
+            name="conll2003_bert_base_cased_token",
+            dataset_args={
+                "dataset_name": "conll2003",
+                "train_split": "train",
+                "test_split": "validation",
+                "tokens_column": "tokens",
+                "label_column": "ner_tags",
+                "max_samples": 800,
+                "max_length": 128,
+                "hf_model_id": "bert-base-cased",
+                "hf_task": "token_classification",
+            },
+            config_overrides={
+                "learning_rate": 5e-5,
+            },
+        ),
+
+        _case(
+            name="conll2003_distilbert_base_cased_token",
+            dataset_args={
+                "dataset_name": "conll2003",
+                "train_split": "train",
+                "test_split": "validation",
+                "tokens_column": "tokens",
+                "label_column": "ner_tags",
+                "max_samples": 800,
+                "max_length": 128,
+                "hf_model_id": "distilbert-base-cased",
+                "hf_task": "token_classification",
+            },
+            config_overrides={
+                "learning_rate": 5e-5,
+            },
+        ),
+        _case(
+            name="conll2003_roberta_base_token",
+            dataset_args={
+                "dataset_name": "conll2003",
+                "train_split": "train",
+                "test_split": "validation",
+                "tokens_column": "tokens",
+                "label_column": "ner_tags",
+                "max_samples": 800,
+                "max_length": 128,
+                "hf_model_id": "roberta-base",
+                "hf_task": "token_classification",
+            },
+            config_overrides={
+                "learning_rate": 3e-5,
+            },
+        ),
+
+        _case(
+            name="wnut17_distilbert_base_uncased_token",
+            dataset_args={
+                "dataset_name": "wnut_17",
+                "train_split": "train",
+                "test_split": "validation",
+                "tokens_column": "tokens",
+                "label_column": "ner_tags",
+                "max_samples": 600,
+                "max_length": 128,
+                "hf_model_id": "distilbert-base-uncased",
+                "hf_task": "token_classification",
+            },
+            config_overrides={
+                "learning_rate": 5e-5,
+            },
+        ),
+        
+
+    # =========================================================
         # MULTI-LABEL CLASSIFICATION (needs loader support)
         # =========================================================
         _case(
@@ -241,202 +441,6 @@ def run_benchmarks(db_path="outputs/federated_bench.db"):
                 "learning_rate": 3e-5,
             },
         ),
-
-        # Topic classification (multiclass)
-        _case(
-            name="dbpedia14_distilbert_base_uncased_seqcls",
-            dataset_args={
-                "dataset_name": "dbpedia_14",
-                "train_split": "train",
-                "test_split": "test",
-                "text_column": "content",
-                "label_column": "label",
-                "max_samples": 1500,
-                "max_length": 128,
-                "hf_model_id": "distilbert-base-uncased",
-                "hf_task": "sequence_classification",
-            },
-            config_overrides={
-                "learning_rate": 5e-5,
-            },
-        ),
-        _case(
-            name="yahoo_answers_topics_bert_base_uncased_seqcls",
-            dataset_args={
-                "dataset_name": "yahoo_answers_topics",
-                "train_split": "train",
-                "test_split": "test",
-                # Yahoo has "question_title", "question_content", "best_answer".
-                # If your loader supports only a single text column, you can start with "question_content".
-                "text_column": "question_content",
-                "label_column": "topic",
-                "max_samples": 1500,
-                "max_length": 128,
-                "hf_model_id": "bert-base-uncased",
-                "hf_task": "sequence_classification",
-            },
-            config_overrides={
-                "learning_rate": 3e-5,
-            },
-        ),
-
-        _case(
-            name="wnut17_bert_base_cased_token",
-            dataset_args={
-                "dataset_name": "wnut_17",
-                "train_split": "train",
-                "test_split": "validation",
-                "tokens_column": "tokens",
-                "label_column": "ner_tags",
-                "max_samples": 600,
-                "max_length": 128,
-                "hf_model_id": "bert-base-cased",
-                "hf_task": "token_classification",
-            },
-            config_overrides={
-                "learning_rate": 5e-5,
-            },
-        ),
-        _case(
-            name="wnut17_distilbert_token",
-            dataset_args={
-                "dataset_name": "wnut_17",
-                "train_split": "train",
-                "test_split": "validation",
-                "tokens_column": "tokens",
-                "label_column": "ner_tags",
-                "max_samples": 500,
-                "max_length": 128,
-                "hf_model_id": "distilbert-base-uncased",
-                "hf_task": "token_classification",
-            },
-            config_overrides={
-                "learning_rate": 5e-5,
-            },
-        ),
-        _case(
-            name="sst2_distilbert_base",
-            dataset_args={
-                "dataset_name": "glue",
-                "dataset_config": "sst2",
-                "train_split": "train",
-                "test_split": "validation",
-                "text_column": "sentence",
-                "label_column": "label",
-                "max_samples": 600,
-                "max_length": 128,
-                "hf_model_id": "distilbert-base-uncased",
-            },
-            config_overrides={
-                "learning_rate": 5e-5,
-            },
-        ),
-        _case(
-            name="sst2_distilbert_preft",
-            dataset_args={
-                "dataset_name": "glue",
-                "dataset_config": "sst2",
-                "train_split": "train",
-                "test_split": "validation",
-                "text_column": "sentence",
-                "label_column": "label",
-                "max_samples": 600,
-                "max_length": 128,
-                "hf_model_id": "distilbert-base-uncased-finetuned-sst-2-english",
-            },
-            config_overrides={
-                "learning_rate": 2e-5,
-            },
-        ),
-        
-        _case(
-            name="ag_news_distilbert_base",
-            dataset_args={
-                "dataset_name": "ag_news",
-                "dataset_config": None,
-                "train_split": "train",
-                "test_split": "test",
-                "text_column": "text",
-                "label_column": "label",
-                "max_samples": 800,
-                "max_length": 128,
-                "hf_model_id": "distilbert-base-uncased",
-            },
-            config_overrides={
-                "learning_rate": 5e-5,
-            },
-        ),
-
-        _case(
-        name="conll2003_bert_base_cased_token",
-        dataset_args={
-            "dataset_name": "conll2003",
-            "train_split": "train",
-            "test_split": "validation",
-            "tokens_column": "tokens",
-            "label_column": "ner_tags",
-            "max_samples": 800,
-            "max_length": 128,
-            "hf_model_id": "bert-base-cased",
-            "hf_task": "token_classification",
-        },
-        config_overrides={
-            "learning_rate": 5e-5,
-        },
-    ),
-    _case(
-        name="conll2003_distilbert_base_cased_token",
-        dataset_args={
-            "dataset_name": "conll2003",
-            "train_split": "train",
-            "test_split": "validation",
-            "tokens_column": "tokens",
-            "label_column": "ner_tags",
-            "max_samples": 800,
-            "max_length": 128,
-            "hf_model_id": "distilbert-base-cased",
-            "hf_task": "token_classification",
-        },
-        config_overrides={
-            "learning_rate": 5e-5,
-        },
-    ),
-    _case(
-        name="conll2003_roberta_base_token",
-        dataset_args={
-            "dataset_name": "conll2003",
-            "train_split": "train",
-            "test_split": "validation",
-            "tokens_column": "tokens",
-            "label_column": "ner_tags",
-            "max_samples": 800,
-            "max_length": 128,
-            "hf_model_id": "roberta-base",
-            "hf_task": "token_classification",
-        },
-        config_overrides={
-            "learning_rate": 3e-5,
-        },
-    ),
-
-    _case(
-        name="wnut17_distilbert_base_uncased_token",
-        dataset_args={
-            "dataset_name": "wnut_17",
-            "train_split": "train",
-            "test_split": "validation",
-            "tokens_column": "tokens",
-            "label_column": "ner_tags",
-            "max_samples": 600,
-            "max_length": 128,
-            "hf_model_id": "distilbert-base-uncased",
-            "hf_task": "token_classification",
-        },
-        config_overrides={
-            "learning_rate": 5e-5,
-        },
-    ),
-    
         
     ]
 
@@ -446,7 +450,10 @@ def run_benchmarks(db_path="outputs/federated_bench.db"):
 
     os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
 
-    for i, c in enumerate(cases, start=1):
+    cases_shuffled = random.sample(cases, k=len(cases))
+    
+
+    for i, c in enumerate(cases_shuffled, start=1):
         cfg = dict(base_config)
         cfg.update(c.get("config") or {})
 

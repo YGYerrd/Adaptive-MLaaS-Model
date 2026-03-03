@@ -2,6 +2,7 @@
 from __future__ import annotations
 import os, uuid, json
 import numpy as np
+from numbers import Number
 
 from ..config import CONFIG
 from ..data.master_loader import load_dataset
@@ -11,6 +12,7 @@ from ..storage.writer import make_writer
 from .strategies.factory import make_task_strategy
 from .strategies.base import canonical_task_family, canonical_label_format, canonical_metric_names, normalize_hf_task
 from .system_metrics import capture_hardware_snapshot, summarize_round_usage
+
 
 class FederatedDataGenerator:
     """Generate MLaaS client records using a simple federated-learning loop."""
@@ -226,6 +228,103 @@ class FederatedDataGenerator:
             return "timeout"
         return "runtime_error"
     
+    def _safe_number(self, value):
+        if isinstance(value, np.integer):
+            return int(value)
+        if isinstance(value, np.floating):
+            value = float(value)
+        if isinstance(value, Number) and not isinstance(value, bool):
+            if isinstance(value, float) and (np.isnan(value) or np.isinf(value)):
+                return None
+            return value
+        return None
+
+    def _safe_metric_value(self, value):
+        if value is None:
+            return None
+        if isinstance(value, (bool, int, str, dict, list)):
+            return value
+        parsed_number = self._safe_number(value)
+        if parsed_number is not None:
+            return parsed_number
+        if isinstance(value, np.bool_):
+            return bool(value)
+        return None
+
+    def _normalize_outcome_extras(self, outcome):
+        extras = getattr(outcome, "extras", {}) if outcome is not None else {}
+        if not isinstance(extras, dict):
+            return {}
+
+        canonical = {}
+
+        aliases = {
+            "train_step_latency_ms_mean": ("seconds_per_step", 1.0 / 1000.0),
+            "train_step_latency_ms_p95": ("seconds_per_step_p95", 1.0 / 1000.0),
+            "eval_latency_ms_mean": ("inference_latency_s", 1.0 / 1000.0),
+            "eval_latency_ms_p95": ("inference_latency_s_p95", 1.0 / 1000.0),
+            "inference_latency_ms_mean": ("inference_latency_s", 1.0 / 1000.0),
+            "inference_latency_ms_p95": ("inference_latency_s_p95", 1.0 / 1000.0),
+            "throughput_eps": ("examples_per_second", 1.0),
+            "train_throughput_eps": ("examples_per_second", 1.0),
+            "eval_throughput_eps": ("examples_per_second", 1.0),
+            "throughput_tps": ("tokens_per_second", 1.0),
+            "tokens_per_second": ("tokens_per_second", 1.0),
+        }
+
+        for key, value in extras.items():
+            parsed = self._safe_metric_value(value)
+            if parsed is None:
+                continue
+
+            if key in aliases:
+                canonical_name, multiplier = aliases[key]
+                numeric = self._safe_number(parsed)
+                if numeric is not None:
+                    canonical[canonical_name] = float(numeric) * multiplier
+                continue
+
+            canonical[key] = parsed
+
+        train_time_s = self._safe_number(extras.get("train_time_s"))
+        if train_time_s is not None:
+            canonical["train_time_s"] = float(train_time_s)
+            epochs = self._safe_number(extras.get("epochs"))
+            if epochs is None:
+                epochs = self._safe_number(extras.get("train_epochs"))
+            if epochs is None:
+                epochs = self._safe_number(self.knobs.get("local_epochs"))
+            if epochs and epochs > 0:
+                canonical["seconds_per_epoch"] = float(train_time_s) / float(epochs)
+
+        tokens_total = self._safe_number(extras.get("tokens_total"))
+        if tokens_total is None:
+            token_in = self._safe_number(extras.get("tokens_in"))
+            token_out = self._safe_number(extras.get("tokens_out"))
+            if token_in is not None and token_out is not None:
+                tokens_total = token_in + token_out
+        if tokens_total is not None:
+            canonical["tokens_total"] = int(tokens_total)
+
+        return canonical
+
+    def _round_qos_rollups(self, records):
+        qos_metrics = [
+            "seconds_per_step",
+            "seconds_per_epoch",
+            "examples_per_second",
+            "tokens_per_second",
+            "inference_latency_s",
+        ]
+        rollups = {}
+        for metric_name in qos_metrics:
+            vals = [float(r[metric_name]) for r in records if metric_name in r and self._safe_number(r[metric_name]) is not None]
+            if not vals:
+                continue
+            rollups[f"round_{metric_name}_mean"] = float(np.mean(vals))
+            rollups[f"round_{metric_name}_p95"] = float(np.percentile(vals, 95))
+        return rollups
+    
     def run(self):
         os.makedirs("weights", exist_ok=True)
 
@@ -400,6 +499,7 @@ class FederatedDataGenerator:
                 client_payloads = []
                 client_outcomes = []
                 round_metrics = []
+                round_qos_records = []
                 skipped_clients = 0
 
                 down_bytes = self.strategy.comm_down_bytes(global_model)
@@ -479,6 +579,16 @@ class FederatedDataGenerator:
                         "gpu_memory_used_mb": float(outcome.gpu_memory_used_mb) if outcome.gpu_memory_used_mb is not None else None,
                     }
                     client_values.update(self._extract_dynamic_metrics(outcome))
+                    client_values.update(self._normalize_outcome_extras(outcome))
+
+                    client_values = {
+                        key: value
+                        for key, value in client_values.items()
+                        if self._safe_metric_value(value) is not None
+                    }
+
+                    if outcome.participated:
+                        round_qos_records.append(client_values)
 
                     # write client-round measurements
                     writer.write_measurements(
@@ -548,6 +658,7 @@ class FederatedDataGenerator:
                         "global_metric_score": global_score,
                         "global_aux_metric": global_extra,
                         "round_resource_summary": round_usage_summary,
+                        **self._round_qos_rollups(round_qos_records),
                     },
                 )
 
