@@ -12,6 +12,7 @@ from ..storage.writer import make_writer
 from .strategies.factory import make_task_strategy
 from .strategies.base import canonical_task_family, canonical_label_format, canonical_metric_names, normalize_hf_task
 from .system_metrics import capture_hardware_snapshot, summarize_round_usage
+from ..models.label_schema import infer_label_format, infer_num_labels
 
 
 class FederatedDataGenerator:
@@ -171,13 +172,14 @@ class FederatedDataGenerator:
     def _canonical_run_metadata(self):
         hf_task = normalize_hf_task(getattr(self.strategy, "hf_task", self.dataset_args.get("hf_task") or self.config.get("hf_task")))
         task_family = canonical_task_family(self.task_type, hf_task)
-        label_format = canonical_label_format(task_family)
+        label_format = infer_label_format(self.meta, task_type=self.task_type) or canonical_label_format(task_family)
         metric_primary_name, metric_secondary_name = canonical_metric_names(task_family, self.metric_key)
         return {
             "task_family": task_family,
             "label_format": label_format,
             "metric_primary_name": metric_primary_name,
             "metric_secondary_name": metric_secondary_name,
+            "num_labels": infer_num_labels(self.meta, fallback=self.num_classes),
             "train_set_size": int(len(self.y_train)),
             "eval_set_size": int(len(self.y_test)),
         }

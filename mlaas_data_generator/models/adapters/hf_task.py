@@ -43,13 +43,18 @@ class HFTaskSpec:
 class SequenceClassificationSpec(HFTaskSpec):
     name = "sequence_classification"
 
-    def __init__(self, multilabel=False, threshold=0.5):
+    def __init__(self, multilabel=False, threshold=0.5, label_format="single_index"):
         self.multilabel = bool(multilabel)
         self.threshold = float(threshold)
+        self.label_format = str(label_format or "single_index").lower()
     
     def _infer_label_mode(self, yb):
         if yb is None:
             return "none"
+        
+        if self.label_format in {"token_index", "single_index", "onehot", "multilabel", "multihot"}:
+            mapping = {"token_index": "single_index", "onehot": "single_onehot", "multihot": "multilabel"}
+            return mapping.get(self.label_format, self.label_format)
 
         arr = np.asarray(yb)
         if arr.ndim == 1:
@@ -140,9 +145,13 @@ class SequenceClassificationSpec(HFTaskSpec):
 
         if label_mode == "single_onehot":
             labels_t = torch.argmax(labels_t, dim=-1)
+        if logits.ndim == 3 and labels_t.ndim == 1:
+            logits = logits[:, 0, :]
         return torch.nn.functional.cross_entropy(logits, labels_t)
 
     def preds_from_logits(self, torch, logits, extra):
+        if logits.ndim == 3:
+            logits = logits[:, 0, :]
         if bool(extra.get("multilabel", self.multilabel)):
             probs = torch.sigmoid(logits)
             return (probs >= self.threshold).to(dtype=torch.int64)
@@ -172,20 +181,23 @@ class SequenceClassificationSpec(HFTaskSpec):
 class TokenClassificationSpec(HFTaskSpec):
     name = "token_classification"
 
-    def __init__(self, multilabel=False):
+    def __init__(self, multilabel=False, label_format="token_index"):
         self.multilabel = bool(multilabel)
+        self.label_format = str(label_format or "token_index").lower()
 
     def _infer_label_mode(self, yb):
         if yb is None:
             return "none"
+        
+        if self.label_format in {"token_index", "single_index", "onehot", "multilabel", "multihot"}:
+            mapping = {"token_index": "single_index", "onehot": "single_onehot", "multihot": "multilabel"}
+            return mapping.get(self.label_format, self.label_format)
 
         arr = np.asarray(yb)
 
-        # Most token-label batches are [B, T] integer class indices.
         if arr.ndim in (1, 2):
             return "single_index"
 
-        # Optional path where labels are [B, T, C] with one-hot / multi-hot encoding.
         if arr.ndim == 3:
             is_binary = np.isin(arr, [0, 1]).all()
             if is_binary and np.all(arr.sum(axis=-1) == 1):

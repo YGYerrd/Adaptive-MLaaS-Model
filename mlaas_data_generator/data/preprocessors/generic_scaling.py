@@ -1,5 +1,7 @@
 import numpy as np
+
 from ..scaling import apply_feature_scaler, apply_target_scaler
+from .label_schema import attach_label_schema
 
 def preprocess_tabular_scaling(train, test, meta, *, scaler="standard", y_standardize=True):
     (x_train, y_train) = train
@@ -20,7 +22,7 @@ def preprocess_tabular_scaling(train, test, meta, *, scaler="standard", y_standa
             y_train, y_test, "standard" if y_standardize else None
         )
         meta["target_scaler"] = y_scaler
-
+    meta = attach_label_schema(meta, y_train, default_num_labels=meta.get("num_classes"))
     return (x_train, y_train), (x_test, y_test), meta
 
 import numpy as np
@@ -34,4 +36,5 @@ def preprocess_image_float01(train, test, meta):
 
     meta = dict(meta)
     meta["image_normalisation"] = "uint8_to_float32_0_1"
+    meta = attach_label_schema(meta, y_train, default_num_labels=meta.get("num_classes"))
     return (x_train, y_train), (x_test, y_test), meta

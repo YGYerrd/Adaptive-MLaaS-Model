@@ -6,6 +6,7 @@ from keras.applications.mobilenet_v2 import preprocess_input
 import tensorflow as tf
 
 from .adapters.generic_adapters import KMeansAdapter, make_random_forest
+from .label_schema import infer_ignore_index, infer_label_format, infer_num_labels
 
 
 def _make_optimizer(name: str, lr: float):
@@ -63,12 +64,8 @@ def create_model(
             hf_task = meta.get("hf_task")
         hf_task = hf_task or kwargs.get("hf_task", "sequence_classification")
 
-        label_pad_value = -100
-        if isinstance(meta, dict):
-            label_pad_value = int(meta.get("label_pad_value", -100))
-        else:
-            label_pad_value = int(kwargs.get("label_pad_value", -100))
-
+        label_pad_value = infer_ignore_index(meta if isinstance(meta, dict) else None, default=int(kwargs.get("label_pad_value", -100)))
+        
         # max_length: prefer explicit, else meta input_shape, else fallback
         max_length = kwargs.get("max_length", None)
         if max_length is None and isinstance(meta, dict):
@@ -86,20 +83,21 @@ def create_model(
         batch_size = int(kwargs.get("batch_size", 16))
         device = kwargs.get("device", None)
 
-        multilabel = False
-        if isinstance(meta, dict):
-            multilabel = bool(meta.get("is_multilabel", False))
+        label_format = infer_label_format(meta if isinstance(meta, dict) else None, task_type=task_type)
+        multilabel = label_format in {"multilabel", "multihot"}
         multilabel = bool(kwargs.get("multilabel", multilabel))
+        resolved_num_labels = infer_num_labels(meta if isinstance(meta, dict) else None, fallback=num_classes)
 
         return TransformersTextFineTuneAdapter(
             model_id=model_id,
-            num_labels=int(num_classes),
+            num_labels=int(resolved_num_labels),
             max_length=max_length,
             batch_size=batch_size,
             device=device,
             hf_task=hf_task,
             label_pad_value=label_pad_value,
-             multilabel=multilabel,
+            multilabel=multilabel,
+            label_format=label_format,
         )
 
     if model_choice in ("hf", "hf_text", "transformers"):
@@ -163,10 +161,29 @@ def create_model(
         )
 
     is_regression = (task_type == "regression")
-    out_units = 1 if is_regression else int(num_classes)
-    out_activation = "linear" if is_regression else "softmax"
-    loss = "mse" if is_regression else "sparse_categorical_crossentropy"
-    metrics = ["mse"] if is_regression else ["accuracy"]
+    label_format = infer_label_format(meta if isinstance(meta, dict) else None, task_type=task_type)
+    resolved_num_labels = infer_num_labels(meta if isinstance(meta, dict) else None, fallback=num_classes)
+
+    if is_regression:
+        out_units = 1
+        out_activation = "linear"
+        loss = "mse"
+        metrics = ["mse"]
+    elif label_format in {"multilabel", "multihot"}:
+        out_units = int(resolved_num_labels)
+        out_activation = "sigmoid"
+        loss = "binary_crossentropy"
+        metrics = ["binary_accuracy"]
+    elif label_format == "onehot":
+        out_units = int(resolved_num_labels)
+        out_activation = "softmax"
+        loss = "categorical_crossentropy"
+        metrics = ["accuracy"]
+    else:
+        out_units = int(resolved_num_labels)
+        out_activation = "softmax"
+        loss = "sparse_categorical_crossentropy"
+        metrics = ["accuracy"]
 
     if rank == 3:
         if model_choice == "mobilenetv2":

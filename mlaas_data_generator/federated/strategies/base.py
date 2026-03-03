@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 import numpy as np
 from ...models.builders import create_model
+from ...models.label_schema import infer_num_labels
 
 
 
@@ -146,7 +147,7 @@ class TaskStrategy:
 
         common = dict(
             input_shape=tuple(self.meta["input_shape"]),
-            num_classes=self.meta.get("num_classes"),
+            num_classes=infer_num_labels(self.meta, fallback=self.meta.get("num_classes")),
             task_type=self.task_type(),
             model_type=self.config.get("model_type"),
             **extra,

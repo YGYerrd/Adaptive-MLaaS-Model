@@ -22,11 +22,12 @@ class TransformersTextFineTuneAdapter:
         hf_task="sequence_classification",
         label_pad_value=-100,
         multilabel=False,
+        label_format="single_index",
     ):
         if hf_task == "token_classification":
-            spec = TokenClassificationSpec(multilabel=multilabel)
+            spec = TokenClassificationSpec(multilabel=multilabel, label_format=label_format)
         else:
-            spec = SequenceClassificationSpec(multilabel=multilabel)
+            spec = TokenClassificationSpec(multilabel=multilabel, label_format=label_format)
 
         self.core = HFCore(
             model_id=model_id,

@@ -1,5 +1,7 @@
 import numpy as np
 
+from .label_schema import attach_label_schema
+
 def preprocess_hf_text_token(train, test, meta, *, hf_model_id, tokens_column, label_column):
     ds_train, _ = train
     ds_test, _ = test
@@ -33,8 +35,6 @@ def preprocess_hf_text_token(train, test, meta, *, hf_model_id, tokens_column, l
         tokenizer = AutoTokenizer.from_pretrained(hf_model_id, use_fast=False)
 
     def _encode_tokens_and_labels(tokens_list, tags_list):
-        # tokens_list: list[list[str]]
-        # tags_list: list[list[int]]
         enc = tokenizer(
             tokens_list,
             is_split_into_words=True,
@@ -45,33 +45,23 @@ def preprocess_hf_text_token(train, test, meta, *, hf_model_id, tokens_column, l
         )
 
         labels = np.full((len(tokens_list), max_length), -100, dtype="int32")
-
-        # For each example, map word labels -> subword positions
         for i in range(len(tokens_list)):
             word_ids = enc.word_ids(batch_index=i)
             prev_word = None
             for j, word_id in enumerate(word_ids):
                 if word_id is None:
                     continue
-                if word_id != prev_word:
-                    # first sub-token of word gets the label
-                    if word_id < len(tags_list[i]):
-                        labels[i, j] = int(tags_list[i][word_id])
+                if word_id != prev_word and word_id < len(tags_list[i]):
+                    labels[i, j] = int(tags_list[i][word_id])
                 prev_word = word_id
 
-        X = {
+        return {
             "input_ids": enc["input_ids"].astype("int32"),
             "attention_mask": enc["attention_mask"].astype("int32"),
-        }
-        return X, labels
+        }, labels
 
-    tokens_train = list(ds_train[tokens_column])
-    tags_train = list(ds_train[label_column])
-    tokens_test = list(ds_test[tokens_column])
-    tags_test = list(ds_test[label_column])
-
-    X_train, y_train = _encode_tokens_and_labels(tokens_train, tags_train)
-    X_test, y_test = _encode_tokens_and_labels(tokens_test, tags_test)
+    X_train, y_train = _encode_tokens_and_labels(list(ds_train[tokens_column]), list(ds_train[label_column]))
+    X_test, y_test = _encode_tokens_and_labels(list(ds_test[tokens_column]), list(ds_test[label_column]))
 
     meta2 = dict(meta)
     meta2.update({
@@ -88,5 +78,6 @@ def preprocess_hf_text_token(train, test, meta, *, hf_model_id, tokens_column, l
         "modality": "text",
         "label_pad_value": -100,
     })
+    meta2 = attach_label_schema(meta2, y_train, default_num_labels=num_classes, ignore_index=-100)
 
     return (X_train, y_train), (X_test, y_test), meta2

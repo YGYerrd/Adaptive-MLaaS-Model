@@ -127,6 +127,7 @@ class SQLiteWriter:
             ("gpu_memory_used_mb", "resource", "MB", "lower_better", "num", "GPU memory used"),
             ("task_family", "metadata", None, "neutral", "text", "Canonical task family for this run"),
             ("label_format", "metadata", None, "neutral", "text", "Canonical label format for this run"),
+            ("num_labels", "metadata", None, "neutral", "int", "Number of target labels/classes for this run"),
             ("metric_primary_name", "metadata", None, "neutral", "text", "Primary evaluation metric name"),
             ("metric_secondary_name", "metadata", None, "neutral", "text", "Secondary evaluation metric name"),
             ("eval_set_size", "metadata", "samples", "neutral", "int", "Evaluation set size"),
