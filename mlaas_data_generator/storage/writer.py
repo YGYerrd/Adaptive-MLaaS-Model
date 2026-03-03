@@ -125,6 +125,19 @@ class SQLiteWriter:
             ("cpu_time_s", "resource", "s", "lower_better", "num", "CPU time"),
             ("memory_used_mb", "resource", "MB", "lower_better", "num", "Memory used"),
             ("gpu_memory_used_mb", "resource", "MB", "lower_better", "num", "GPU memory used"),
+            ("task_family", "metadata", None, "neutral", "text", "Canonical task family for this run"),
+            ("label_format", "metadata", None, "neutral", "text", "Canonical label format for this run"),
+            ("metric_primary_name", "metadata", None, "neutral", "text", "Primary evaluation metric name"),
+            ("metric_secondary_name", "metadata", None, "neutral", "text", "Secondary evaluation metric name"),
+            ("eval_set_size", "metadata", "samples", "neutral", "int", "Evaluation set size"),
+            ("train_set_size", "metadata", "samples", "neutral", "int", "Training set size"),
+            ("effective_batch_size", "resource", "samples", "neutral", "int", "Effective per-step batch size"),
+            ("tokens_in", "resource", "tokens", "neutral", "int", "Input token count"),
+            ("tokens_out", "resource", "tokens", "neutral", "int", "Output token count"),
+            ("avg_seq_len", "resource", "tokens", "neutral", "num", "Average sequence length"),
+            ("truncation_rate", "reliability", "proportion", "lower_better", "num", "Fraction of truncated inputs"),
+            ("oom_count", "reliability", "count", "lower_better", "int", "Out-of-memory event count"),
+            ("nan_count", "reliability", "count", "lower_better", "int", "NaN event count"),
         ]
         for name, domain, unit, direction, dtype, desc in core:
             self._ensure_metric(name, domain, unit, direction, dtype, desc)

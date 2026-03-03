@@ -168,6 +168,28 @@ class SequenceClassificationSpec(HFTaskSpec):
 class TokenClassificationSpec(HFTaskSpec):
     name = "token_classification"
 
+    def __init__(self, multilabel=False):
+        self.multilabel = bool(multilabel)
+
+    def _infer_label_mode(self, yb):
+        if yb is None:
+            return "none"
+
+        arr = np.asarray(yb)
+
+        # Most token-label batches are [B, T] integer class indices.
+        if arr.ndim in (1, 2):
+            return "single_index"
+
+        # Optional path where labels are [B, T, C] with one-hot / multi-hot encoding.
+        if arr.ndim == 3:
+            is_binary = np.isin(arr, [0, 1]).all()
+            if is_binary and np.all(arr.sum(axis=-1) == 1):
+                return "single_onehot"
+            return "multilabel"
+
+        return "unknown"
+    
     def build_model(self, transformers, model_id, num_labels):
         AutoModel = transformers.AutoModelForTokenClassification
         self.weight_format = None
@@ -228,7 +250,7 @@ class TokenClassificationSpec(HFTaskSpec):
                 labels_t = torch.tensor(yb, dtype=torch.long, device=device)
 
             elif label_mode == "single_onehot":
-                y_idx = np.asarray(yb).argmax(axis=1)
+                y_idx = np.asarray(yb).argmax(axis=-1)
                 labels_t = torch.tensor(y_idx, dtype=torch.long, device=device)
 
             elif label_mode == "multilabel":

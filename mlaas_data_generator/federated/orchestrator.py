@@ -9,6 +9,7 @@ from ..data.splitters import split_data
 from ..data.distributions import get_data_distribution
 from ..storage.writer import make_writer
 from .strategies.factory import make_task_strategy
+from .strategies.base import canonical_task_family, canonical_label_format, canonical_metric_names, normalize_hf_task
 from .system_metrics import capture_hardware_snapshot, summarize_round_usage
 
 class FederatedDataGenerator:
@@ -164,6 +165,67 @@ class FederatedDataGenerator:
 
         return "unknown"
     
+
+    def _canonical_run_metadata(self):
+        hf_task = normalize_hf_task(getattr(self.strategy, "hf_task", self.dataset_args.get("hf_task") or self.config.get("hf_task")))
+        task_family = canonical_task_family(self.task_type, hf_task)
+        label_format = canonical_label_format(task_family)
+        metric_primary_name, metric_secondary_name = canonical_metric_names(task_family, self.metric_key)
+        return {
+            "task_family": task_family,
+            "label_format": label_format,
+            "metric_primary_name": metric_primary_name,
+            "metric_secondary_name": metric_secondary_name,
+            "train_set_size": int(len(self.y_train)),
+            "eval_set_size": int(len(self.y_test)),
+        }
+
+    def _extract_dynamic_metrics(self, outcome):
+        extras = getattr(outcome, "extras", {}) if outcome is not None else {}
+
+        def _pick(keys, default=None):
+            for k in keys:
+                if isinstance(extras, dict) and extras.get(k) is not None:
+                    return extras.get(k)
+            return default
+
+        fail_reason = getattr(outcome, "fail_reason", "") or ""
+
+        has_nan = any(
+            isinstance(v, float) and np.isnan(v)
+            for v in [
+                getattr(outcome, "loss", np.nan),
+                getattr(outcome, "metric_value", np.nan),
+                getattr(outcome, "metric_score", np.nan),
+                getattr(outcome, "extra_metric", np.nan),
+            ]
+        ) or ("nan" in fail_reason.lower())
+
+        return {
+            "effective_batch_size": int(_pick(["effective_batch_size", "batch_size", "train_batch_size"], self.knobs.get("batch_size") or 0) or 0),
+            "tokens_in": int(_pick(["tokens_in", "input_tokens", "prompt_tokens", "train_tokens_in"], 0) or 0),
+            "tokens_out": int(_pick(["tokens_out", "output_tokens", "completion_tokens", "train_tokens_out"], 0) or 0),
+            "avg_seq_len": float(_pick(["avg_seq_len", "avg_sequence_length", "mean_seq_len"], 0.0) or 0.0),
+            "truncation_rate": float(_pick(["truncation_rate", "truncated_fraction", "trunc_rate"], 0.0) or 0.0),
+            "oom_count": int(_pick(["oom_count"], 0) or 0) + int("out of memory" in fail_reason.lower() or "cuda oom" in fail_reason.lower()),
+            "nan_count": int(_pick(["nan_count"], 0) or 0) + int(has_nan),
+            "fail_reason_category": self._categorize_fail_reason(fail_reason),
+        }
+
+    def _categorize_fail_reason(self, fail_reason: str):
+        text = (fail_reason or "").strip().lower()
+        if not text:
+            return "none"
+        if "dropout" in text:
+            return "dropout"
+        if "out of memory" in text or "cuda oom" in text or "oom" in text:
+            return "oom"
+        if "nan" in text:
+            return "nan"
+        if "timeout" in text or "timed out" in text:
+            return "timeout"
+        return "runtime_error"
+    
     def run(self):
         os.makedirs("weights", exist_ok=True)
 
@@ -311,6 +373,13 @@ class FederatedDataGenerator:
                 writer.write_run_param(run_id, "runner", "params_count", params_count)
                 writer.write_run_param(run_id, "runner", "hardware_snapshot", hardware_snapshot)
 
+            writer.write_measurements(
+                run_id=run_id,
+                round=None,
+                client_id=None,
+                values=self._canonical_run_metadata(),
+            )
+
             # --- clients dimension
             for client_id, data in clients.items():
                 writer.write_client(
@@ -366,6 +435,14 @@ class FederatedDataGenerator:
                                 "comm_bytes_down": int(down_bytes),
                                 "comm_bytes_up": 0,
                                 "compute_time_s": 0.0,
+                                "effective_batch_size": int(self.knobs.get("batch_size") or 0),
+                                "tokens_in": 0,
+                                "tokens_out": 0,
+                                "avg_seq_len": 0.0,
+                                "truncation_rate": 0.0,
+                                "oom_count": 0,
+                                "nan_count": 0,
+                                "fail_reason_category": "dropout",
                             },
                         )
                         print(f"{client_id} dropped out")
@@ -386,26 +463,29 @@ class FederatedDataGenerator:
 
                     client_outcomes.append(outcome)
 
+                    client_values = {
+                        "participated_flag": bool(outcome.participated),
+                        "fail_reason": outcome.fail_reason if not outcome.participated else None,
+                        "samples_count": int(outcome.samples_count),
+                        "compute_time_s": float(outcome.duration),
+                        "comm_bytes_down": int(outcome.comm_down),
+                        "comm_bytes_up": int(outcome.comm_up),
+                        "loss": float(outcome.loss) if outcome.loss == outcome.loss else None,
+                        self.metric_key: float(outcome.metric_value) if outcome.metric_value == outcome.metric_value else None,
+                        "metric_score": float(outcome.metric_score) if outcome.metric_score == outcome.metric_score else None,
+                        "extra_metric": float(outcome.extra_metric) if outcome.extra_metric == outcome.extra_metric else None,
+                        "cpu_time_s": float(outcome.cpu_time_s) if outcome.cpu_time_s is not None else None,
+                        "memory_used_mb": float(outcome.memory_used_mb) if outcome.memory_used_mb is not None else None,
+                        "gpu_memory_used_mb": float(outcome.gpu_memory_used_mb) if outcome.gpu_memory_used_mb is not None else None,
+                    }
+                    client_values.update(self._extract_dynamic_metrics(outcome))
+
                     # write client-round measurements
                     writer.write_measurements(
                         run_id=run_id,
                         round=round_idx,
                         client_id=client_id,
-                        values={
-                            "participated_flag": bool(outcome.participated),
-                            "fail_reason": outcome.fail_reason if not outcome.participated else None,
-                            "samples_count": int(outcome.samples_count),
-                            "compute_time_s": float(outcome.duration),
-                            "comm_bytes_down": int(outcome.comm_down),
-                            "comm_bytes_up": int(outcome.comm_up),
-                            "loss": float(outcome.loss) if outcome.loss == outcome.loss else None,
-                            self.metric_key: float(outcome.metric_value) if outcome.metric_value == outcome.metric_value else None,
-                            "metric_score": float(outcome.metric_score) if outcome.metric_score == outcome.metric_score else None,
-                            "extra_metric": float(outcome.extra_metric) if outcome.extra_metric == outcome.extra_metric else None,
-                            "cpu_time_s": float(outcome.cpu_time_s) if outcome.cpu_time_s is not None else None,
-                            "memory_used_mb": float(outcome.memory_used_mb) if outcome.memory_used_mb is not None else None,
-                            "gpu_memory_used_mb": float(outcome.gpu_memory_used_mb) if outcome.gpu_memory_used_mb is not None else None,
-                        },
+                        values=client_values,
                     )
 
                     round_metrics.append(

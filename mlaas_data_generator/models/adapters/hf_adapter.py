@@ -22,7 +22,7 @@ class TransformersTextFineTuneAdapter:
         multilabel=False,
     ):
         if hf_task == "token_classification":
-            spec = TokenClassificationSpec()
+            spec = TokenClassificationSpec(multilabel=multilabel)
         else:
             spec = SequenceClassificationSpec(multilabel=multilabel)
 

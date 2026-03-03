@@ -1,0 +1,174 @@
+{
+  "run_group_id": "20260228_184849",
+  "db_path": "outputs/federated_bench.db",
+  "cases": [
+    {
+      "run_id": "81fc2a5d-04bc-4973-ab9e-9bd22829a2e9",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260228_184849",
+      "case_name": "go_emotions_roberta_base_multilabel"
+    },
+    {
+      "run_id": "b778f25d-e63c-4c7e-a88f-595eb40500a6",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260228_184849",
+      "case_name": "snli_roberta_base_nli"
+    },
+    {
+      "run_id": "4aaa3a5a-940e-4e6f-9f7b-728705fb0483",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260228_184849",
+      "case_name": "qqp_minilm_l12_paraphrase"
+    },
+    {
+      "run_id": "05714c84-161b-4cfd-a1db-90363e229076",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260228_184849",
+      "case_name": "mrpc_bert_base_uncased_paraphrase"
+    },
+    {
+      "run_id": "56572076-6c4a-489e-b426-9e04aee45118",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260228_184849",
+      "case_name": "tweet_eval_hate_roberta_base_seqcls"
+    },
+    {
+      "run_id": "cf2ea1ee-76d9-4c89-99ff-fbd822b6fad8",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260228_184849",
+      "case_name": "tweet_eval_sentiment_twitter_roberta_prefinetuned"
+    },
+    {
+      "run_id": "9ce2ec1d-bbe0-48d5-961d-3e0110116e3a",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260228_184849",
+      "case_name": "ud_ewt_bert_base_cased_pos"
+    },
+    {
+      "run_id": "4ca14be2-293a-4942-b172-c2f8629c4b80",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260228_184849",
+      "case_name": "imdb_distilbert_base_uncased_seqcls"
+    },
+    {
+      "run_id": "c2753f56-868d-4383-bac8-ce308262acfc",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260228_184849",
+      "case_name": "imdb_roberta_base_seqcls"
+    },
+    {
+      "run_id": "89deff02-9403-4312-bd63-62017caa1a58",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260228_184849",
+      "case_name": "rotten_tomatoes_bert_base_uncased_seqcls"
+    },
+    {
+      "run_id": "3f7bf05f-f56c-4d07-afeb-4ce897788cee",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260228_184849",
+      "case_name": "dbpedia14_distilbert_base_uncased_seqcls"
+    },
+    {
+      "run_id": "f165c4bd-7c2c-4f88-bb0b-705b5c3a205d",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260228_184849",
+      "case_name": "yahoo_answers_topics_bert_base_uncased_seqcls"
+    },
+    {
+      "run_id": "ed8d1003-d96f-4e3b-bf36-c337da6c25ac",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260228_184849",
+      "case_name": "wnut17_bert_base_cased_token"
+    },
+    {
+      "run_id": "82c1ad1e-3ef7-418a-aaac-96d36903b5cd",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260228_184849",
+      "case_name": "wnut17_distilbert_token"
+    },
+    {
+      "run_id": "07f50264-ed32-4e70-8b27-6de5e30e3f61",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260228_184849",
+      "case_name": "sst2_distilbert_base"
+    },
+    {
+      "run_id": "9a26421e-9273-4392-acbb-c84f0804e204",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260228_184849",
+      "case_name": "sst2_distilbert_preft"
+    },
+    {
+      "run_id": "50112a81-4a7f-423d-9f02-3f1063f5026f",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260228_184849",
+      "case_name": "ag_news_distilbert_base"
+    },
+    {
+      "run_id": "44b56257-f929-404e-9b56-117d6102ec7a",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260228_184849",
+      "case_name": "conll2003_bert_base_cased_token"
+    },
+    {
+      "run_id": "c175da30-16fc-401d-9cd5-ebb8b6ae2a4c",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260228_184849",
+      "case_name": "conll2003_distilbert_base_cased_token"
+    },
+    {
+      "run_id": "5da5a4f7-6064-4295-ba5e-9dbb170c8e71",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260228_184849",
+      "case_name": "conll2003_roberta_base_token"
+    },
+    {
+      "run_id": "aa2e4735-da39-4958-8d55-0d5e9e398972",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260228_184849",
+      "case_name": "wnut17_distilbert_base_uncased_token"
+    }
+  ]
+}

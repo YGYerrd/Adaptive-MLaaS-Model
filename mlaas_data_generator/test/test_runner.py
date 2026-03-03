@@ -29,8 +29,7 @@ def run_benchmarks(db_path="outputs/federated_bench.db"):
         "client_dropout_rate": 0.0,
         "batch_size": 16,
         "local_epochs": 1,                    # per-round local epochs
-        "learning_rate": 5e-5,                # HF fine-tune lr (make sure your adapter uses this)
-        "sample_size": 300,                   # small for testing
+        "learning_rate": 5e-5,                # HF fine-tune lr (make sure your adapter uses this)                # small for testing
         "sample_frac": 0.5,
         "distribution_type": "iid",
         "distribution_bins": 10,

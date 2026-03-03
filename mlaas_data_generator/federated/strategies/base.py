@@ -30,6 +30,59 @@ def _nanmean(values):
         return np.nan
     return float(np.mean(cleaned))
 
+
+def normalize_hf_task(hf_task: str | None) -> str:
+    """Normalize user/provider HF task aliases to canonical names."""
+    task = (hf_task or "").strip().lower().replace("-", "_")
+    mapping = {
+        "text_classification": "sequence_classification",
+        "seq_cls": "sequence_classification",
+        "sequence_cls": "sequence_classification",
+        "token_cls": "token_classification",
+        "ner": "token_classification",
+    }
+    return mapping.get(task, task or "unknown")
+
+
+def canonical_task_family(task_type: str | None, hf_task: str | None = None) -> str:
+    """Map legacy task_type/HF-task values to a canonical taxonomy."""
+    base = (task_type or "").strip().lower()
+    hf = normalize_hf_task(hf_task)
+
+    if base == "clustering":
+        return "clustering"
+    if base == "regression":
+        return "regression"
+    if base == "classification":
+        if hf == "token_classification":
+            return "token_classification"
+        if hf == "sequence_classification" or hf == "unknown":
+            return "classification"
+        return f"hf_{hf}"
+    return "unknown"
+
+
+def canonical_label_format(task_family: str) -> str:
+    mapping = {
+        "classification": "single_label",
+        "token_classification": "token_labels",
+        "regression": "continuous",
+        "clustering": "cluster_id",
+    }
+    return mapping.get(task_family, "unknown")
+
+
+def canonical_metric_names(task_family: str, metric_key: str) -> tuple[str, str | None]:
+    if task_family == "classification":
+        return ("accuracy", "f1")
+    if task_family == "token_classification":
+        return ("f1", "accuracy")
+    if task_family == "regression":
+        return ("rmse", "mae")
+    if task_family == "clustering":
+        return ("silhouette", None)
+    return ((metric_key or "metric").lower(), None)
+
 @dataclass
 class ClientOutcome:
     participated: bool
