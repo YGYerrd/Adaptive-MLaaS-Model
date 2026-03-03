@@ -47,7 +47,10 @@ class ClusteringStrategy(TaskStrategy):
                 cpu_time_s=usage.cpu_time_s, cpu_utilization=usage.cpu_utilization,
                 memory_used_mb=usage.memory_used_mb, memory_utilization=usage.memory_utilization,
                 gpu_utilization=usage.gpu_utilization, gpu_memory_utilization=usage.gpu_memory_utilization,
-                gpu_memory_used_mb=usage.gpu_memory_used_mb,
+                gpu_memory_used_mb=usage.gpu_memory_used_mb, peak_vram_mb=usage.peak_vram_mb,
+                avg_vram_mb=usage.avg_vram_mb,
+                peak_host_ram_mb=usage.peak_host_ram_mb,
+                avg_host_ram_mb=usage.avg_host_ram_mb,
                 payload=None,
                 extras={
                     "silhouette": sil,
@@ -68,7 +71,10 @@ class ClusteringStrategy(TaskStrategy):
                 cpu_time_s=usage.cpu_time_s, cpu_utilization=usage.cpu_utilization,
                 memory_used_mb=usage.memory_used_mb, memory_utilization=usage.memory_utilization,
                 gpu_utilization=usage.gpu_utilization, gpu_memory_utilization=usage.gpu_memory_utilization,
-                gpu_memory_used_mb=usage.gpu_memory_used_mb,
+                gpu_memory_used_mb=usage.gpu_memory_used_mb,peak_vram_mb=usage.peak_vram_mb,
+                avg_vram_mb=usage.avg_vram_mb,
+                peak_host_ram_mb=usage.peak_host_ram_mb,
+                avg_host_ram_mb=usage.avg_host_ram_mb,
                 payload=None, extras={},
             )
     

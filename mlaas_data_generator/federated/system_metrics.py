@@ -6,6 +6,8 @@ import os
 import platform
 import shutil
 import subprocess
+import threading
+import time
 from dataclasses import dataclass
 from statistics import mean
 from typing import Any, Dict, Iterable, List, Tuple
@@ -213,6 +215,10 @@ class ResourceUsage:
     gpu_utilization: float | None
     gpu_memory_utilization: float | None
     gpu_memory_used_mb: float | None
+    peak_vram_mb: float | None
+    avg_vram_mb: float | None
+    peak_host_ram_mb: float | None
+    avg_host_ram_mb: float | None
 
 
 class ResourceTracker:
@@ -222,6 +228,31 @@ class ResourceTracker:
         self._process = psutil.Process(os.getpid())
         self._cpu_times_start: psutil._common.pcputimes | None = None
         self._cpu_count = psutil.cpu_count(logical=True) or 1
+        self._sample_interval_s = 0.2
+        self._samples: List[Dict[str, float | None]] = []
+        self._lock = threading.Lock()
+        self._running = False
+        self._sampler_thread: threading.Thread | None = None
+
+    def _sample_once(self) -> None:
+        gpu_snapshot = query_gpu_snapshot()
+        gpu_mem_used = _aggregate_gpu_sum(gpu_snapshot, "memory_used_mb")
+        try:
+            host_used_mb = psutil.virtual_memory().used / MB
+        except Exception:
+            host_used_mb = None
+        with self._lock:
+            self._samples.append(
+                {
+                    "gpu_memory_used_mb": _safe_float(gpu_mem_used),
+                    "host_ram_used_mb": _safe_float(host_used_mb),
+                }
+            )
+
+    def _run_sampler(self) -> None:
+        while self._running:
+            self._sample_once()
+            time.sleep(self._sample_interval_s)
 
     def start(self) -> None:
         try:
@@ -232,8 +263,19 @@ class ResourceTracker:
             self._cpu_times_start = self._process.cpu_times()
         except Exception:
             self._cpu_times_start = None
+        
+        with self._lock:
+            self._samples = []
+        self._running = True
+        self._sample_once()
+        self._sampler_thread = threading.Thread(target=self._run_sampler, daemon=True)
+        self._sampler_thread.start()
 
     def stop(self, duration_s: float | None = None) -> ResourceUsage:
+        self._running = False
+        if self._sampler_thread is not None:
+            self._sampler_thread.join(timeout=1.0)
+        self._sample_once()
         cpu_time_s: float | None = None
         try:
             end_times = self._process.cpu_times()
@@ -266,6 +308,19 @@ class ResourceTracker:
         gpu_util = _aggregate_gpu_metric(gpu_snapshot, "utilization")
         gpu_mem_util = _aggregate_gpu_metric(gpu_snapshot, "memory_utilization")
         gpu_mem_used = _aggregate_gpu_sum(gpu_snapshot, "memory_used_mb")
+        
+        with self._lock:
+            samples = list(self._samples)
+
+        vram_samples = [s.get("gpu_memory_used_mb") for s in samples]
+        vram_samples = [v for v in vram_samples if v is not None]
+        host_ram_samples = [s.get("host_ram_used_mb") for s in samples]
+        host_ram_samples = [v for v in host_ram_samples if v is not None]
+
+        peak_vram = max(vram_samples) if vram_samples else None
+        avg_vram = mean(vram_samples) if vram_samples else None
+        peak_host_ram = max(host_ram_samples) if host_ram_samples else None
+        avg_host_ram = mean(host_ram_samples) if host_ram_samples else None
 
         return ResourceUsage(
             cpu_time_s=_safe_float(cpu_time_s),
@@ -275,6 +330,10 @@ class ResourceTracker:
             gpu_utilization=_safe_float(gpu_util),
             gpu_memory_utilization=_safe_float(gpu_mem_util),
             gpu_memory_used_mb=_safe_float(gpu_mem_used),
+            peak_vram_mb=_safe_float(peak_vram),
+            avg_vram_mb=_safe_float(avg_vram),
+            peak_host_ram_mb=_safe_float(peak_host_ram),
+            avg_host_ram_mb=_safe_float(avg_host_ram),
         )
 
 
@@ -317,6 +376,10 @@ def summarize_round_usage(
     gpu_utils = [o.get("gpu_utilization") for o in outcomes_list]
     gpu_mem_utils = [o.get("gpu_memory_utilization") for o in outcomes_list]
     gpu_mem_used = [o.get("gpu_memory_used_mb") for o in outcomes_list]
+    peak_vram = [o.get("peak_vram_mb") for o in outcomes_list]
+    avg_vram = [o.get("avg_vram_mb") for o in outcomes_list]
+    peak_host_ram = [o.get("peak_host_ram_mb") for o in outcomes_list]
+    avg_host_ram = [o.get("avg_host_ram_mb") for o in outcomes_list]
     cpu_times = [o.get("cpu_time_s") for o in outcomes_list]
 
     avg_duration, max_duration = _pair(durations)
@@ -326,6 +389,10 @@ def summarize_round_usage(
     avg_gpu_util, max_gpu_util = _pair(gpu_utils)
     avg_gpu_mem_util, max_gpu_mem_util = _pair(gpu_mem_utils)
     avg_gpu_mem_used, max_gpu_mem_used = _pair(gpu_mem_used)
+    avg_peak_vram, max_peak_vram = _pair(peak_vram)
+    avg_avg_vram, max_avg_vram = _pair(avg_vram)
+    avg_peak_host_ram, max_peak_host_ram = _pair(peak_host_ram)
+    avg_avg_host_ram, max_avg_host_ram = _pair(avg_host_ram)
     avg_cpu_time, max_cpu_time = _pair(cpu_times)
 
     participated = sum(1 for o in outcomes_list if o.get("participated"))
@@ -351,6 +418,14 @@ def summarize_round_usage(
         "max_gpu_memory_util": _safe_float(max_gpu_mem_util),
         "avg_gpu_memory_used_mb": _safe_float(avg_gpu_mem_used),
         "max_gpu_memory_used_mb": _safe_float(max_gpu_mem_used),
+        "avg_peak_vram_mb": _safe_float(avg_peak_vram),
+        "max_peak_vram_mb": _safe_float(max_peak_vram),
+        "avg_vram_mb": _safe_float(avg_avg_vram),
+        "max_vram_mb": _safe_float(max_avg_vram),
+        "avg_peak_host_ram_mb": _safe_float(avg_peak_host_ram),
+        "max_peak_host_ram_mb": _safe_float(max_peak_host_ram),
+        "avg_host_ram_mb": _safe_float(avg_avg_host_ram),
+        "max_host_ram_mb": _safe_float(max_avg_host_ram),
         "avg_cpu_time_s": _safe_float(avg_cpu_time),
         "max_cpu_time_s": _safe_float(max_cpu_time),
     }

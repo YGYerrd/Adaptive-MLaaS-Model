@@ -42,6 +42,7 @@ class HFCore:
         self.device = self._resolve_device(device)
 
         self.task_spec = task_spec or SequenceClassificationSpec()
+        cold_start_begin = time.time()
         try:
             self.tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, use_fast=True)
         except Exception:
@@ -53,6 +54,7 @@ class HFCore:
             self.model = self.task_spec.build_model(transformers, model_id, num_labels)
             self.weight_format = getattr(self.task_spec, "weight_format", None)
             self.model.to(self.device)
+        self.cold_start_time = float(time.time() - cold_start_begin)
 
 
     def _resolve_device(self, device):
@@ -165,6 +167,9 @@ class HFCore:
 
         step_mean = float(np.mean(step_lat_ms)) if step_lat_ms else np.nan
         step_p95 = float(np.percentile(step_lat_ms, 95)) if step_lat_ms else np.nan
+        steady_steps = step_lat_ms[1:] if len(step_lat_ms) > 1 else []
+        steady_step_mean = float(np.mean(steady_steps)) if steady_steps else np.nan
+        steady_step_p95 = float(np.percentile(steady_steps, 95)) if steady_steps else np.nan
 
         train_loss = float(total_loss / max(1, total_seen))
         train_throughput = float(total_seen / max(duration_s, 1e-9))
@@ -174,7 +179,10 @@ class HFCore:
             "train_time_s": float(duration_s),
             "train_step_latency_ms_mean": step_mean,
             "train_step_latency_ms_p95": step_p95,
+            "train_step_latency_ms_steady_mean": steady_step_mean,
+            "train_step_latency_ms_steady_p95": steady_step_p95,
             "train_throughput_eps": train_throughput,
+            "cold_start_time": float(self.cold_start_time),
             "train_samples": int(total_seen),
             "batch_size": int(self.batch_size),
             "device": str(self.device),
@@ -266,12 +274,18 @@ class HFCore:
 
         lat_mean = float(np.mean(latencies_ms)) if latencies_ms else np.nan
         lat_p95 = float(np.percentile(latencies_ms, 95)) if latencies_ms else np.nan
+        steady_lat = latencies_ms[1:] if len(latencies_ms) > 1 else []
+        lat_steady_mean = float(np.mean(steady_lat)) if steady_lat else np.nan
+        lat_steady_p95 = float(np.percentile(steady_lat, 95)) if steady_lat else np.nan
         throughput = float(n_eval / max(duration_s, 1e-9))
 
         qos = {
             "eval_latency_ms_mean": lat_mean,
             "eval_latency_ms_p95": lat_p95,
+            "eval_latency_ms_steady_mean": lat_steady_mean,
+            "eval_latency_ms_steady_p95": lat_steady_p95,
             "eval_throughput_eps": throughput,
+            "cold_start_time": float(self.cold_start_time),
             "eval_samples": int(n_eval),
             "batch_size": int(self.batch_size),
             "device": str(self.device),

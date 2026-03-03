@@ -103,6 +103,10 @@ class ClientOutcome:
     gpu_utilization: float | None
     gpu_memory_utilization: float | None
     gpu_memory_used_mb: float | None
+    peak_vram_mb: float | None
+    avg_vram_mb: float | None
+    peak_host_ram_mb: float | None
+    avg_host_ram_mb: float | None
     payload: dict | list | None   # weights for NN, None for clustering
     extras: dict                  # extra columns per task
 

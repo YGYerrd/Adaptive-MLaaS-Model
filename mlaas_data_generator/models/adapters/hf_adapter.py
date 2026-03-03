@@ -1,5 +1,7 @@
 from .hf_core import HFCore
 from .hf_task import SequenceClassificationSpec, TokenClassificationSpec
+import time
+
 
 
 class TransformersTextFineTuneAdapter:
@@ -85,9 +87,11 @@ class TransformersTextClassifierAdapter:
         )
 
         transformers = core.transformers
+        model_load_start = time.time()
         core.model = transformers.AutoModelForSequenceClassification.from_pretrained(model_id)
         core.model.to(core.device)
         core.model.eval()
+        core.cold_start_time += float(time.time() - model_load_start)
 
         self.core = core
         self.model_id = model_id
@@ -105,6 +109,10 @@ class TransformersTextClassifierAdapter:
             qos["inference_latency_ms_mean"] = qos.pop("eval_latency_ms_mean")
         if "eval_latency_ms_p95" in qos:
             qos["inference_latency_ms_p95"] = qos.pop("eval_latency_ms_p95")
+        if "eval_latency_ms_steady_mean" in qos:
+            qos["inference_latency_ms_steady_mean"] = qos.pop("eval_latency_ms_steady_mean")
+        if "eval_latency_ms_steady_p95" in qos:
+            qos["inference_latency_ms_steady_p95"] = qos.pop("eval_latency_ms_steady_p95")
         if "eval_throughput_eps" in qos:
             qos["throughput_eps"] = qos.pop("eval_throughput_eps")
 

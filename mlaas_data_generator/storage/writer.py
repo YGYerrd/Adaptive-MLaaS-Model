@@ -157,6 +157,21 @@ class SQLiteWriter:
             ("round_tokens_per_second_p95", "performance", "tokens/s", "higher_better", "num", "Round p95 of client tokens_per_second"),
             ("round_inference_latency_s_mean", "performance", "s", "lower_better", "num", "Round mean of client inference_latency_s"),
             ("round_inference_latency_s_p95", "performance", "s", "lower_better", "num", "Round p95 of client inference_latency_s"),
+            ("peak_vram_mb", "resource", "MB", "lower_better", "num", "Peak GPU memory sampled during client execution"),
+            ("avg_vram_mb", "resource", "MB", "lower_better", "num", "Average GPU memory sampled during client execution"),
+            ("peak_host_ram_mb", "resource", "MB", "lower_better", "num", "Peak host RAM sampled during client execution"),
+            ("avg_host_ram_mb", "resource", "MB", "lower_better", "num", "Average host RAM sampled during client execution"),
+            ("retry_count", "reliability", "count", "lower_better", "int", "Retry attempts consumed by operation"),
+            ("dropout_events", "reliability", "count", "lower_better", "int", "Dropout events observed"),
+            ("cold_start_time", "performance", "s", "lower_better", "num", "Model and tokenizer cold-start load time"),
+            ("seconds_per_step_steady", "performance", "s/step", "lower_better", "num", "Steady-state train step duration excluding first step"),
+            ("seconds_per_step_steady_p95", "performance", "s/step", "lower_better", "num", "P95 steady-state train step duration"),
+            ("inference_latency_s_steady", "performance", "s", "lower_better", "num", "Steady-state inference latency excluding first batch"),
+            ("inference_latency_s_steady_p95", "performance", "s", "lower_better", "num", "P95 steady-state inference latency"),
+            ("round_seconds_per_step_steady_mean", "performance", "s/step", "lower_better", "num", "Round mean steady-state seconds_per_step across participating clients"),
+            ("round_seconds_per_step_steady_p95", "performance", "s/step", "lower_better", "num", "Round p95 steady-state seconds_per_step across participating clients"),
+            ("round_inference_latency_s_steady_mean", "performance", "s", "lower_better", "num", "Round mean steady-state inference latency"),
+            ("round_inference_latency_s_steady_p95", "performance", "s", "lower_better", "num", "Round p95 steady-state inference latency"),
         ]
         for name, domain, unit, direction, dtype, desc in core:
             self._ensure_metric(name, domain, unit, direction, dtype, desc)
