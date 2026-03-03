@@ -2,6 +2,17 @@ import numpy as np
 
 from .label_schema import attach_label_schema
 
+
+def _resolve_text_column_spec(text_column):
+    if isinstance(text_column, str):
+        stripped = text_column.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            parts = [p.strip().strip("\"'") for p in stripped[1:-1].split(",") if p.strip()]
+            if len(parts) == 2:
+                return parts
+        return text_column
+    return text_column
+
 def _is_multilabel_sample(value):
     return isinstance(value, (list, tuple, set, np.ndarray))
 
@@ -67,6 +78,8 @@ def preprocess_hf_text_sequence(
 ):
     ds_train, _ = train
     ds_test, _ = test
+    text_column = _resolve_text_column_spec(text_column)
+
 
     cols = set(ds_train.column_names)
 

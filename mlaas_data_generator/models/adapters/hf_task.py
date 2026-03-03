@@ -52,9 +52,10 @@ class SequenceClassificationSpec(HFTaskSpec):
         if yb is None:
             return "none"
         
-        if self.label_format in {"token_index", "single_index", "onehot", "multilabel", "multihot"}:
-            mapping = {"token_index": "single_index", "onehot": "single_onehot", "multihot": "multilabel"}
+        if self.label_format in {"onehot", "multilabel", "multihot"}:
+            mapping = {"onehot": "single_onehot", "multihot": "multilabel"}
             return mapping.get(self.label_format, self.label_format)
+
 
         arr = np.asarray(yb)
         if arr.ndim == 1:
@@ -335,3 +336,107 @@ class TokenClassificationSpec(HFTaskSpec):
         acc = float((yp == yt).mean())
         f1 = float(f1_score(yt, yp, average="weighted"))
         return {"primary": acc, "secondary": f1}
+    
+
+class SentenceSimilaritySpec(HFTaskSpec):
+    name = "sentence_similarity"
+
+    def __init__(self, is_regression=False, threshold=0.5):
+        self.is_regression = bool(is_regression)
+        self.threshold = float(threshold)
+        self._cls_spec = SequenceClassificationSpec()
+
+    def build_model(self, transformers, model_id, num_labels):
+        AutoModel = transformers.AutoModelForSequenceClassification
+        self.weight_format = None
+        resolved_num_labels = 1 if self.is_regression else int(num_labels)
+        extra = {"problem_type": "regression"} if self.is_regression else {}
+        try:
+            model = AutoModel.from_pretrained(
+                model_id,
+                num_labels=resolved_num_labels,
+                ignore_mismatched_sizes=True,
+                use_safetensors=True,
+                **extra,
+            )
+            self.weight_format = "safetensors"
+        except OSError as e:
+            if "safetensors" in str(e).lower():
+                model = AutoModel.from_pretrained(
+                    model_id,
+                    num_labels=resolved_num_labels,
+                    ignore_mismatched_sizes=True,
+                    use_safetensors=False,
+                    **extra,
+                )
+                self.weight_format = "pickle"
+            else:
+                raise
+        return model
+
+    def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100):
+        if isinstance(xb, dict):
+            enc = {k: torch.tensor(v, dtype=torch.long, device=device) for k, v in xb.items()}
+        elif isinstance(xb, (list, tuple)) and xb and isinstance(xb[0], (list, tuple)) and len(xb[0]) == 2:
+            text_a = [row[0] for row in xb]
+            text_b = [row[1] for row in xb]
+            enc = tokenizer(
+                text_a,
+                text_b,
+                truncation=True,
+                padding=True,
+                max_length=int(max_length),
+                return_tensors="pt",
+            )
+            enc = {k: v.to(device) for k, v in enc.items()}
+        else:
+            enc = tokenizer(
+                xb,
+                truncation=True,
+                padding=True,
+                max_length=int(max_length),
+                return_tensors="pt",
+            )
+            enc = {k: v.to(device) for k, v in enc.items()}
+
+        labels_t = None
+        if yb is not None:
+            if self.is_regression:
+                labels_t = torch.tensor(yb, dtype=torch.float32, device=device)
+            else:
+                labels_t = torch.tensor(yb, dtype=torch.long, device=device)
+        return enc, labels_t, {"is_regression": self.is_regression}
+
+    def loss_fn(self, torch, logits, labels_t, extra):
+        if bool(extra.get("is_regression", self.is_regression)):
+            pred = logits.squeeze(-1)
+            target = labels_t.float().view_as(pred)
+            return torch.nn.functional.mse_loss(pred, target)
+        return self._cls_spec.loss_fn(torch, logits, labels_t, extra)
+
+    def preds_from_logits(self, torch, logits, extra):
+        if bool(extra.get("is_regression", self.is_regression)):
+            return logits.squeeze(-1)
+        return self._cls_spec.preds_from_logits(torch, logits, extra)
+
+    def metrics(self, y_true, y_pred, y_extra=None):
+        if not bool((y_extra or {}).get("is_regression", self.is_regression)):
+            return self._cls_spec.metrics(y_true, y_pred, y_extra=y_extra)
+
+        y_true = np.asarray(y_true, dtype="float32").reshape(-1)
+        y_pred = np.asarray(y_pred, dtype="float32").reshape(-1)
+
+        if y_true.size == 0:
+            return {"primary": np.nan, "secondary": np.nan}
+
+        mse = float(np.mean((y_true - y_pred) ** 2))
+
+        if y_true.size > 1:
+            try:
+                corr = float(np.corrcoef(y_true, y_pred)[0, 1])
+            except Exception:
+                corr = np.nan
+        else:
+            corr = np.nan
+
+        return {"primary": mse, "secondary": corr}

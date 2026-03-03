@@ -1,5 +1,5 @@
 from .hf_core import HFCore
-from .hf_task import SequenceClassificationSpec, TokenClassificationSpec
+from .hf_task import SequenceClassificationSpec, SentenceSimilaritySpec, TokenClassificationSpec
 import time
 
 
@@ -26,8 +26,12 @@ class TransformersTextFineTuneAdapter:
     ):
         if hf_task == "token_classification":
             spec = TokenClassificationSpec(multilabel=multilabel, label_format=label_format)
+        
+        elif hf_task == "sentence_similarity":
+            spec = SentenceSimilaritySpec(is_regression=(str(label_format).lower() == "continuous"))
+            
         else:
-            spec = TokenClassificationSpec(multilabel=multilabel, label_format=label_format)
+             spec = SequenceClassificationSpec(multilabel=multilabel, label_format=label_format)
 
         self.core = HFCore(
             model_id=model_id,

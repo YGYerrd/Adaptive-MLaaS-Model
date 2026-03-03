@@ -1,4 +1,5 @@
 from .hf_text_sequence import preprocess_hf_text_sequence
+from .hf_text_similarity import preprocess_hf_text_similarity
 from .hf_text_token import preprocess_hf_text_token
 
 def preprocess_hf(train, test, meta, **dataset_args):
@@ -27,5 +28,17 @@ def preprocess_hf(train, test, meta, **dataset_args):
             tokens_column=dataset_args.get("tokens_column"),
             label_column=dataset_args.get("label_column"),
         )
+    
+    if hf_task == "sentence_similarity":
+        return preprocess_hf_text_similarity(
+            train,
+            test,
+            meta,
+            hf_model_id=hf_model_id,
+            text_column=dataset_args.get("text_column", ["sentence1", "sentence2"]),
+            label_column=dataset_args.get("label_column", "label"),
+            label_mode=dataset_args.get("label_mode", "auto"),
+        )
+
 
     raise ValueError(f"Unsupported HF text task: {hf_task}")

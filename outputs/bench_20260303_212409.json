@@ -1,0 +1,62 @@
+{
+  "run_group_id": "20260303_212409",
+  "db_path": "outputs/federated_bench.db",
+  "cases": [
+    {
+      "run_id": "9ffcebc1-53ec-4913-96e1-fe6382657e83",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260303_212409",
+      "case_name": "stsb_bert_base_sentence_similarity_regression"
+    },
+    {
+      "run_id": "d8d853a7-40f9-48e9-abef-a5895d3a75ff",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260303_212409",
+      "case_name": "stsb_roberta_base_sentence_similarity_regression"
+    },
+    {
+      "run_id": "97c80ee1-78ae-47e4-88f3-66c676cadb78",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260303_212409",
+      "case_name": "stsb_sentence_transformer_inference_only"
+    },
+    {
+      "run_id": "89dffadc-f919-4e41-8744-b1360e510681",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260303_212409",
+      "case_name": "stsb_minilm_l12_sentence_similarity_regression"
+    },
+    {
+      "run_id": "e1950a17-ce34-4e39-a809-31519ed5beb5",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260303_212409",
+      "case_name": "mrpc_distilbert_pair_classification"
+    },
+    {
+      "run_id": "661cbb07-eded-4b42-9e26-cc9c22f2a84d",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260303_212409",
+      "case_name": "qqp_roberta_base_pair_classification"
+    },
+    {
+      "run_id": "b3834548-6a7c-4639-a4ee-88262639043b",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260303_212409",
+      "case_name": "stsb_distilbert_sentence_similarity_regression"
+    }
+  ]
+}

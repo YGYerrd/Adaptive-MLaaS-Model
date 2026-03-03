@@ -441,9 +441,185 @@ def run_benchmarks(db_path="outputs/federated_bench.db"):
                 "learning_rate": 3e-5,
             },
         ),
-        
+    
     ]
 
+    # ==========================================================
+    # Sentence Similarity & Pair Classification Case Set
+    # ==========================================================
+
+    SIMILARITY_CASES = [
+
+        # ------------------------------------------------------
+        # STS-B Regression – DistilBERT
+        # ------------------------------------------------------
+        _case(
+            name="stsb_distilbert_sentence_similarity_regression",
+            dataset_args={
+                "dataset_name": "glue",
+                "dataset_config": "stsb",
+                "train_split": "train",
+                "test_split": "validation",
+                "text_column": ["sentence1", "sentence2"],
+                "label_column": "label",
+                "label_mode": "regression",
+                "max_samples": 800,
+                "max_length": 128,
+                "hf_model_id": "distilbert-base-uncased",
+                "hf_task": "sentence_similarity",
+            },
+            config_overrides={
+                "learning_rate": 3e-5,
+                "task_type": "regression",
+            },
+        ),
+
+        # ------------------------------------------------------
+        # STS-B Regression – BERT Base
+        # ------------------------------------------------------
+        _case(
+            name="stsb_bert_base_sentence_similarity_regression",
+            dataset_args={
+                "dataset_name": "glue",
+                "dataset_config": "stsb",
+                "train_split": "train",
+                "test_split": "validation",
+                "text_column": ["sentence1", "sentence2"],
+                "label_column": "label",
+                "label_mode": "regression",
+                "max_samples": 800,
+                "max_length": 128,
+                "hf_model_id": "bert-base-uncased",
+                "hf_task": "sentence_similarity",
+            },
+            config_overrides={
+                "learning_rate": 2e-5,
+                "task_type": "regression",
+            },
+        ),
+
+        # ------------------------------------------------------
+        # STS-B Regression – RoBERTa Base
+        # ------------------------------------------------------
+        _case(
+            name="stsb_roberta_base_sentence_similarity_regression",
+            dataset_args={
+                "dataset_name": "glue",
+                "dataset_config": "stsb",
+                "train_split": "train",
+                "test_split": "validation",
+                "text_column": ["sentence1", "sentence2"],
+                "label_column": "label",
+                "label_mode": "regression",
+                "max_samples": 800,
+                "max_length": 128,
+                "hf_model_id": "roberta-base",
+                "hf_task": "sentence_similarity",
+            },
+            config_overrides={
+                "learning_rate": 2e-5,
+                "task_type": "regression",
+            },
+        ),
+
+        # ------------------------------------------------------
+        # STS-B Regression – MiniLM (lightweight baseline)
+        # ------------------------------------------------------
+        _case(
+            name="stsb_minilm_l12_sentence_similarity_regression",
+            dataset_args={
+                "dataset_name": "glue",
+                "dataset_config": "stsb",
+                "train_split": "train",
+                "test_split": "validation",
+                "text_column": ["sentence1", "sentence2"],
+                "label_column": "label",
+                "label_mode": "regression",
+                "max_samples": 800,
+                "max_length": 128,
+                "hf_model_id": "microsoft/MiniLM-L12-H384-uncased",
+                "hf_task": "sentence_similarity",
+            },
+            config_overrides={
+                "learning_rate": 3e-5,
+                "task_type": "regression",
+            },
+        ),
+
+        # ------------------------------------------------------
+        # MRPC – Sentence Pair Classification
+        # ------------------------------------------------------
+        _case(
+            name="mrpc_distilbert_pair_classification",
+            dataset_args={
+                "dataset_name": "glue",
+                "dataset_config": "mrpc",
+                "train_split": "train",
+                "test_split": "validation",
+                "text_column": ["sentence1", "sentence2"],
+                "label_column": "label",
+                "max_samples": 800,
+                "max_length": 128,
+                "hf_model_id": "distilbert-base-uncased",
+                "hf_task": "sequence_classification",
+            },
+            config_overrides={
+                "learning_rate": 3e-5,
+                "task_type": "classification",
+            },
+        ),
+
+        # ------------------------------------------------------
+        # QQP – Paraphrase Detection
+        # ------------------------------------------------------
+        _case(
+            name="qqp_roberta_base_pair_classification",
+            dataset_args={
+                "dataset_name": "glue",
+                "dataset_config": "qqp",
+                "train_split": "train",
+                "test_split": "validation",
+                "text_column": ["question1", "question2"],
+                "label_column": "label",
+                "max_samples": 1000,
+                "max_length": 128,
+                "hf_model_id": "roberta-base",
+                "hf_task": "sequence_classification",
+            },
+            config_overrides={
+                "learning_rate": 2e-5,
+                "task_type": "classification",
+            },
+        ),
+
+        # ------------------------------------------------------
+        # STS-B – Embedding Service (Inference Only)
+        # ------------------------------------------------------
+        _case(
+            name="stsb_sentence_transformer_inference_only",
+            dataset_args={
+                "dataset_name": "glue",
+                "dataset_config": "stsb",
+                "train_split": "train",
+                "test_split": "validation",
+                "text_column": ["sentence1", "sentence2"],
+                "label_column": "label",
+                "label_mode": "regression",
+                "max_samples": 800,
+                "max_length": 128,
+                "hf_model_id": "sentence-transformers/all-MiniLM-L6-v2",
+                "hf_task": "sentence_similarity",
+            },
+            config_overrides={
+                "task_type": "regression",
+                "inference_only": True,
+            },
+        ),
+
+    ]
+
+    cases = SIMILARITY_CASES
+    
     results = []
     print(f"\n=== BENCH RUN GROUP: {run_group_id} ===")
     print(f"DB: {db_path}\n")
