@@ -50,7 +50,8 @@ class HFCore:
 
         self.model = None
         self.weight_format = None
-        if num_labels is not None:
+        needs_num_labels = bool(getattr(self.task_spec, "requires_num_labels", True))
+        if num_labels is not None or not needs_num_labels:
             self.model = self.task_spec.build_model(transformers, model_id, num_labels)
             self.weight_format = getattr(self.task_spec, "weight_format", None)
             self.model.to(self.device)
@@ -119,6 +120,11 @@ class HFCore:
     def finetune(self, xs, ys, epochs=1, lr=5e-5):
         torch = self.torch
 
+        def _count_supervised_tokens(labels_t, ignore_index):
+            if labels_t is None or labels_t.ndim < 2:
+                return 0
+            return int((labels_t != int(ignore_index)).sum().detach().cpu().item())
+        
         # xs may be dict-of-arrays or list-like; do not force list(xs)
         y_local = ys
 
@@ -127,6 +133,7 @@ class HFCore:
 
         total_loss = 0.0
         total_seen = 0
+        total_tokens = 0
         step_lat_ms = []
         t_start = time.time()
 
@@ -151,6 +158,8 @@ class HFCore:
                 loss.backward()
                 optimizer.step()
 
+                total_tokens += _count_supervised_tokens(labels_t, self.label_pad_value)
+
                 # batch size for dict path or list path
                 if isinstance(xb, dict):
                     bs = len(next(iter(xb.values())))
@@ -173,6 +182,7 @@ class HFCore:
 
         train_loss = float(total_loss / max(1, total_seen))
         train_throughput = float(total_seen / max(duration_s, 1e-9))
+        token_throughput = float(total_tokens / max(duration_s, 1e-9)) if total_tokens > 0 else np.nan
 
         return {
             "train_loss": train_loss,
@@ -184,6 +194,8 @@ class HFCore:
             "train_throughput_eps": train_throughput,
             "cold_start_time": float(self.cold_start_time),
             "train_samples": int(total_seen),
+            "tokens_total": int(total_tokens),
+            "tokens_per_second": token_throughput,
             "batch_size": int(self.batch_size),
             "device": str(self.device),
             "hf_model_id": self.model_id,
@@ -196,12 +208,18 @@ class HFCore:
     def eval(self, xs, ys):
         torch = self.torch
 
+        def _count_supervised_tokens(labels_t, ignore_index):
+            if labels_t is None or labels_t.ndim < 2:
+                return 0
+            return int((labels_t != int(ignore_index)).sum().detach().cpu().item())
+
         y_true = ys
         self.model.eval()
 
         latencies_ms = []
         total_loss = 0.0
         total_seen = 0
+        total_tokens = 0
 
         preds_all = []
         labels_all = []
@@ -238,6 +256,7 @@ class HFCore:
                     labels_all.append(labels_t.detach().cpu().numpy())
 
                     loss = self.task_spec.loss_fn(torch, logits, labels_t, extra)
+                    total_tokens += _count_supervised_tokens(labels_t, self.label_pad_value)
 
                     if isinstance(xb, dict):
                         bs = len(next(iter(xb.values())))
@@ -278,6 +297,7 @@ class HFCore:
         lat_steady_mean = float(np.mean(steady_lat)) if steady_lat else np.nan
         lat_steady_p95 = float(np.percentile(steady_lat, 95)) if steady_lat else np.nan
         throughput = float(n_eval / max(duration_s, 1e-9))
+        token_throughput = float(total_tokens / max(duration_s, 1e-9)) if total_tokens > 0 else np.nan
 
         qos = {
             "eval_latency_ms_mean": lat_mean,
@@ -287,6 +307,8 @@ class HFCore:
             "eval_throughput_eps": throughput,
             "cold_start_time": float(self.cold_start_time),
             "eval_samples": int(n_eval),
+            "tokens_total": int(total_tokens),
+            "tokens_per_second": token_throughput,
             "batch_size": int(self.batch_size),
             "device": str(self.device),
             "hf_model_id": self.model_id,

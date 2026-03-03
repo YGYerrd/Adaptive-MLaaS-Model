@@ -41,6 +41,8 @@ def normalize_hf_task(hf_task: str | None) -> str:
         "sequence_cls": "sequence_classification",
         "token_cls": "token_classification",
         "ner": "token_classification",
+        "masked_lm": "fill_mask",
+        "mlm": "fill_mask",
     }
     return mapping.get(task, task or "unknown")
 
@@ -57,6 +59,8 @@ def canonical_task_family(task_type: str | None, hf_task: str | None = None) -> 
     if base == "classification":
         if hf == "token_classification":
             return "token_classification"
+        if hf == "fill_mask":
+            return "fill_mask"
         if hf == "sequence_classification" or hf == "unknown":
             return "classification"
         return f"hf_{hf}"
@@ -67,6 +71,7 @@ def canonical_label_format(task_family: str) -> str:
     mapping = {
         "classification": "single_label",
         "token_classification": "token_labels",
+        "fill_mask": "token_labels",
         "regression": "continuous",
         "clustering": "cluster_id",
     }
@@ -78,6 +83,8 @@ def canonical_metric_names(task_family: str, metric_key: str) -> tuple[str, str 
         return ("accuracy", "f1")
     if task_family == "token_classification":
         return ("f1", "accuracy")
+    if task_family == "fill_mask":
+        return ("masked_accuracy", "perplexity_proxy")
     if task_family == "regression":
         return ("rmse", "mae")
     if task_family == "clustering":

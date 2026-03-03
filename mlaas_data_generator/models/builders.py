@@ -23,6 +23,16 @@ def _make_optimizer(name: str, lr: float):
         return optimizers.AdamW(learning_rate=lr)
     return optimizers.Adam(learning_rate=lr)
 
+def _normalize_hf_task_name(hf_task):
+    task = str(hf_task or "sequence_classification").strip().lower().replace("-", "_")
+    aliases = {
+        "text_classification": "sequence_classification",
+        "seq_cls": "sequence_classification",
+        "token_cls": "token_classification",
+        "masked_lm": "fill_mask",
+        "mlm": "fill_mask",
+    }
+    return aliases.get(task, task)
 
 def create_model(
     input_shape,
@@ -62,7 +72,7 @@ def create_model(
         hf_task = None
         if isinstance(meta, dict):
             hf_task = meta.get("hf_task")
-        hf_task = hf_task or kwargs.get("hf_task", "sequence_classification")
+        hf_task = _normalize_hf_task_name(hf_task or kwargs.get("hf_task", "sequence_classification"))
 
         label_pad_value = infer_ignore_index(meta if isinstance(meta, dict) else None, default=int(kwargs.get("label_pad_value", -100)))
         
@@ -87,10 +97,12 @@ def create_model(
         multilabel = label_format in {"multilabel", "multihot"}
         multilabel = bool(kwargs.get("multilabel", multilabel))
         resolved_num_labels = infer_num_labels(meta if isinstance(meta, dict) else None, fallback=num_classes)
+        if hf_task == "fill_mask":
+            resolved_num_labels = None
 
         return TransformersTextFineTuneAdapter(
             model_id=model_id,
-            num_labels=int(resolved_num_labels),
+            num_labels=(None if resolved_num_labels is None else int(resolved_num_labels)),
             max_length=max_length,
             batch_size=batch_size,
             device=device,

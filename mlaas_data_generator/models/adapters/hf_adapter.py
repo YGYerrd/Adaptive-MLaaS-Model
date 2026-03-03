@@ -1,5 +1,5 @@
 from .hf_core import HFCore
-from .hf_task import SequenceClassificationSpec, SentenceSimilaritySpec, TokenClassificationSpec
+from .hf_task import SequenceClassificationSpec, SentenceSimilaritySpec, TokenClassificationSpec, FillMaskSpec
 import time
 
 
@@ -29,13 +29,16 @@ class TransformersTextFineTuneAdapter:
         
         elif hf_task == "sentence_similarity":
             spec = SentenceSimilaritySpec(is_regression=(str(label_format).lower() == "continuous"))
+
+        elif hf_task == "fill_mask":
+            spec = FillMaskSpec()
             
         else:
              spec = SequenceClassificationSpec(multilabel=multilabel, label_format=label_format)
 
         self.core = HFCore(
             model_id=model_id,
-            num_labels=int(num_labels),
+            num_labels=(None if num_labels is None else int(num_labels)),
             max_length=max_length,
             batch_size=batch_size,
             device=device,

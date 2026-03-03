@@ -272,6 +272,8 @@ class FederatedDataGenerator:
             "eval_throughput_eps": ("examples_per_second", 1.0),
             "throughput_tps": ("tokens_per_second", 1.0),
             "tokens_per_second": ("tokens_per_second", 1.0),
+            "train_tokens_per_second": ("tokens_per_second", 1.0),
+            "eval_tokens_per_second": ("tokens_per_second", 1.0),
         }
 
         for key, value in extras.items():
@@ -300,6 +302,10 @@ class FederatedDataGenerator:
                 canonical["seconds_per_epoch"] = float(train_time_s) / float(epochs)
 
         tokens_total = self._safe_number(extras.get("tokens_total"))
+        if tokens_total is None:
+            tokens_total = self._safe_number(extras.get("train_tokens_total"))
+        if tokens_total is None:
+            tokens_total = self._safe_number(extras.get("eval_tokens_total"))
         if tokens_total is None:
             token_in = self._safe_number(extras.get("tokens_in"))
             token_out = self._safe_number(extras.get("tokens_out"))
