@@ -489,6 +489,39 @@ class FederatedDataGenerator:
                 # dataset args (store as JSON)
                 writer.write_run_param(run_id, "dataset", "dataset_args", self.dataset_args)
 
+                is_hf_run = (self.meta.get("dataset_family") == "hf") or ((self.model_type or "").lower().startswith("hf"))
+                if is_hf_run:
+                    def _pick_hf_value(key):
+                        for source in (self.meta, self.dataset_args, self.config):
+                            if isinstance(source, dict) and key in source:
+                                return source.get(key)
+                        return None
+
+                    def _is_present(value):
+                        if value is None:
+                            return False
+                        if isinstance(value, str):
+                            return bool(value.strip())
+                        if isinstance(value, (dict, list, tuple, set)):
+                            return len(value) > 0
+                        return True
+
+                    hf_metadata_keys = [
+                        "hf_model_id",
+                        "hf_pipeline_tag",
+                        "hf_downloads",
+                        "hf_likes",
+                        "hf_last_modified",
+                        "hf_author",
+                        "hf_url",
+                        "hf_service_meta_json",
+                    ]
+                    for key in hf_metadata_keys:
+                        value = _pick_hf_value(key)
+                        if _is_present(value):
+                            writer.write_run_param(run_id, "dataset", key, value)
+
+
                 # hardware snapshot / params count (optional)
                 writer.write_run_param(run_id, "runner", "params_count", params_count)
                 writer.write_run_param(run_id, "runner", "hardware_snapshot", hardware_snapshot)
