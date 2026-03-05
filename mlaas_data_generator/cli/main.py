@@ -5,7 +5,8 @@ from .cmd_generate import register_generate
 from .cmd_merge import register_merge
 from .cmd_wizard import register_wizard
 from .cmd_autogen import register_autogen
-from .interactive_run import register_interactive_run
+from .run_manifest import run_manifest
+
 
 
 
@@ -16,13 +17,21 @@ def build_parser() -> argparse.ArgumentParser:
     register_merge(sub)
     register_wizard(sub)
     register_autogen(sub)
-    register_interactive_run(sub)
+
     return p
 
 def main() -> None:
     import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "run-manifest":
+        parser = argparse.ArgumentParser(description="Run manifest rows")
+        parser.add_argument("--file", required=True)
+        parser.add_argument("--sheet", default="runs")
+        parser.add_argument("--dry_run", action="store_true")
+        args = parser.parse_args(sys.argv[2:])
+        run_manifest(file=args.file, sheet=args.sheet, dry_run=args.dry_run)
+        return
     parser = build_parser()
-    if len(sys.argv) > 1 and sys.argv[1] not in {"generate", "merge", "wizard", "autogen", "interactive-run"}:
+    if len(sys.argv) > 1 and sys.argv[1] not in {"generate", "merge", "wizard", "autogen"}:
         sys.argv.insert(1, "generate")
     args = parser.parse_args()
     if not hasattr(args, "_handler"):
