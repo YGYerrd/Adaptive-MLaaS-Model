@@ -8,6 +8,7 @@ from ..config import CONFIG
 from ..data.master_loader import load_dataset
 from ..data.splitters import split_data
 from ..data.distributions import get_data_distribution, get_mlm_masked_token_stats
+from ..data.sources.hf_meta import fetch_hf_model_meta
 from ..storage.writer import make_writer
 from .strategies.factory import make_task_strategy
 from .strategies.base import canonical_task_family, canonical_label_format, canonical_metric_names, normalize_hf_task
@@ -446,6 +447,27 @@ class FederatedDataGenerator:
 
         run_id = str(uuid.uuid4())
 
+        hf_model_meta = {}
+        hf_model_id = (self.dataset_args.get("hf_model_id") or "").strip()
+        is_hf_run = ("hf" in (self.dataset or "").lower()) and bool(hf_model_id)
+        if is_hf_run:
+            try:
+                hf_model_meta = fetch_hf_model_meta(hf_model_id) or {}
+            except Exception as exc:
+                print(f"Warning: failed to fetch Hugging Face model metadata for '{hf_model_id}': {exc}")
+                hf_model_meta = {}
+
+            user_hf_task = self.dataset_args.get("hf_task") or self.config.get("hf_task")
+            if not user_hf_task:
+                pipeline_task = hf_model_meta.get("hf_pipeline_tag") or hf_model_meta.get("hf_task")
+                normalized_pipeline_task = normalize_hf_task(pipeline_task)
+                if normalized_pipeline_task and normalized_pipeline_task != "unknown":
+                    self.hf_task = normalized_pipeline_task
+                    self.task_family = canonical_task_family(self.task_type, self.hf_task)
+                    if hasattr(self.strategy, "hf_task"):
+                        self.strategy.hf_task = self.hf_task
+
+
         db_path = self.config.get("db_path", "federated2.db")
         writer = make_writer("sqlite", db_path=db_path)
         writer.start()
@@ -489,10 +511,11 @@ class FederatedDataGenerator:
                 # dataset args (store as JSON)
                 writer.write_run_param(run_id, "dataset", "dataset_args", self.dataset_args)
 
-                is_hf_run = (self.meta.get("dataset_family") == "hf") or ((self.model_type or "").lower().startswith("hf"))
                 if is_hf_run:
+                    if self.hf_task and self.hf_task != "unknown":
+                        writer.write_run_param(run_id, "dataset", "hf_task", self.hf_task)
                     def _pick_hf_value(key):
-                        for source in (self.meta, self.dataset_args, self.config):
+                        for source in (hf_model_meta, self.meta, self.dataset_args, self.config):
                             if isinstance(source, dict) and key in source:
                                 return source.get(key)
                         return None
