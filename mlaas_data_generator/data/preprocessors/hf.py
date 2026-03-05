@@ -28,7 +28,7 @@ def preprocess_hf(train, test, meta, **dataset_args):
         return preprocess_hf_text_token(
             train, test, meta,
             hf_model_id=hf_model_id,
-            tokens_column=dataset_args.get("tokens_column"),
+            tokens_column=dataset_args.get("tokens_column") or dataset_args.get("text_column"),
             label_column=dataset_args.get("label_column"),
         )
     
