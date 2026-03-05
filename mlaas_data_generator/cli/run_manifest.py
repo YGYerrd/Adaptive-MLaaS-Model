@@ -60,6 +60,29 @@ REQUIRED_COLUMNS = {"model_type"}
 
 BLANK_STRINGS = {"", "na", "nan", "null", "none"}
 
+COLUMN_ALIASES = {
+    "external run id": "external_run_id",
+    "run group id": "run_group_id",
+    "run_group": "run_group_id",
+    "num rounds": "num_rounds",
+    "num clients": "num_clients",
+    "client participation rate": "client_participation_rate",
+    "local epoch": "local_epochs",
+    "local epochs": "local_epochs",
+    "batch size": "batch_size",
+    "learing_rate": "learning_rate",
+    "earning_rate": "learning_rate",
+    "learning rate": "learning_rate",
+    "model type": "model_type",
+    "task type": "task_type",
+    "dataset name": "dataset_name",
+    "dataset config": "dataset_config",
+    "hf model id": "hf_model_id",
+    "train split": "train_split",
+    "test split": "test_split",
+    "label column": "label_column",
+    "text column": "text_column",
+}
 
 @dataclass
 class RowValidation:
@@ -113,6 +136,27 @@ def _coerce_by_column(column: str, value: Any) -> Any:
         return value.lower()
     return value
 
+def _normalize_column_name(column: Any) -> Any:
+    if not isinstance(column, str):
+        return column
+
+    trimmed = column.strip()
+    snake = trimmed.lower().replace("-", "_").replace(" ", "_")
+    snake = "_".join(part for part in snake.split("_") if part)
+    return COLUMN_ALIASES.get(trimmed.lower(), COLUMN_ALIASES.get(snake, snake))
+
+
+def _normalize_manifest_columns(df: pd.DataFrame) -> pd.DataFrame:
+    normalized = {_col: _normalize_column_name(_col) for _col in df.columns}
+    out = df.rename(columns=normalized)
+
+    if "learning_rate" not in out.columns:
+        for alias in ("earning_rate", "learing_rate"):
+            if alias in out.columns:
+                out["learning_rate"] = out[alias]
+                break
+
+    return out
 
 def _extract_defaults_row(df: pd.DataFrame) -> tuple[dict[str, Any], pd.DataFrame]:
     if "external_run_id" not in df.columns:
@@ -134,15 +178,15 @@ def _extract_defaults_row(df: pd.DataFrame) -> tuple[dict[str, Any], pd.DataFram
 def load_manifest(file_path: Path, sheet: str = "runs") -> tuple[pd.DataFrame, dict[str, Any]]:
     suffix = file_path.suffix.lower()
     if suffix == ".csv":
-        runs_df = pd.read_csv(file_path)
+        runs_df = _normalize_manifest_columns(pd.read_csv(file_path))
         csv_defaults, runs_df = _extract_defaults_row(runs_df)
         return runs_df, csv_defaults
 
     if suffix == ".xlsx":
-        runs_df = pd.read_excel(file_path, sheet_name=sheet)
+        runs_df = _normalize_manifest_columns(pd.read_excel(file_path, sheet_name=sheet))
         defaults_df = None
         try:
-            defaults_df = pd.read_excel(file_path, sheet_name="defaults")
+            defaults_df = _normalize_manifest_columns(pd.read_excel(file_path, sheet_name="defaults"))
         except ValueError:
             pass
 
@@ -177,6 +221,17 @@ def _resolve_row(row: pd.Series, manifest_defaults: dict[str, Any]) -> dict[str,
 
     if "client_participation_rate" in resolved:
         resolved["sample_frac"] = resolved["client_participation_rate"]
+
+    dataset = str(resolved.get("dataset") or "").strip().lower()
+    model_type = str(resolved.get("model_type") or "").strip().lower()
+    hf_task = str(resolved.get("hf_task") or "").strip().lower().replace("-", "_")
+
+    if dataset == "hf" and model_type in {"hf", "hf_text", "transformers"} and hf_task in {
+        "token_classification",
+        "fill_mask",
+        "sentence_similarity",
+    }:
+        resolved["model_type"] = "hf_finetune"
 
     return resolved
 

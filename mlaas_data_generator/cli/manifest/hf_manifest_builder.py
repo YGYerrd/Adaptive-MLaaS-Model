@@ -262,6 +262,7 @@ def _row_for(
     dataset_spec: dict[str, Any],
     run_index: int,
     learning_rate: float,
+    training_knobs: dict[str, Any],
     seed: int,
 ) -> dict[str, Any]:
     ds_slug = dataset_spec["dataset_name"].replace("/", "_")
@@ -281,20 +282,20 @@ def _row_for(
         "num_clients": 5,
         "client_participation_rate": 1.0,
         "local_epochs": 1,
-        "batch_size": 16,
-        "earning_rate": learning_rate,
-        "learning_rate": learning_rate,
-        "optimizer": "adam",
-        "seed": seed,
-        "distribution": "iid",
-        "num_shards": None,
+        "batch_size": training_knobs["batch_size"],
+        "earning_rate": training_knobs["learning_rate"],
+        "learning_rate": training_knobs["learning_rate"],
+        "optimizer": training_knobs["optimizer"],
+        "seed": training_knobs["seed"],
+        "distribution": training_knobs["distribution"],
+        "num_shards": training_knobs["num_shards"],
         "max_samples": dataset_spec["max_samples"],
         "max_length": dataset_spec["max_length"],
         "num_workers": 2,
         "timeout_s": 1800,
-        "weight_decay": 0.0,
-        "momentum": 0.0,
-        "dirichlet_alpha": None,
+        "weight_decay": training_knobs["weight_decay"],
+        "momentum": training_knobs["momentum"],
+        "dirichlet_alpha": training_knobs["dirichlet_alpha"],
         "aggregation": "mean",
         "device": "cpu",
         "model_type": "hf",
@@ -309,6 +310,36 @@ def _row_for(
         "text_column": dataset_spec.get("text_column"),
     }
 
+
+def _sample_training_knobs(rng: random.Random) -> dict[str, Any]:
+    optimizer = rng.choice(["adam", "adamw", "sgd", "adagrad"])
+    learning_rate_options = {
+        "adam": [1e-5, 2e-5, 3e-5, 5e-5],
+        "adamw": [1e-5, 2e-5, 3e-5, 5e-5],
+        "sgd": [1e-3, 3e-3, 1e-2],
+        "adagrad": [5e-4, 1e-3, 2e-3],
+    }
+
+    distribution = rng.choices(["iid", "dirichlet", "shards"], weights=[0.4, 0.35, 0.25], k=1)[0]
+    num_shards: int | None = None
+    dirichlet_alpha: float | None = None
+
+    if distribution == "shards":
+        num_shards = rng.choice([2, 5, 10, 20])
+    elif distribution == "dirichlet":
+        dirichlet_alpha = rng.choice([0.1, 0.3, 0.5, 1.0])
+
+    return {
+        "batch_size": rng.choice([8, 16, 32, 64]),
+        "learning_rate": rng.choice(learning_rate_options[optimizer]),
+        "optimizer": optimizer,
+        "seed": rng.randint(1, 1_000_000),
+        "distribution": distribution,
+        "num_shards": num_shards,
+        "weight_decay": rng.choice([0.0, 1e-4, 5e-4, 1e-3]),
+        "momentum": rng.choice([0.8, 0.9, 0.95]) if optimizer == "sgd" else 0.0,
+        "dirichlet_alpha": dirichlet_alpha,
+    }
 
 def build_hf_manifest(
     *,
@@ -348,8 +379,7 @@ def build_hf_manifest(
                     model_id=model_id,
                     dataset_spec=dataset_spec,
                     run_index=len(rows) + 1,
-                    learning_rate=5e-5,
-                    seed=seed,
+                    training_knobs=_sample_training_knobs(rng),
                 )
                 rows.append(row)
 
