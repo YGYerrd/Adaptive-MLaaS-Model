@@ -132,7 +132,7 @@ class HFCore:
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=float(lr))
 
         total_loss = 0.0
-        total_seen = 0
+        total_loss_weight = 0
         total_tokens = 0
         step_lat_ms = []
         t_start = time.time()
@@ -161,13 +161,15 @@ class HFCore:
                 total_tokens += _count_supervised_tokens(labels_t, self.label_pad_value)
 
                 # batch size for dict path or list path
-                if isinstance(xb, dict):
-                    bs = len(next(iter(xb.values())))
+                if isinstance(labels_t, torch.Tensor) and labels_t.ndim >= 2:
+                    w = _count_supervised_tokens(labels_t, self.label_pad_value)
+                elif isinstance(xb, dict):
+                    w = len(next(iter(xb.values())))
                 else:
-                    bs = len(xb)
+                    w = len(xb)
 
-                total_loss += float(loss.detach().cpu().item()) * bs
-                total_seen += bs
+                total_loss += float(loss.detach().cpu().item()) * float(max(1, w))
+                total_loss_weight += int(max(1, w))
 
                 step_lat_ms.append((time.time() - t0) * 1000.0)
 
@@ -180,8 +182,8 @@ class HFCore:
         steady_step_mean = float(np.mean(steady_steps)) if steady_steps else np.nan
         steady_step_p95 = float(np.percentile(steady_steps, 95)) if steady_steps else np.nan
 
-        train_loss = float(total_loss / max(1, total_seen))
-        train_throughput = float(total_seen / max(duration_s, 1e-9))
+        train_loss = float(total_loss / max(1, total_loss_weight))
+        train_throughput = float(total_loss_weight / max(duration_s, 1e-9))
         token_throughput = float(total_tokens / max(duration_s, 1e-9)) if total_tokens > 0 else np.nan
 
         return {
@@ -193,7 +195,7 @@ class HFCore:
             "train_step_latency_ms_steady_p95": steady_step_p95,
             "train_throughput_eps": train_throughput,
             "cold_start_time": float(self.cold_start_time),
-            "train_samples": int(total_seen),
+            "train_samples": int(total_loss_weight),
             "tokens_total": int(total_tokens),
             "tokens_per_second": token_throughput,
             "batch_size": int(self.batch_size),
@@ -218,7 +220,7 @@ class HFCore:
 
         latencies_ms = []
         total_loss = 0.0
-        total_seen = 0
+        total_loss_weight = 0
         total_tokens = 0
 
         preds_all = []
@@ -258,13 +260,15 @@ class HFCore:
                     loss = self.task_spec.loss_fn(torch, logits, labels_t, extra)
                     total_tokens += _count_supervised_tokens(labels_t, self.label_pad_value)
 
-                    if isinstance(xb, dict):
-                        bs = len(next(iter(xb.values())))
+                    if labels_t.ndim >= 2:
+                        w = _count_supervised_tokens(labels_t, self.label_pad_value)
+                    elif isinstance(xb, dict):
+                        w = len(next(iter(xb.values())))
                     else:
-                        bs = len(xb)
+                        w = len(xb)
 
-                    total_loss += float(loss.detach().cpu().item()) * bs
-                    total_seen += int(bs)
+                    total_loss += float(loss.detach().cpu().item()) * float(max(1, w))
+                    total_loss_weight += int(max(1, w))
 
                 latencies_ms.append((time.time() - t0) * 1000.0)
 
@@ -289,7 +293,13 @@ class HFCore:
 
             primary = float(m.get("primary", np.nan))
             secondary = float(m.get("secondary", np.nan))
-            loss_mean = float(total_loss / max(1, total_seen))
+            loss_mean = float(total_loss / max(1, total_loss_weight))
+
+            if getattr(self.task_spec, "name", None) == "fill_mask":
+                try:
+                    secondary = float(np.exp(np.clip(loss_mean, a_min=-50.0, a_max=50.0)))
+                except Exception:
+                    secondary = np.nan
 
         lat_mean = float(np.mean(latencies_ms)) if latencies_ms else np.nan
         lat_p95 = float(np.percentile(latencies_ms, 95)) if latencies_ms else np.nan

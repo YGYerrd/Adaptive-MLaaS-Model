@@ -1,0 +1,54 @@
+{
+  "run_group_id": "20260305_174826",
+  "db_path": "outputs/federated_bench.db",
+  "cases": [
+    {
+      "run_id": "28e60ff0-04d0-4392-af3c-80204809afcf",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260305_174826",
+      "case_name": "imdb_roberta_fill_mask_longer_context"
+    },
+    {
+      "run_id": "0e97bb99-94d4-4d09-9414-5df1bb9cad76",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260305_174826",
+      "case_name": "ag_news_distilbert_fill_mask_text_column"
+    },
+    {
+      "run_id": "21729cc7-968d-4cc3-ab95-ccb03e59c228",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260305_174826",
+      "case_name": "tweet_eval_sentiment_fill_mask_short_text"
+    },
+    {
+      "run_id": "78f310bf-a556-4b26-9286-85a4a22b57d7",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260305_174826",
+      "case_name": "dbpedia14_bert_fill_mask_mlm_alias"
+    },
+    {
+      "run_id": "979941fd-88e2-412c-9b97-56565baf37d4",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260305_174826",
+      "case_name": "wikitext2_distilroberta_fill_mask"
+    },
+    {
+      "run_id": "dd975f76-418c-4591-907f-82e2db09468e",
+      "db_path": "outputs/federated_bench.db",
+      "rounds": 3,
+      "clients": 3,
+      "run_group_id": "20260305_174826",
+      "case_name": "wikitext2_bert_base_masked_lm_alias"
+    }
+  ]
+}

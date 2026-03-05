@@ -510,8 +510,4 @@ class FillMaskSpec(HFTaskSpec):
 
         acc = float((yp == yt).mean())
 
-        mismatch = (yp != yt).mean()
-        mismatch = float(np.clip(mismatch, 0.0, 1.0 - 1e-12))
-        perplexity_proxy = float(np.exp(-np.log(1.0 - mismatch)))
-
-        return {"primary": acc, "secondary": perplexity_proxy}
+        return {"primary": acc, "secondary": np.nan}

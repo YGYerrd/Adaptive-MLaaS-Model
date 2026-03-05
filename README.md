@@ -90,6 +90,11 @@ python -m mlaas_data_generator.cli <subcommand> [options]
 - `generate` — run the federated simulation and write a per-round, per-client CSV  
 - `merge` — combine multiple CSV outputs into a single dataset  
 - `wizard` — interactive configuration helper  
+<<<<<<< ours
+- `interactive-run` — interactive or headless Hugging Face case builder/executor  
+=======
+- `interactive-run` — interactive or headless Hugging Face run builder  
+>>>>>>> theirs
 
 ---
 
@@ -99,6 +104,44 @@ python -m mlaas_data_generator.cli <subcommand> [options]
 
 ```bash
 python -m mlaas_data_generator.cli wizard
+```
+
+---
+
+<<<<<<< ours
+### Interactive Hugging Face run
+
+```bash
+python -m mlaas_data_generator.cli.main interactive-run --interactive
+```
+
+### Headless Hugging Face run
+
+```bash
+python -m mlaas_data_generator.cli.main interactive-run \
+  --dataset-source hf \
+  --dataset-name glue \
+  --dataset-config sst2 \
+  --hf-task sequence_classification \
+  --text-column sentence \
+  --label-column label \
+  --hf-model-id distilbert-base-uncased
+=======
+
+### Interactive Hugging Face Run
+
+```bash
+python -m mlaas_data_generator.cli interactive-run --interactive
+```
+
+Headless mode:
+
+```bash
+python -m mlaas_data_generator.cli interactive-run \
+  --dataset-name glue --dataset-config sst2 \
+  --hf-task sequence_classification --text-column sentence --label-column label \
+  --hf-model-id distilbert-base-uncased --num-clients 4 --num-rounds 2
+>>>>>>> theirs
 ```
 
 ---

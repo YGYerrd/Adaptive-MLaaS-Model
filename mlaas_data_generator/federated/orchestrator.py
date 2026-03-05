@@ -7,7 +7,7 @@ from numbers import Number
 from ..config import CONFIG
 from ..data.master_loader import load_dataset
 from ..data.splitters import split_data
-from ..data.distributions import get_data_distribution
+from ..data.distributions import get_data_distribution, get_mlm_masked_token_stats
 from ..storage.writer import make_writer
 from .strategies.factory import make_task_strategy
 from .strategies.base import canonical_task_family, canonical_label_format, canonical_metric_names, normalize_hf_task
@@ -114,6 +114,10 @@ class FederatedDataGenerator:
         }
 
         self.rng = np.random.default_rng(self.config.get("seed", 42))
+        self.hf_task = normalize_hf_task(
+            self.dataset_args.get("hf_task") or self.config.get("hf_task") or self.meta.get("hf_task")
+        )
+        self.task_family = canonical_task_family(self.task_type, self.hf_task)
 
         # strategy encapsulates build/train/eval details
         self.strategy = make_task_strategy(
@@ -170,7 +174,7 @@ class FederatedDataGenerator:
     
 
     def _canonical_run_metadata(self):
-        hf_task = normalize_hf_task(getattr(self.strategy, "hf_task", self.dataset_args.get("hf_task") or self.config.get("hf_task")))
+        hf_task = normalize_hf_task(getattr(self.strategy, "hf_task", self.hf_task))
         task_family = canonical_task_family(self.task_type, hf_task)
         label_format = infer_label_format(self.meta, task_type=self.task_type) or canonical_label_format(task_family)
         metric_primary_name, metric_secondary_name = canonical_metric_names(task_family, self.metric_key)
@@ -409,13 +413,22 @@ class FederatedDataGenerator:
 
         print("Client data distributions before training:")
         client_distributions = {}
+        is_fill_mask = self.task_family == "fill_mask"
+        ignore_index = int(self.meta.get("label_pad_value", -100))
         for client_id, data in clients.items():
-            dist = get_data_distribution(
-                data["y"],
-                self.num_classes,
-                bins=self.knobs.get("distribution_bins"),
-                value_range=self.distribution_range,
-            )
+            if is_fill_mask:
+                dist = get_mlm_masked_token_stats(
+                    data["y"],
+                    ignore_index=ignore_index,
+                )
+            else:
+                dist = get_data_distribution(
+                    data["y"],
+                    self.num_classes,
+                    bins=self.knobs.get("distribution_bins"),
+                    value_range=self.distribution_range,
+                    label_pad_value=ignore_index,
+                )
             client_distributions[client_id] = dist
             print(f"{client_id}: {dist}")
 

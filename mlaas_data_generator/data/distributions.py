@@ -1,5 +1,54 @@
 import numpy as np
 
+def get_mlm_masked_token_stats(y, *, ignore_index=-100, top_k=10):
+    """Return MLM masking-oriented stats instead of class histograms."""
+    if y is None:
+        return {
+            "total_tokens": 0,
+            "masked_tokens": 0,
+            "masked_ratio": 0.0,
+            "unique_masked_token_ids": 0,
+            "top_masked_token_ids": {},
+        }
+
+    y_arr = np.asarray(y)
+    if y_arr.size == 0:
+        return {
+            "total_tokens": 0,
+            "masked_tokens": 0,
+            "masked_ratio": 0.0,
+            "unique_masked_token_ids": 0,
+            "top_masked_token_ids": {},
+        }
+
+    y_flat = y_arr.reshape(-1)
+    total_tokens = int(y_flat.size)
+    mask = y_flat != int(ignore_index)
+    masked = y_flat[mask]
+    masked_tokens = int(masked.size)
+    masked_ratio = float(masked_tokens / max(1, total_tokens))
+
+    if masked_tokens == 0:
+        return {
+            "total_tokens": total_tokens,
+            "masked_tokens": 0,
+            "masked_ratio": masked_ratio,
+            "unique_masked_token_ids": 0,
+            "top_masked_token_ids": {},
+        }
+
+    token_ids, counts = np.unique(masked.astype("int64", copy=False), return_counts=True)
+    order = np.argsort(counts)[::-1][: int(top_k)]
+    top = {int(token_ids[i]): int(counts[i]) for i in order}
+
+    return {
+        "total_tokens": total_tokens,
+        "masked_tokens": masked_tokens,
+        "masked_ratio": masked_ratio,
+        "unique_masked_token_ids": int(token_ids.size),
+        "top_masked_token_ids": top,
+    }
+
 def get_data_distribution(
     y,
     num_classes=None,

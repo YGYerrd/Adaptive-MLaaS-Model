@@ -247,9 +247,29 @@ class HFStrategy(TaskStrategy):
             return np.nan, np.nan, np.nan, np.nan
 
         if self.inference_only:
-            loss = _nanmean([o.loss for o in participated])
-            primary = _nanmean([o.metric_value for o in participated])
-            secondary = _nanmean([o.extra_metric for o in participated])
+            if self.hf_task == "fill_mask":
+                weights = []
+                for o in participated:
+                    extras = getattr(o, "extras", {}) if hasattr(o, "extras") else {}
+                    token_w = 0
+                    if isinstance(extras, dict):
+                        token_w = int(extras.get("tokens_total") or 0)
+                    weights.append(float(max(1, token_w)))
+
+                def _weighted(values, ws):
+                    pairs = [(float(v), float(w)) for v, w in zip(values, ws) if v == v and w > 0]
+                    if not pairs:
+                        return np.nan
+                    vals, wts = zip(*pairs)
+                    return float(np.average(vals, weights=wts))
+
+                loss = _weighted([o.loss for o in participated], weights)
+                primary = _weighted([o.metric_value for o in participated], weights)
+                secondary = _weighted([o.extra_metric for o in participated], weights)
+            else:
+                loss = _nanmean([o.loss for o in participated])
+                primary = _nanmean([o.metric_value for o in participated])
+                secondary = _nanmean([o.extra_metric for o in participated])
             mscore = self._metric_score(primary)
             return loss, primary, mscore, secondary
 

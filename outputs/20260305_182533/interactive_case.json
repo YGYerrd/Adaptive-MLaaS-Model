@@ -1,0 +1,97 @@
+{
+  "timestamp": "2026-03-05T18:25:33.386020",
+  "run_group_id": "20260305_182533",
+  "seed": 42,
+  "case": {
+    "name": "interactive_sentence_similarity_glue_bert-base-uncased",
+    "dataset_args": {
+      "dataset_name": "glue",
+      "dataset_config": "stsb",
+      "train_split": "train",
+      "test_split": "validation",
+      "hf_model_id": "bert-base-uncased",
+      "hf_task": "sentence_similarity",
+      "max_length": 128,
+      "max_samples": 800,
+      "text_column": [
+        "sentence1",
+        "sentence2"
+      ],
+      "tokens_column": "tokens",
+      "label_column": "label",
+      "num_labels": 1
+    },
+    "config": {
+      "dataset": "hf",
+      "task_type": "regression",
+      "model_type": "hf_finetune",
+      "num_clients": 20,
+      "num_rounds": 5,
+      "local_epochs": 5,
+      "batch_size": 32,
+      "learning_rate": 2e-05,
+      "distribution_type": "iid",
+      "distribution_param": 0.5,
+      "sample_frac": 1.0,
+      "sample_size": 0,
+      "client_dropout_rate": 0.0,
+      "seed": 42,
+      "weight_decay": 0.0,
+      "run_group_id": "20260305_182533",
+      "dataset_args": {
+        "dataset_name": "glue",
+        "dataset_config": "stsb",
+        "train_split": "train",
+        "test_split": "validation",
+        "hf_model_id": "bert-base-uncased",
+        "hf_task": "sentence_similarity",
+        "max_length": 128,
+        "max_samples": 800,
+        "text_column": [
+          "sentence1",
+          "sentence2"
+        ],
+        "tokens_column": "tokens",
+        "label_column": "label",
+        "num_labels": 1
+      },
+      "num_labels": 1
+    },
+    "config_overrides": {
+      "dataset": "hf",
+      "task_type": "regression",
+      "model_type": "hf_finetune",
+      "num_clients": 20,
+      "num_rounds": 5,
+      "local_epochs": 5,
+      "batch_size": 32,
+      "learning_rate": 2e-05,
+      "distribution_type": "iid",
+      "distribution_param": 0.5,
+      "sample_frac": 1.0,
+      "sample_size": 0,
+      "client_dropout_rate": 0.0,
+      "seed": 42,
+      "weight_decay": 0.0,
+      "run_group_id": "20260305_182533",
+      "dataset_args": {
+        "dataset_name": "glue",
+        "dataset_config": "stsb",
+        "train_split": "train",
+        "test_split": "validation",
+        "hf_model_id": "bert-base-uncased",
+        "hf_task": "sentence_similarity",
+        "max_length": 128,
+        "max_samples": 800,
+        "text_column": [
+          "sentence1",
+          "sentence2"
+        ],
+        "tokens_column": "tokens",
+        "label_column": "label",
+        "num_labels": 1
+      },
+      "num_labels": 1
+    }
+  }
+}
