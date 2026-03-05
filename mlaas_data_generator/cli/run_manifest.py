@@ -336,3 +336,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sheet", default="runs", help="Sheet name for runs (xlsx only)")
     parser.add_argument("--dry_run", action="store_true", help="Resolve configs and validate rows without executing runs")
     return parser
+
+
+def main() -> None:
+    parser = build_parser()
+    args = parser.parse_args()
+
+    run_manifest(
+        file=args.file,
+        sheet=args.sheet,
+        dry_run=args.dry_run,
+    )
+
+
+if __name__ == "__main__":
+    main()
