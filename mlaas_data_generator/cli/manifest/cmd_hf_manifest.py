@@ -10,7 +10,7 @@ def register_hf_manifest(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser("hf-manifest", help="Generate HF model+dataset run manifest")
     p.add_argument("--output", default="outputs/run_manifest.xlsx", help="Output .csv or .xlsx path")
     p.add_argument("--sheet", default="runs", help="Sheet name for xlsx output")
-    p.add_argument("--models-per-task", type=int, default=100)
+    p.add_argument("--models-per-task", type=int, default=5)
     p.add_argument("--datasets-per-model", type=int, default=2)
     p.add_argument("--fetch-limit-per-task", type=int, default=5000)
     p.add_argument("--max-per-author", type=int, default=20)

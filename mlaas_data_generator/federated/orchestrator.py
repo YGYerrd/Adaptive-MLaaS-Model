@@ -352,6 +352,9 @@ class FederatedDataGenerator:
     def run(self):
         os.makedirs("weights", exist_ok=True)
 
+        verbose_progress = bool(self.config.get("verbose_progress", True))
+        phase_label = "inference" if bool(getattr(self.strategy, "inference_only", False)) else "training"
+
         early_stopping_patience = self._early_stopping_patience()
 
         if self.task_type == "regression" and self.knobs["distribution_type"] in {"dirichlet", "shard", "label_per_client"}:
@@ -422,6 +425,12 @@ class FederatedDataGenerator:
                 print(f"{k:>26} : {v}")
 
         print("================================================\n")
+
+        print(f"Execution mode: federated {phase_label}")
+        if verbose_progress:
+            print("Verbose progress logging is enabled.")
+            print("Per-client lifecycle logs: start -> strategy call -> completion/failure.")
+        print()
 
         print("Client data distributions before training:")
         client_distributions = {}
@@ -591,6 +600,11 @@ class FederatedDataGenerator:
                 skipped_clients = 0
 
                 down_bytes = self.strategy.comm_down_bytes(global_model)
+                if verbose_progress:
+                    print(
+                        f"Round {round_idx}: scheduled_clients={len(clients)}, "
+                        f"phase={phase_label}, comm_down_bytes={int(down_bytes)}"
+                    )
 
                 # Round dimension row
                 writer.write_round(
@@ -637,7 +651,12 @@ class FederatedDataGenerator:
                         continue
 
                     next_rounds_so_far = participated_counts[client_id] + 1
-                    print(f"{client_id} training...")
+                    print(
+                        f"{client_id} {phase_label}... "
+                        f"(samples={n_samples}, round={round_idx}, participation_count={next_rounds_so_far})"
+                    )
+                    if verbose_progress:
+                        print(f"{client_id}: invoking strategy.train_client")
 
                     outcome = self.strategy.train_client(
                         client_id=client_id,
@@ -648,6 +667,14 @@ class FederatedDataGenerator:
                         rounds_so_far=next_rounds_so_far,
                         comm_down=down_bytes,
                     )
+
+                    if verbose_progress:
+                        status = "participated" if outcome.participated else f"skipped ({outcome.fail_reason or 'unknown reason'})"
+                        print(
+                            f"{client_id}: strategy completed, status={status}, "
+                            f"duration_s={float(outcome.duration):.3f}, "
+                            f"metric={self.metric_key}:{float(outcome.metric_value) if outcome.metric_value == outcome.metric_value else 'nan'}"
+                        )
 
                     client_outcomes.append(outcome)
 
@@ -707,6 +734,11 @@ class FederatedDataGenerator:
                         client_payloads.append(outcome.payload)
 
                 # aggregate & evaluate globally
+                if verbose_progress:
+                    print(
+                        f"Round {round_idx}: aggregating {len(client_payloads)} payload(s) from "
+                        f"{sum(1 for o in client_outcomes if getattr(o, 'participated', False))} participating client(s)."
+                    )
                 loss, global_metric, global_score, global_extra = self.strategy.aggregate_and_eval(
                     global_model=global_model,
                     client_payloads=client_payloads,
@@ -761,6 +793,13 @@ class FederatedDataGenerator:
                     print(f"Global metric score: {global_score}")
                 if global_extra is not None:
                     print(f"Global auxiliary metric: {global_extra}")
+                if verbose_progress:
+                    print(
+                        f"Round {round_idx} complete: attempted={int(len(clients) - skipped_clients)}, "
+                        f"participating={int(sum(1 for o in client_outcomes if getattr(o, 'participated', False)))}, "
+                        f"dropped={int(skipped_clients)}"
+                    )
+                    print("----------------------------------------")
 
         finally:
             writer.finish()
