@@ -113,6 +113,7 @@ def preprocess_hf(train, test, meta, **dataset_args):
             hf_model_id=hf_model_id,
             text_column=dataset_args.get("text_column", "text"),
             label_column=dataset_args.get("label_column", "label"),
+            dynamic_padding=dataset_args.get("dynamic_padding", False),
         )
         return _validate_hf_preprocessor_output(*out)
 
@@ -122,6 +123,7 @@ def preprocess_hf(train, test, meta, **dataset_args):
             hf_model_id=hf_model_id,
             tokens_column=dataset_args.get("tokens_column") or dataset_args.get("text_column"),
             label_column=dataset_args.get("label_column"),
+            dynamic_padding=dataset_args.get("dynamic_padding", False),
         )
         return _validate_hf_preprocessor_output(*out)
 
@@ -134,6 +136,7 @@ def preprocess_hf(train, test, meta, **dataset_args):
             text_column=dataset_args.get("text_column", ["sentence1", "sentence2"]),
             label_column=dataset_args.get("label_column", "label"),
             label_mode=dataset_args.get("label_mode", "auto"),
+            dynamic_padding=dataset_args.get("dynamic_padding", False),
         )
         return _validate_hf_preprocessor_output(*out)
 
@@ -146,6 +149,7 @@ def preprocess_hf(train, test, meta, **dataset_args):
             text_column=dataset_args.get("text_column", "text"),
             mlm_probability=dataset_args.get("mlm_probability", 0.15),
             label_pad_value=dataset_args.get("label_pad_value", -100),
+            dynamic_padding=dataset_args.get("dynamic_padding", False),
         )
         return _validate_hf_preprocessor_output(*out)
 

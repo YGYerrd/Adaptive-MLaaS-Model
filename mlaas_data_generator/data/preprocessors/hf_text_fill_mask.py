@@ -4,13 +4,12 @@ from .label_schema import attach_label_schema
 from ...models.adapters.hf_cache import get_cached_tokenizer
 
 
-def _tokenize_texts(tokenizer, texts, max_length):
+def _tokenize_texts(tokenizer, texts, max_length, dynamic_padding=False):
     return tokenizer(
         list(texts),
         truncation=True,
-        padding="max_length",
+        padding=False if dynamic_padding else "max_length",
         max_length=max_length,
-        return_tensors="np",
         return_special_tokens_mask=True,
     )
 
@@ -66,6 +65,7 @@ def preprocess_hf_text_fill_mask(
     text_column="text",
     mlm_probability=0.15,
     label_pad_value=-100,
+    dynamic_padding=False,
 ):
     ds_train, _ = train
     ds_test, _ = test
@@ -82,6 +82,8 @@ def preprocess_hf_text_fill_mask(
         ) from e
 
     max_length = int(meta.get("max_length", 128))
+    dynamic_padding = bool(dynamic_padding)
+    padding_mode = "dynamic" if dynamic_padding else "max_length"
     mlm_probability = float(mlm_probability)
     label_pad_value = int(label_pad_value)
 
@@ -99,15 +101,26 @@ def preprocess_hf_text_fill_mask(
     train_rng = np.random.default_rng(seed)
     test_rng = np.random.default_rng(seed + 1)
 
-    enc_train = _tokenize_texts(tokenizer, ds_train[text_column], max_length=max_length)
-    enc_test = _tokenize_texts(tokenizer, ds_test[text_column], max_length=max_length)
+    enc_train = _tokenize_texts(tokenizer, ds_train[text_column], max_length=max_length, dynamic_padding=dynamic_padding)
+    enc_test = _tokenize_texts(tokenizer, ds_test[text_column], max_length=max_length, dynamic_padding=dynamic_padding)
+
+    if dynamic_padding:
+        train_max_len = max((len(ids) for ids in enc_train["input_ids"]), default=0)
+        test_max_len = max((len(ids) for ids in enc_test["input_ids"]), default=0)
+        pad_to = max(train_max_len, test_max_len)
+        enc_train = tokenizer.pad(enc_train, padding="max_length", max_length=pad_to, return_tensors="np")
+        enc_test = tokenizer.pad(enc_test, padding="max_length", max_length=pad_to, return_tensors="np")
+    else:
+        pad_to = max_length
+        enc_train = tokenizer.pad(enc_train, padding="max_length", max_length=pad_to, return_tensors="np")
+        enc_test = tokenizer.pad(enc_test, padding="max_length", max_length=pad_to, return_tensors="np")
 
     X_train, y_train = _build_mlm_labels(enc_train, tokenizer, mlm_probability, label_pad_value, train_rng)
     X_test, y_test = _build_mlm_labels(enc_test, tokenizer, mlm_probability, label_pad_value, test_rng)
 
     meta2 = dict(meta)
     meta2.update({
-        "input_shape": (max_length,),
+        "input_shape": (pad_to,),
         "num_classes": int(getattr(tokenizer, "vocab_size", 0) or 0),
         "text_column": text_column,
         "hf_model_id": hf_model_id,
@@ -120,6 +133,8 @@ def preprocess_hf_text_fill_mask(
         "mlm_probability": mlm_probability,
         "hf_tokenizer_required": "AutoTokenizer",
         "hf_model_required": "AutoModelForMaskedLM",
+        "dynamic_padding": dynamic_padding,
+        "padding_mode": padding_mode,
     })
     meta2 = attach_label_schema(
         meta2,

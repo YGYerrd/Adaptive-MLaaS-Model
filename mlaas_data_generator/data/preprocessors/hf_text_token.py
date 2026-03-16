@@ -3,7 +3,8 @@ import numpy as np
 from .label_schema import attach_label_schema
 from ...models.adapters.hf_cache import get_cached_tokenizer
 
-def preprocess_hf_text_token(train, test, meta, *, hf_model_id, tokens_column, label_column):
+
+def preprocess_hf_text_token(train, test, meta, *, hf_model_id, tokens_column, label_column, dynamic_padding=False):
     ds_train, _ = train
     ds_test, _ = test
 
@@ -30,6 +31,8 @@ def preprocess_hf_text_token(train, test, meta, *, hf_model_id, tokens_column, l
         ) from e
 
     max_length = int(meta.get("max_length", 128))
+    dynamic_padding = bool(dynamic_padding)
+    padding_mode = "dynamic" if dynamic_padding else "max_length"
     tokenizer, _, _ = get_cached_tokenizer(
         hf_model_id=hf_model_id,
         task="token_classification",
@@ -80,6 +83,8 @@ def preprocess_hf_text_token(train, test, meta, *, hf_model_id, tokens_column, l
         "hf_task": "token_classification",
         "modality": "text",
         "label_pad_value": -100,
+        "dynamic_padding": dynamic_padding,
+        "padding_mode": padding_mode,
     })
     meta2 = attach_label_schema(meta2, y_train, default_num_labels=num_classes, ignore_index=-100)
 

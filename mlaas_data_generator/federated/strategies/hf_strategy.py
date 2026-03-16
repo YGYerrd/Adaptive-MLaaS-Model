@@ -67,6 +67,7 @@ class HFStrategy(TaskStrategy):
             "top_p": ds_args.get("top_p") or self.config.get("top_p"),
             "length_penalty": ds_args.get("length_penalty") or self.config.get("length_penalty"),
             "max_train_time_s": self.knobs.get("max_train_time_s", self.config.get("max_train_time_s", 60)),
+            "padding_mode": ("dynamic" if ds_args.get("dynamic_padding") else "max_length"),
         }
 
         dataset = {
@@ -78,6 +79,8 @@ class HFStrategy(TaskStrategy):
             "tokens_column": ds_args.get("tokens_column"),
             "label_column": ds_args.get("label_column"),
             "max_samples": ds_args.get("max_samples"),
+            "dynamic_padding": ds_args.get("dynamic_padding"),
+            "padding_mode": ("dynamic" if ds_args.get("dynamic_padding") else "max_length"),
         }
 
         adapter = {k: v for k, v in adapter.items() if v is not None}
