@@ -2,6 +2,49 @@ from .hf_text_sequence import preprocess_hf_text_sequence
 from .hf_text_similarity import preprocess_hf_text_similarity
 from .hf_text_fill_mask import preprocess_hf_text_fill_mask
 from .hf_text_token import preprocess_hf_text_token
+from .hf_text_generation import (
+    preprocess_hf_text_causal_lm_generation,
+    preprocess_hf_text_seq2seq_generation,
+)
+
+
+_EXPECTED_BATCH_KEYS = {
+    "sequence_classification": {"input_ids", "attention_mask"},
+    "token_classification": {"input_ids", "attention_mask"},
+    "sentence_similarity": {"input_ids", "attention_mask"},
+    "fill_mask": {"input_ids", "attention_mask"},
+    "causal_lm_generation": {"input_ids", "attention_mask"},
+    "seq2seq_generation": {"input_ids", "attention_mask"},
+}
+
+
+def _validate_hf_preprocessor_output(train, test, meta):
+    x_train, y_train = train
+    x_test, y_test = test
+    hf_task = str(meta.get("hf_task", "")).strip().lower().replace("-", "_")
+
+    if not isinstance(x_train, dict) or not isinstance(x_test, dict):
+        raise TypeError(f"HF task '{hf_task}' requires dict features; got {type(x_train)} / {type(x_test)}")
+
+    expected = _EXPECTED_BATCH_KEYS.get(hf_task, {"input_ids", "attention_mask"})
+    missing_train = sorted(expected - set(x_train.keys()))
+    missing_test = sorted(expected - set(x_test.keys()))
+    if missing_train or missing_test:
+        raise ValueError(
+            f"HF preprocessor output validation failed for task '{hf_task}'. "
+            f"Missing train keys={missing_train}, test keys={missing_test}."
+        )
+
+    if y_train is None or y_test is None:
+        raise ValueError(f"HF preprocessor output validation failed for task '{hf_task}': missing labels.")
+
+    if len(x_train["input_ids"]) != len(y_train) or len(x_test["input_ids"]) != len(y_test):
+        raise ValueError(
+            f"HF preprocessor output validation failed for task '{hf_task}': feature/label batch mismatch."
+        )
+
+    meta["x_keys"] = list(x_train.keys())
+    return train, test, meta
 
 def preprocess_hf(train, test, meta, **dataset_args):
     modality = meta.get("modality", "text")
@@ -17,23 +60,25 @@ def preprocess_hf(train, test, meta, **dataset_args):
         raise ValueError("HF preprocessing requires hf_model_id in dataset_args")
 
     if hf_task == "sequence_classification":
-        return preprocess_hf_text_sequence(
+        out = preprocess_hf_text_sequence(
             train, test, meta,
             hf_model_id=hf_model_id,
             text_column=dataset_args.get("text_column", "text"),
             label_column=dataset_args.get("label_column", "label"),
         )
+        return _validate_hf_preprocessor_output(*out)
 
     if hf_task == "token_classification":
-        return preprocess_hf_text_token(
+        out = preprocess_hf_text_token(
             train, test, meta,
             hf_model_id=hf_model_id,
             tokens_column=dataset_args.get("tokens_column") or dataset_args.get("text_column"),
             label_column=dataset_args.get("label_column"),
         )
+        return _validate_hf_preprocessor_output(*out)
     
     if hf_task == "sentence_similarity":
-        return preprocess_hf_text_similarity(
+        out = preprocess_hf_text_similarity(
             train,
             test,
             meta,
@@ -42,9 +87,10 @@ def preprocess_hf(train, test, meta, **dataset_args):
             label_column=dataset_args.get("label_column", "label"),
             label_mode=dataset_args.get("label_mode", "auto"),
         )
+        return _validate_hf_preprocessor_output(*out)
 
     if hf_task == "fill_mask":
-        return preprocess_hf_text_fill_mask(
+        out = preprocess_hf_text_fill_mask(
             train,
             test,
             meta,
@@ -53,13 +99,37 @@ def preprocess_hf(train, test, meta, **dataset_args):
             mlm_probability=dataset_args.get("mlm_probability", 0.15),
             label_pad_value=dataset_args.get("label_pad_value", -100),
         )
+        return _validate_hf_preprocessor_output(*out)
 
-    if hf_task in {"causal_lm_generation", "seq2seq_generation"}:
-        return preprocess_hf_text_sequence(
-            train, test, meta,
+    if hf_task == "causal_lm_generation":
+        out = preprocess_hf_text_causal_lm_generation(
+            train,
+            test,
+            meta,
             hf_model_id=hf_model_id,
-            text_column=dataset_args.get("text_column", "text"),
-            label_column=dataset_args.get("label_column", "label"),
+            column_mapping=dataset_args.get("column_mapping"),
+            max_length=dataset_args.get("max_length"),
+            source_max_length=dataset_args.get("source_max_length"),
+            target_max_length=dataset_args.get("target_max_length"),
+            prompt_loss_only=dataset_args.get("prompt_loss_only", True),
+            ignore_index=dataset_args.get("label_pad_value", -100),
+            dynamic_padding=dataset_args.get("dynamic_padding", False),
         )
+        return _validate_hf_preprocessor_output(*out)
+
+    if hf_task == "seq2seq_generation":
+        out = preprocess_hf_text_seq2seq_generation(
+            train,
+            test,
+            meta,
+            hf_model_id=hf_model_id,
+            column_mapping=dataset_args.get("column_mapping"),
+            max_length=dataset_args.get("max_length"),
+            source_max_length=dataset_args.get("source_max_length"),
+            target_max_length=dataset_args.get("target_max_length"),
+            ignore_index=dataset_args.get("label_pad_value", -100),
+            dynamic_padding=dataset_args.get("dynamic_padding", False),
+        )
+        return _validate_hf_preprocessor_output(*out)
 
     raise ValueError(f"Unsupported HF text task: {hf_task}")
