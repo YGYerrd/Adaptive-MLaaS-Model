@@ -31,6 +31,7 @@ class TransformersTextFineTuneAdapter:
         multilabel=False,
         label_format="single_index",
         generation_config=None,
+        task_tag=None,
     ):
         if hf_task == "token_classification":
             spec = TokenClassificationSpec(multilabel=multilabel, label_format=label_format)
@@ -54,6 +55,7 @@ class TransformersTextFineTuneAdapter:
             task_spec=spec,
             label_pad_value=int(label_pad_value),
             generation_config=generation_config,
+            task_tag=task_tag,
         )
 
         self.model_id = model_id
@@ -98,6 +100,7 @@ class TransformersTextClassifierAdapter:
         device=None,
         hf_task="sequence_classification",
         generation_config=None,
+        task_tag=None,
     ):
         task = str(hf_task or "sequence_classification").lower().replace("-", "_")
         if task in {"causal_lm_generation", "causal_lm", "text_generation"}:
@@ -121,6 +124,7 @@ class TransformersTextClassifierAdapter:
             device=device,
             task_spec=spec,
             generation_config=generation_config,
+            task_tag=task_tag,
         )
 
         transformers = core.transformers

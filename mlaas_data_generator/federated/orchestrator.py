@@ -11,7 +11,7 @@ from ..data.distributions import get_data_distribution, get_mlm_masked_token_sta
 from ..data.sources.hf_meta import fetch_hf_model_meta
 from ..storage.writer import make_writer
 from .strategies.factory import make_task_strategy
-from .strategies.base import canonical_task_family, canonical_label_format, canonical_metric_names, normalize_hf_task
+from .strategies.base import canonical_task_family, canonical_label_format, canonical_metric_names, normalize_hf_task, metric_availability
 from .system_metrics import capture_hardware_snapshot, summarize_round_usage
 from ..models.label_schema import infer_label_format, infer_num_labels
 
@@ -178,12 +178,23 @@ class FederatedDataGenerator:
         hf_task = normalize_hf_task(getattr(self.strategy, "hf_task", self.hf_task))
         task_family = canonical_task_family(self.task_type, hf_task)
         label_format = infer_label_format(self.meta, task_type=self.task_type) or canonical_label_format(task_family)
+        task_tag = str(self.config.get("task_tag") or self.config.get("dataset_args", {}).get("task_tag") or "").strip().lower() or None
         metric_primary_name, metric_secondary_name = canonical_metric_names(task_family, self.metric_key)
+        has_labels = self.y_test is not None
+        availability = metric_availability(task_family, task_tag=task_tag, has_labels=has_labels)
+        if task_family == "generation":
+            eval_metrics = availability.get("eval", tuple())
+            if eval_metrics:
+                metric_primary_name = eval_metrics[0]
+                metric_secondary_name = eval_metrics[1] if len(eval_metrics) > 1 else None
         return {
             "task_family": task_family,
+            "task_tag": task_tag,
             "label_format": label_format,
             "metric_primary_name": metric_primary_name,
             "metric_secondary_name": metric_secondary_name,
+            "train_metric_names": list(availability.get("train", tuple())),
+            "eval_metric_names": list(availability.get("eval", tuple())),
             "num_labels": infer_num_labels(self.meta, fallback=self.num_classes),
             "train_set_size": int(len(self.y_train)),
             "eval_set_size": int(len(self.y_test)),

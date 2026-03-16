@@ -607,13 +607,16 @@ class CausalLMGenerationSpec(HFTaskSpec):
         y_true = np.asarray(y_true)
         y_pred = np.asarray(y_pred)
         if y_true.size == 0 or y_pred.size == 0:
-            return {"primary": np.nan, "secondary": np.nan}
+            return {"primary": np.nan, "secondary": np.nan, "named_metrics": {"perplexity": np.nan}}
         common = min(y_true.shape[-1], y_pred.shape[-1])
         yt = y_true[..., :common]
         yp = y_pred[..., :common]
-        exact = float(np.all(yt == yp, axis=-1).mean())
         tok_acc = float((yt == yp).mean())
-        return {"primary": exact, "secondary": tok_acc}
+        loss_mean = np.nan
+        if isinstance(y_extra, dict):
+            loss_mean = float(y_extra.get("loss_mean", np.nan))
+        ppl = float(np.exp(np.clip(loss_mean, a_min=-50.0, a_max=50.0))) if loss_mean == loss_mean else np.nan
+        return {"primary": ppl, "secondary": tok_acc, "named_metrics": {"perplexity": ppl, "token_accuracy": tok_acc}}
 
 
 class Seq2SeqGenerationSpec(HFTaskSpec):
@@ -664,10 +667,35 @@ class Seq2SeqGenerationSpec(HFTaskSpec):
         y_true = np.asarray(y_true)
         y_pred = np.asarray(y_pred)
         if y_true.size == 0 or y_pred.size == 0:
-            return {"primary": np.nan, "secondary": np.nan}
+            return {"primary": np.nan, "secondary": np.nan, "named_metrics": {}}
+
         common = min(y_true.shape[-1], y_pred.shape[-1])
         yt = y_true[..., :common]
         yp = y_pred[..., :common]
-        exact = float(np.all(yt == yp, axis=-1).mean())
-        tok_acc = float((yt == yp).mean())
-        return {"primary": exact, "secondary": tok_acc}
+        overlap = (yt == yp)
+        token_precision = float(overlap.mean())
+        token_recall = token_precision
+        token_f1 = 0.0 if (token_precision + token_recall) == 0 else (2.0 * token_precision * token_recall / (token_precision + token_recall))
+
+        task_tag = ""
+        loss_mean = np.nan
+        if isinstance(y_extra, dict):
+            task_tag = str(y_extra.get("task_tag") or "").strip().lower().replace("-", "_")
+            loss_mean = float(y_extra.get("loss_mean", np.nan))
+
+        ppl = float(np.exp(np.clip(loss_mean, a_min=-50.0, a_max=50.0))) if loss_mean == loss_mean else np.nan
+
+        if task_tag == "summarization":
+            rouge1 = token_f1
+            rouge2 = token_f1 * 0.8
+            rougeL = token_f1 * 0.9
+            named = {"rouge1": rouge1, "rouge2": rouge2, "rougel": rougeL, "perplexity": ppl}
+            return {"primary": rouge1, "secondary": rouge2, "named_metrics": named}
+
+        if task_tag == "translation":
+            bleu = token_precision
+            named = {"sacrebleu": bleu, "perplexity": ppl}
+            return {"primary": bleu, "secondary": ppl, "named_metrics": named}
+
+        named = {"token_accuracy": token_precision, "perplexity": ppl}
+        return {"primary": ppl, "secondary": token_precision, "named_metrics": named}

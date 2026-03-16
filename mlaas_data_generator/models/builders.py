@@ -125,6 +125,7 @@ def create_model(
             multilabel=multilabel,
             label_format=label_format,
             generation_config=generation_config,
+            task_tag=kwargs.get("task_tag", (meta or {}).get("task_tag") if isinstance(meta, dict) else None),
         )
 
     if model_choice in ("hf", "hf_text", "transformers"):
@@ -174,6 +175,7 @@ def create_model(
             device=device,
             hf_task=hf_task,
             generation_config=generation_config,
+            task_tag=kwargs.get("task_tag", (meta or {}).get("task_tag") if isinstance(meta, dict) else None),
         )
 
     # ----------------------------

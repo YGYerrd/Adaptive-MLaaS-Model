@@ -95,10 +95,39 @@ def canonical_metric_names(task_family: str, metric_key: str) -> tuple[str, str 
     if task_family == "regression":
         return ("rmse", "mae")
     if task_family == "generation":
-        return ("exact_match", "token_accuracy")
+        return ("perplexity", None)
     if task_family == "clustering":
         return ("silhouette", None)
     return ((metric_key or "metric").lower(), None)
+
+
+def canonical_generation_metrics(task_tag: str | None, has_labels: bool) -> tuple[str, ...]:
+    """Decode-centric metric set for generation by subtype."""
+    tag = (task_tag or "").strip().lower().replace("-", "_")
+    if tag == "summarization":
+        base = ("rouge1", "rouge2", "rougeL")
+    elif tag == "translation":
+        base = ("sacrebleu",)
+    else:
+        base = tuple()
+
+    if has_labels:
+        return base + ("perplexity",)
+    return base
+
+
+def metric_availability(task_family: str, task_tag: str | None = None, has_labels: bool = True) -> dict[str, tuple[str, ...]]:
+    """Return canonical train/eval metric availability by task family."""
+    if task_family == "generation":
+        return {
+            "train": ("loss", "perplexity") if has_labels else tuple(),
+            "eval": canonical_generation_metrics(task_tag=task_tag, has_labels=has_labels),
+        }
+
+    return {
+        "train": ("loss",),
+        "eval": tuple(),
+    }
 
 @dataclass
 class ClientOutcome:
@@ -147,7 +176,7 @@ class TaskStrategy:
         else:
             for key in ("rf_trees", "rf_max_depth", "mobilenet_trainable", "n_estimators", "max_depth",
                         "hf_model_id", "max_length", "device", "hf_task",
-                        "max_new_tokens", "num_beams", "do_sample", "temperature", "top_k", "top_p", "length_penalty"):
+                        "max_new_tokens", "num_beams", "do_sample", "temperature", "top_k", "top_p", "length_penalty", "task_tag"):
                 if key in self.config:
                     extra[key] = self.config[key]
             
@@ -157,7 +186,7 @@ class TaskStrategy:
         ds_args = self.config.get("dataset_args", {}) or {}
  
         for key in ("hf_model_id", "max_length", "device", "hf_task",
-                    "max_new_tokens", "num_beams", "do_sample", "temperature", "top_k", "top_p", "length_penalty"):
+                    "max_new_tokens", "num_beams", "do_sample", "temperature", "top_k", "top_p", "length_penalty", "task_tag"):
             if key in ds_args and key not in extra:
                 extra[key] = ds_args[key]
 
