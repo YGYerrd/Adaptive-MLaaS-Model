@@ -43,6 +43,10 @@ def normalize_hf_task(hf_task: str | None) -> str:
         "ner": "token_classification",
         "masked_lm": "fill_mask",
         "mlm": "fill_mask",
+        "text_generation": "causal_lm_generation",
+        "causal_lm": "causal_lm_generation",
+        "text2text": "seq2seq_generation",
+        "text2text_generation": "seq2seq_generation",
     }
     return mapping.get(task, task or "unknown")
 
@@ -63,6 +67,8 @@ def canonical_task_family(task_type: str | None, hf_task: str | None = None) -> 
             return "fill_mask"
         if hf == "sequence_classification" or hf == "unknown":
             return "classification"
+        if hf in {"causal_lm_generation", "seq2seq_generation"}:
+            return "generation"
         return f"hf_{hf}"
     return "unknown"
 
@@ -73,6 +79,7 @@ def canonical_label_format(task_family: str) -> str:
         "token_classification": "token_labels",
         "fill_mask": "token_labels",
         "regression": "continuous",
+        "generation": "token_labels",
         "clustering": "cluster_id",
     }
     return mapping.get(task_family, "unknown")
@@ -87,6 +94,8 @@ def canonical_metric_names(task_family: str, metric_key: str) -> tuple[str, str 
         return ("masked_accuracy", "perplexity_proxy")
     if task_family == "regression":
         return ("rmse", "mae")
+    if task_family == "generation":
+        return ("exact_match", "token_accuracy")
     if task_family == "clustering":
         return ("silhouette", None)
     return ((metric_key or "metric").lower(), None)
@@ -137,7 +146,8 @@ class TaskStrategy:
                     extra[key] = self.config[key]
         else:
             for key in ("rf_trees", "rf_max_depth", "mobilenet_trainable", "n_estimators", "max_depth",
-                        "hf_model_id", "max_length", "device", "hf_task"):
+                        "hf_model_id", "max_length", "device", "hf_task",
+                        "max_new_tokens", "num_beams", "do_sample", "temperature", "top_k", "top_p", "length_penalty"):
                 if key in self.config:
                     extra[key] = self.config[key]
             
@@ -146,7 +156,8 @@ class TaskStrategy:
 
         ds_args = self.config.get("dataset_args", {}) or {}
  
-        for key in ("hf_model_id", "max_length", "device", "hf_task"):
+        for key in ("hf_model_id", "max_length", "device", "hf_task",
+                    "max_new_tokens", "num_beams", "do_sample", "temperature", "top_k", "top_p", "length_penalty"):
             if key in ds_args and key not in extra:
                 extra[key] = ds_args[key]
 

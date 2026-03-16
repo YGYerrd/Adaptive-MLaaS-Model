@@ -59,6 +59,13 @@ class HFStrategy(TaskStrategy):
             "batch_size": self.knobs.get("batch_size"),
             "local_epochs": self.knobs.get("local_epochs"),
             "lr": self.knobs.get("learning_rate"),
+            "max_new_tokens": ds_args.get("max_new_tokens") or self.config.get("max_new_tokens"),
+            "num_beams": ds_args.get("num_beams") or self.config.get("num_beams"),
+            "do_sample": ds_args.get("do_sample") if ds_args.get("do_sample") is not None else self.config.get("do_sample"),
+            "temperature": ds_args.get("temperature") or self.config.get("temperature"),
+            "top_k": ds_args.get("top_k") or self.config.get("top_k"),
+            "top_p": ds_args.get("top_p") or self.config.get("top_p"),
+            "length_penalty": ds_args.get("length_penalty") or self.config.get("length_penalty"),
         }
 
         dataset = {
@@ -129,7 +136,7 @@ class HFStrategy(TaskStrategy):
         try:
             if self.inference_only:
                 adapter = global_model if global_model is not None else self.build_model()
-                loss, primary, secondary, qos = adapter.evaluate(x, y)
+                loss, primary, secondary, qos = adapter.evaluate(x, y, inference_only=True)
 
                 duration = time.time() - start
                 usage = tracker.stop(duration)

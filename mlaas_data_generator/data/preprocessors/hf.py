@@ -54,4 +54,12 @@ def preprocess_hf(train, test, meta, **dataset_args):
             label_pad_value=dataset_args.get("label_pad_value", -100),
         )
 
+    if hf_task in {"causal_lm_generation", "seq2seq_generation"}:
+        return preprocess_hf_text_sequence(
+            train, test, meta,
+            hf_model_id=hf_model_id,
+            text_column=dataset_args.get("text_column", "text"),
+            label_column=dataset_args.get("label_column", "label"),
+        )
+
     raise ValueError(f"Unsupported HF text task: {hf_task}")

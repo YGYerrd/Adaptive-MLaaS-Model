@@ -16,11 +16,12 @@ class HFTaskSpec:
     name = "base"
 
     requires_num_labels = True
+    supports_generation = False
 
     def build_model(self, transformers, model_id, num_labels):
         raise NotImplementedError
 
-    def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100):
+    def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
         """
         Returns (enc_dict, labels_tensor_or_none, extra_dict)
         extra_dict can hold masks etc.
@@ -39,6 +40,22 @@ class HFTaskSpec:
           - primary (float)
           - secondary (float or np.nan)
         """
+        raise NotImplementedError
+
+    def build_forward_inputs(self, enc, labels_t=None, inference_only=False):
+        model_inputs = dict(enc)
+        if labels_t is not None and not inference_only:
+            model_inputs["labels"] = labels_t
+        return model_inputs
+
+    def extract_loss(self, torch, outputs, logits, labels_t, extra):
+        if labels_t is not None and hasattr(outputs, "loss") and outputs.loss is not None:
+            return outputs.loss
+        if labels_t is None:
+            return None
+        return self.loss_fn(torch, logits, labels_t, extra)
+
+    def generate_predictions(self, model, enc, tokenizer, torch, generation_config):
         raise NotImplementedError
 
 
@@ -106,7 +123,7 @@ class SequenceClassificationSpec(HFTaskSpec):
                 raise
         return model
 
-    def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100):
+    def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
         label_mode = self._infer_label_mode(yb)
         batch_multilabel = self._is_multilabel_mode(label_mode, {"label_mode": label_mode})
         # New loader path: already tokenised dict of arrays
@@ -246,7 +263,7 @@ class TokenClassificationSpec(HFTaskSpec):
             prev = wid
         return aligned
 
-    def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100):
+    def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
         label_mode = self._infer_label_mode(yb)
 
         if isinstance(xb, dict):
@@ -376,7 +393,7 @@ class SentenceSimilaritySpec(HFTaskSpec):
                 raise
         return model
 
-    def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100):
+    def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
         if isinstance(xb, dict):
             enc = {k: torch.tensor(v, dtype=torch.long, device=device) for k, v in xb.items()}
         elif isinstance(xb, (list, tuple)) and xb and isinstance(xb[0], (list, tuple)) and len(xb[0]) == 2:
@@ -461,7 +478,7 @@ class FillMaskSpec(HFTaskSpec):
                 raise
         return model
 
-    def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100):
+    def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
         if isinstance(xb, dict):
             enc = {k: torch.tensor(v, dtype=torch.long, device=device) for k, v in xb.items()}
         else:
@@ -511,3 +528,137 @@ class FillMaskSpec(HFTaskSpec):
         acc = float((yp == yt).mean())
 
         return {"primary": acc, "secondary": np.nan}
+
+
+class CausalLMGenerationSpec(HFTaskSpec):
+    name = "causal_lm_generation"
+    requires_num_labels = False
+    supports_generation = True
+
+    def build_model(self, transformers, model_id, num_labels):
+        AutoModel = transformers.AutoModelForCausalLM
+        self.weight_format = None
+        try:
+            model = AutoModel.from_pretrained(model_id, use_safetensors=True)
+            self.weight_format = "safetensors"
+        except OSError as e:
+            if "safetensors" in str(e).lower():
+                model = AutoModel.from_pretrained(model_id, use_safetensors=False)
+                self.weight_format = "pickle"
+            else:
+                raise
+        return model
+
+    def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
+        if isinstance(xb, dict):
+            enc = {k: torch.tensor(v, dtype=torch.long, device=device) for k, v in xb.items() if k in {"input_ids", "attention_mask", "token_type_ids"}}
+            labels_t = None if yb is None else torch.tensor(yb, dtype=torch.long, device=device)
+            return enc, labels_t, {"ignore_index": int(ignore_index)}
+
+        prompts = list(xb)
+        if yb is None or inference_only:
+            enc = tokenizer(prompts, truncation=True, padding=True, max_length=int(max_length), return_tensors="pt")
+            return {k: v.to(device) for k, v in enc.items()}, None, {"ignore_index": int(ignore_index)}
+
+        prompt_tokens = tokenizer(prompts, truncation=True, padding=False, max_length=int(max_length), add_special_tokens=True)
+        target_tokens = tokenizer(list(yb), truncation=True, padding=False, max_length=int(max_length), add_special_tokens=False)
+
+        pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
+        eos_id = tokenizer.eos_token_id if tokenizer.eos_token_id is not None else pad_id
+
+        batch_ids, batch_masks, batch_labels = [], [], []
+        for p_ids, t_ids in zip(prompt_tokens["input_ids"], target_tokens["input_ids"]):
+            full_ids = (p_ids + t_ids + [eos_id])[: int(max_length)]
+            full_labels = ([-100] * len(p_ids) + t_ids + [eos_id])[: int(max_length)]
+            pad_len = int(max_length) - len(full_ids)
+            batch_ids.append(full_ids + [pad_id] * pad_len)
+            batch_masks.append([1] * len(full_ids) + [0] * pad_len)
+            batch_labels.append(full_labels + [-100] * pad_len)
+
+        enc = {
+            "input_ids": torch.tensor(batch_ids, dtype=torch.long, device=device),
+            "attention_mask": torch.tensor(batch_masks, dtype=torch.long, device=device),
+        }
+        labels_t = torch.tensor(batch_labels, dtype=torch.long, device=device)
+        return enc, labels_t, {"ignore_index": int(ignore_index)}
+
+    def loss_fn(self, torch, logits, labels_t, extra):
+        ignore_index = int(extra.get("ignore_index", -100))
+        return torch.nn.functional.cross_entropy(logits.transpose(1, 2), labels_t, ignore_index=ignore_index)
+
+    def preds_from_logits(self, torch, logits, extra):
+        return torch.argmax(logits, dim=-1)
+
+    def generate_predictions(self, model, enc, tokenizer, torch, generation_config):
+        generated = model.generate(**enc, **generation_config)
+        in_len = enc["input_ids"].shape[1]
+        return generated[:, in_len:]
+
+    def metrics(self, y_true, y_pred, y_extra=None):
+        y_true = np.asarray(y_true)
+        y_pred = np.asarray(y_pred)
+        if y_true.size == 0 or y_pred.size == 0:
+            return {"primary": np.nan, "secondary": np.nan}
+        common = min(y_true.shape[-1], y_pred.shape[-1])
+        yt = y_true[..., :common]
+        yp = y_pred[..., :common]
+        exact = float(np.all(yt == yp, axis=-1).mean())
+        tok_acc = float((yt == yp).mean())
+        return {"primary": exact, "secondary": tok_acc}
+
+
+class Seq2SeqGenerationSpec(HFTaskSpec):
+    name = "seq2seq_generation"
+    requires_num_labels = False
+    supports_generation = True
+
+    def build_model(self, transformers, model_id, num_labels):
+        AutoModel = transformers.AutoModelForSeq2SeqLM
+        self.weight_format = None
+        try:
+            model = AutoModel.from_pretrained(model_id, use_safetensors=True)
+            self.weight_format = "safetensors"
+        except OSError as e:
+            if "safetensors" in str(e).lower():
+                model = AutoModel.from_pretrained(model_id, use_safetensors=False)
+                self.weight_format = "pickle"
+            else:
+                raise
+        return model
+
+    def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
+        if isinstance(xb, dict):
+            enc = {k: torch.tensor(v, dtype=torch.long, device=device) for k, v in xb.items() if k in {"input_ids", "attention_mask", "token_type_ids"}}
+            labels_t = None if yb is None else torch.tensor(yb, dtype=torch.long, device=device)
+            return enc, labels_t, {"ignore_index": int(ignore_index)}
+
+        enc = tokenizer(xb, truncation=True, padding=True, max_length=int(max_length), return_tensors="pt")
+        enc = {k: v.to(device) for k, v in enc.items()}
+        labels_t = None
+        if yb is not None and not inference_only:
+            targets = tokenizer(text_target=list(yb), truncation=True, padding=True, max_length=int(max_length), return_tensors="pt")
+            labels_t = targets["input_ids"].to(device)
+            labels_t = labels_t.masked_fill(labels_t == tokenizer.pad_token_id, int(ignore_index))
+        return enc, labels_t, {"ignore_index": int(ignore_index)}
+
+    def loss_fn(self, torch, logits, labels_t, extra):
+        ignore_index = int(extra.get("ignore_index", -100))
+        return torch.nn.functional.cross_entropy(logits.transpose(1, 2), labels_t, ignore_index=ignore_index)
+
+    def preds_from_logits(self, torch, logits, extra):
+        return torch.argmax(logits, dim=-1)
+
+    def generate_predictions(self, model, enc, tokenizer, torch, generation_config):
+        return model.generate(**enc, **generation_config)
+
+    def metrics(self, y_true, y_pred, y_extra=None):
+        y_true = np.asarray(y_true)
+        y_pred = np.asarray(y_pred)
+        if y_true.size == 0 or y_pred.size == 0:
+            return {"primary": np.nan, "secondary": np.nan}
+        common = min(y_true.shape[-1], y_pred.shape[-1])
+        yt = y_true[..., :common]
+        yp = y_pred[..., :common]
+        exact = float(np.all(yt == yp, axis=-1).mean())
+        tok_acc = float((yt == yp).mean())
+        return {"primary": exact, "secondary": tok_acc}

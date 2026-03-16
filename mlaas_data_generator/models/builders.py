@@ -31,6 +31,10 @@ def _normalize_hf_task_name(hf_task):
         "token_cls": "token_classification",
         "masked_lm": "fill_mask",
         "mlm": "fill_mask",
+        "text_generation": "causal_lm_generation",
+        "causal_lm": "causal_lm_generation",
+        "text2text": "seq2seq_generation",
+        "text2text_generation": "seq2seq_generation",
     }
     return aliases.get(task, task)
 
@@ -97,8 +101,18 @@ def create_model(
         multilabel = label_format in {"multilabel", "multihot"}
         multilabel = bool(kwargs.get("multilabel", multilabel))
         resolved_num_labels = infer_num_labels(meta if isinstance(meta, dict) else None, fallback=num_classes)
-        if hf_task == "fill_mask":
+        if hf_task in {"fill_mask", "causal_lm_generation", "seq2seq_generation"}:
             resolved_num_labels = None
+
+        generation_config = {
+            "max_new_tokens": kwargs.get("max_new_tokens", (meta or {}).get("max_new_tokens") if isinstance(meta, dict) else None),
+            "num_beams": kwargs.get("num_beams", (meta or {}).get("num_beams") if isinstance(meta, dict) else None),
+            "do_sample": kwargs.get("do_sample", (meta or {}).get("do_sample") if isinstance(meta, dict) else None),
+            "temperature": kwargs.get("temperature", (meta or {}).get("temperature") if isinstance(meta, dict) else None),
+            "top_k": kwargs.get("top_k", (meta or {}).get("top_k") if isinstance(meta, dict) else None),
+            "top_p": kwargs.get("top_p", (meta or {}).get("top_p") if isinstance(meta, dict) else None),
+            "length_penalty": kwargs.get("length_penalty", (meta or {}).get("length_penalty") if isinstance(meta, dict) else None),
+        }
 
         return TransformersTextFineTuneAdapter(
             model_id=model_id,
@@ -110,6 +124,7 @@ def create_model(
             label_pad_value=label_pad_value,
             multilabel=multilabel,
             label_format=label_format,
+            generation_config=generation_config,
         )
 
     if model_choice in ("hf", "hf_text", "transformers"):
@@ -121,6 +136,11 @@ def create_model(
         model_id = model_id or kwargs.get("hf_model_id") or kwargs.get("model_id") or kwargs.get("model_name")
         if not model_id:
             raise ValueError("HF model_type requires hf_model_id=<huggingface_model_repo_id>")
+
+        hf_task = None
+        if isinstance(meta, dict):
+            hf_task = meta.get("hf_task")
+        hf_task = _normalize_hf_task_name(hf_task or kwargs.get("hf_task", "sequence_classification"))
 
         max_length = kwargs.get("max_length", None)
         if max_length is None and isinstance(meta, dict):
@@ -137,12 +157,23 @@ def create_model(
         batch_size = int(kwargs.get("batch_size", 16))
         device = kwargs.get("device", None)
 
-        # If you only support sequence-classification inference, you can omit hf_task here.
+        generation_config = {
+            "max_new_tokens": kwargs.get("max_new_tokens", (meta or {}).get("max_new_tokens") if isinstance(meta, dict) else None),
+            "num_beams": kwargs.get("num_beams", (meta or {}).get("num_beams") if isinstance(meta, dict) else None),
+            "do_sample": kwargs.get("do_sample", (meta or {}).get("do_sample") if isinstance(meta, dict) else None),
+            "temperature": kwargs.get("temperature", (meta or {}).get("temperature") if isinstance(meta, dict) else None),
+            "top_k": kwargs.get("top_k", (meta or {}).get("top_k") if isinstance(meta, dict) else None),
+            "top_p": kwargs.get("top_p", (meta or {}).get("top_p") if isinstance(meta, dict) else None),
+            "length_penalty": kwargs.get("length_penalty", (meta or {}).get("length_penalty") if isinstance(meta, dict) else None),
+        }
+
         return TransformersTextClassifierAdapter(
             model_id=model_id,
             max_length=max_length,
             batch_size=batch_size,
             device=device,
+            hf_task=hf_task,
+            generation_config=generation_config,
         )
 
     # ----------------------------
