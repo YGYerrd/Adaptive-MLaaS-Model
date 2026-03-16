@@ -14,6 +14,7 @@ class TaskSpec:
     hf_task: str
     task_type: str
     task_label: str
+    task_tag: str | None = None
 
 
 TASK_SPECS: dict[str, TaskSpec] = {
@@ -40,6 +41,20 @@ TASK_SPECS: dict[str, TaskSpec] = {
         hf_task="fill_mask",
         task_type="classification",
         task_label="fillmask",
+    ),
+    "text_generation": TaskSpec(
+        pipeline_tag="text-generation",
+        hf_task="causal_lm_generation",
+        task_type="classification",
+        task_label="textgen",
+        task_tag="language-modeling",
+    ),
+    "text2text_generation": TaskSpec(
+        pipeline_tag="text2text-generation",
+        hf_task="seq2seq_generation",
+        task_type="classification",
+        task_label="text2text",
+        task_tag="summarization",
     ),
 }
 
@@ -142,6 +157,43 @@ SUPPORTED_DATASETS: dict[str, list[dict[str, Any]]] = {
             "max_length": 128,
         },
     ],
+    "text-generation": [
+        {
+            "dataset_name": "wikitext",
+            "dataset_config": "wikitext-2-raw-v1",
+            "train_split": "train",
+            "test_split": "validation",
+            "text_column": "text",
+            "label_column": "text",
+            "max_samples": 1800,
+            "max_length": 256,
+            "task_tag": "language-modeling",
+        },
+    ],
+    "text2text-generation": [
+        {
+            "dataset_name": "cnn_dailymail",
+            "dataset_config": "3.0.0",
+            "train_split": "train",
+            "test_split": "validation",
+            "text_column": "article",
+            "label_column": "highlights",
+            "max_samples": 1200,
+            "max_length": 256,
+            "task_tag": "summarization",
+        },
+        {
+            "dataset_name": "wmt14",
+            "dataset_config": "de-en",
+            "train_split": "train",
+            "test_split": "test",
+            "text_column": "translation.de",
+            "label_column": "translation.en",
+            "max_samples": 1000,
+            "max_length": 192,
+            "task_tag": "translation",
+        },
+    ],
 }
 
 MANIFEST_COLUMNS = [
@@ -183,6 +235,7 @@ MANIFEST_COLUMNS = [
     "test_split",
     "label_column",
     "text_column",
+    "task_tag",
 ]
 
 
@@ -306,6 +359,7 @@ def _row_for(
         "test_split": dataset_spec["test_split"],
         "label_column": dataset_spec.get("label_column"),
         "text_column": dataset_spec.get("text_column"),
+        "task_tag": dataset_spec.get("task_tag") or task_spec.task_tag,
     }
 
 

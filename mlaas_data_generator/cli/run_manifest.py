@@ -54,6 +54,7 @@ DATASET_ARG_COLUMNS = {
     "label_column",
     "text_column",
     "max_samples",
+    "task_tag",
 }
 
 REQUIRED_COLUMNS = {"model_type"}
@@ -82,6 +83,7 @@ COLUMN_ALIASES = {
     "test split": "test_split",
     "label column": "label_column",
     "text column": "text_column",
+    "task tag": "task_tag",
 }
 
 @dataclass

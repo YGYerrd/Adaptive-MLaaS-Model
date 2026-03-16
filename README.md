@@ -289,6 +289,44 @@ outputs/runs/
 
 ---
 
+
+## HF Generation Tasks (Manifest + Metrics)
+
+Generation tasks are now available through the existing HF manifest workflow (`hf-manifest`) and manifest runner (`run-manifest`).
+
+### Supported generation task tags
+
+- `text-generation` → `hf_task=causal_lm_generation`
+- `text2text-generation` → `hf_task=seq2seq_generation`
+
+### Optional task subtype (`task_tag`)
+
+Use `task_tag` in manifest rows / `dataset_args` to select canonical decoding metrics:
+
+- `summarization`: `rouge1`, `rouge2`, `rougeL`
+- `translation`: `sacrebleu`
+- `language-modeling`: `perplexity` (from eval loss when labels are available)
+
+### Required HF columns for generation rows
+
+At minimum include:
+
+- `dataset=hf`
+- `model_type` (`hf` for inference, `hf_finetune` for finetune)
+- `hf_model_id`
+- `hf_task` (`causal_lm_generation` or `seq2seq_generation`)
+- `text_column` (source/prompt text)
+- `label_column` (target text; required for supervised train/perplexity)
+
+### Metric availability rules
+
+- **Train**: `loss`, `perplexity` (when labels are present)
+- **Eval / inference**: decoding metric(s) by `task_tag`; optional `perplexity` when labels are available
+
+`metric_primary_name` / `metric_secondary_name` in run metadata are selected from the canonical metric set for the configured generation subtype.
+
+---
+
 ## Reproducibility
 
 All experiments are fully parameterised via the CLI. Re-running a command with the same configuration yields identical dataset schemas and comparable metrics, enabling controlled experimental evaluation.

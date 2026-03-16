@@ -23,6 +23,7 @@ class HFCore:
         task_spec=None,
         label_pad_value=-100,
         generation_config=None,
+        task_tag=None,
     ):
         try:
             import torch
@@ -45,6 +46,7 @@ class HFCore:
 
         self.task_spec = task_spec or SequenceClassificationSpec()
         self.generation_config = self._resolve_generation_config(generation_config)
+        self.task_tag = (task_tag or "").strip().lower().replace("-", "_") or None
         cold_start_begin = time.time()
         try:
             self.tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, use_fast=True)
@@ -337,15 +339,20 @@ class HFCore:
         y_true_np = np.concatenate(labels_all, axis=0) if labels_all else np.asarray([], dtype="int64")
         y_pred_np = np.concatenate(preds_all, axis=0) if preds_all else np.asarray([], dtype="int64")
 
+        named_metrics = None
         if y_true_np.size == 0 or y_pred_np.size == 0:
             primary = np.nan
             secondary = np.nan
             loss_mean = np.nan
         else:
-            m = self.task_spec.metrics(y_true_np, y_pred_np, y_extra=extra)
+            metrics_extra = dict(extra or {})
+            metrics_extra["task_tag"] = self.task_tag
+            metrics_extra["loss_mean"] = float(total_loss / max(1, total_loss_weight)) if total_loss_weight > 0 else np.nan
+            m = self.task_spec.metrics(y_true_np, y_pred_np, y_extra=metrics_extra)
             primary = float(m.get("primary", np.nan))
             secondary = float(m.get("secondary", np.nan))
             loss_mean = float(total_loss / max(1, total_loss_weight)) if total_loss_weight > 0 else np.nan
+            named_metrics = m.get("named_metrics") if isinstance(m, dict) else None
 
             if getattr(self.task_spec, "name", None) == "fill_mask" and loss_mean == loss_mean:
                 try:
@@ -380,6 +387,11 @@ class HFCore:
             "hf_weights_format": self.weight_format,
             "inference_only": bool(inference_only),
         }
+        if named_metrics and isinstance(named_metrics, dict):
+            for mk, mv in named_metrics.items():
+                if mv is not None and not (isinstance(mv, float) and np.isnan(mv)):
+                    qos[str(mk).lower()] = float(mv)
+
         if getattr(self.task_spec, "supports_generation", False):
             qos.update({f"generation_{k}": v for k, v in self.generation_config.items()})
 
