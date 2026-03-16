@@ -20,7 +20,9 @@ def load_huggingface_source(**kwargs):
     max_length = int(kwargs.get("max_length", 128))
 
     task_type = kwargs.get("task", "classification")
-    modality = kwargs.get("modality", "text")
+    modality = str(kwargs.get("modality", "text")).strip().lower()
+    if modality not in {"text", "image"}:
+        raise ValueError(f"Unsupported HF modality '{modality}'. Expected one of ['text', 'image']")
     hf_task = kwargs.get("hf_task", "sequence_classification")
 
     ds_train = load_dataset(dataset_name, dataset_config, split=train_split)
@@ -66,6 +68,47 @@ def load_huggingface_source(**kwargs):
         ds_train = ds_train.select(range(min(n, len(ds_train))))
         ds_test = ds_test.select(range(min(max(1, n // 5), len(ds_test))))
 
+    schema = None
+    if modality == "image":
+        image_column = kwargs.get("image_column", "image")
+        label_column = kwargs.get("label_column", "label")
+        boxes_column = kwargs.get("boxes_column")
+        classes_column = kwargs.get("classes_column")
+        mask_column = kwargs.get("mask_column")
+
+        train_cols = set(getattr(ds_train, "column_names", []) or [])
+        if image_column not in train_cols:
+            raise ValueError(
+                f"HF image modality requires image_column '{image_column}' to exist in dataset '{dataset_name}'. "
+                f"Available columns: {sorted(train_cols)}"
+            )
+
+        schema = {
+            "image_column": image_column,
+            "label_column": label_column if label_column in train_cols else None,
+            "detection": {
+                "boxes_column": boxes_column if boxes_column in train_cols else None,
+                "classes_column": classes_column if classes_column in train_cols else None,
+            },
+            "segmentation": {
+                "mask_column": mask_column if mask_column in train_cols else None,
+            },
+        }
+
+        if task_type == "classification" and schema["label_column"] is None:
+            raise ValueError(
+                f"HF image classification requires label_column '{label_column}'. "
+                f"Available columns: {sorted(train_cols)}"
+            )
+
+        if task_type == "detection":
+            missing = [c for c in (boxes_column, classes_column) if c and c not in train_cols]
+            if missing:
+                raise ValueError(f"HF image detection requested columns not found: {missing}")
+
+        if task_type == "segmentation" and mask_column and mask_column not in train_cols:
+            raise ValueError(f"HF image segmentation mask_column '{mask_column}' not found in dataset")
+
     dataset_args = dict(kwargs)
     dataset_args.pop("preprocessors", None)
 
@@ -80,6 +123,7 @@ def load_huggingface_source(**kwargs):
         "task_type": task_type,
         "modality": modality,
         "hf_task": hf_task,
+        "schema": schema,
         "dataset_args": dataset_args,
     }
 

@@ -6,6 +6,7 @@ from .hf_text_generation import (
     preprocess_hf_text_causal_lm_generation,
     preprocess_hf_text_seq2seq_generation,
 )
+from .hf_image import preprocess_hf_image
 
 
 _EXPECTED_BATCH_KEYS = {
@@ -15,6 +16,9 @@ _EXPECTED_BATCH_KEYS = {
     "fill_mask": {"input_ids", "attention_mask"},
     "causal_lm_generation": {"input_ids", "attention_mask"},
     "seq2seq_generation": {"input_ids", "attention_mask"},
+    "image_classification": {"pixel_values"},
+    "image_detection": {"pixel_values"},
+    "image_segmentation": {"pixel_values"},
 }
 
 
@@ -38,7 +42,9 @@ def _validate_hf_preprocessor_output(train, test, meta):
     if y_train is None or y_test is None:
         raise ValueError(f"HF preprocessor output validation failed for task '{hf_task}': missing labels.")
 
-    if len(x_train["input_ids"]) != len(y_train) or len(x_test["input_ids"]) != len(y_test):
+    train_count = len(next(iter(x_train.values())))
+    test_count = len(next(iter(x_test.values())))
+    if train_count != len(y_train) or test_count != len(y_test):
         raise ValueError(
             f"HF preprocessor output validation failed for task '{hf_task}': feature/label batch mismatch."
         )
@@ -46,18 +52,41 @@ def _validate_hf_preprocessor_output(train, test, meta):
     meta["x_keys"] = list(x_train.keys())
     return train, test, meta
 
+
 def preprocess_hf(train, test, meta, **dataset_args):
-    modality = meta.get("modality", "text")
+    modality = str(meta.get("modality", "text")).strip().lower()
     hf_task = str(meta.get("hf_task", "sequence_classification")).strip().lower().replace("-", "_")
     if hf_task in {"mlm", "masked_lm"}:
         hf_task = "fill_mask"
 
-    if modality != "text":
-        raise NotImplementedError(f"HF modality '{modality}' not implemented")
-
     hf_model_id = dataset_args.get("hf_model_id")
     if not hf_model_id:
         raise ValueError("HF preprocessing requires hf_model_id in dataset_args")
+
+    if modality == "image":
+        task_type = str(meta.get("task_type", "classification")).strip().lower()
+        hf_task = f"image_{task_type}"
+        meta["hf_task"] = hf_task
+        out = preprocess_hf_image(
+            train,
+            test,
+            meta,
+            hf_model_id=hf_model_id,
+            image_column=dataset_args.get("image_column", "image"),
+            label_column=dataset_args.get("label_column", "label"),
+            boxes_column=dataset_args.get("boxes_column"),
+            classes_column=dataset_args.get("classes_column"),
+            mask_column=dataset_args.get("mask_column"),
+            task_type=task_type,
+            training_augmentations=dataset_args.get("training_augmentations", True),
+            eval_augmentations=dataset_args.get("eval_augmentations", False),
+            on_decode_error=dataset_args.get("on_decode_error", "skip"),
+            report_decode_errors=dataset_args.get("report_decode_errors", True),
+        )
+        return _validate_hf_preprocessor_output(*out)
+
+    if modality != "text":
+        raise NotImplementedError(f"HF modality '{modality}' not implemented")
 
     if hf_task == "sequence_classification":
         out = preprocess_hf_text_sequence(
@@ -76,7 +105,7 @@ def preprocess_hf(train, test, meta, **dataset_args):
             label_column=dataset_args.get("label_column"),
         )
         return _validate_hf_preprocessor_output(*out)
-    
+
     if hf_task == "sentence_similarity":
         out = preprocess_hf_text_similarity(
             train,

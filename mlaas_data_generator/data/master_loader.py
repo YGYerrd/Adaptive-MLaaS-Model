@@ -15,6 +15,7 @@ from .preprocessors.hf import preprocess_hf
 PREPROCESSOR_REGISTRY = {
     "tabular_scaling": preprocess_tabular_scaling,
     "image_float01": preprocess_image_float01,
+    "hf": preprocess_hf,
     "hf_text": preprocess_hf,
 }
 
@@ -94,7 +95,7 @@ def load_dataset(name, **kwargs):
         # Default: HF text preprocessor always tokenises
         if preprocessors is None:
             preprocessors = [{
-                "name": "hf_text",
+                "name": "hf",
                 "args": {k: v for k, v in kwargs.items() if k != "preprocessors"},
             }]
 
