@@ -1,4 +1,5 @@
 from .hf_core import HFCore
+from .hf_cache import get_cached_model
 from .hf_task import (
     SequenceClassificationSpec,
     SentenceSimilaritySpec,
@@ -13,7 +14,6 @@ from .hf_task import (
     TextImageRetrievalSpec,
     VQASpec,
 )
-import time
 
 
 class TransformersTextFineTuneAdapter:
@@ -158,34 +158,39 @@ class TransformersTextClassifierAdapter:
         )
 
         transformers = core.transformers
-        model_load_start = time.time()
         if core.model is None:
-            if task in {"causal_lm_generation", "causal_lm", "text_generation"}:
-                core.model = transformers.AutoModelForCausalLM.from_pretrained(model_id)
-            elif task in {"seq2seq_generation", "text2text_generation", "text2text"}:
-                core.model = transformers.AutoModelForSeq2SeqLM.from_pretrained(model_id)
-            elif task == "fill_mask":
-                core.model = transformers.AutoModelForMaskedLM.from_pretrained(model_id)
-            elif task == "token_classification":
-                core.model = transformers.AutoModelForTokenClassification.from_pretrained(model_id)
-            elif task in {"image_classification", "vision_classification"}:
-                core.model = transformers.AutoModelForImageClassification.from_pretrained(model_id)
-            elif task in {"object_detection", "image_detection", "detection"}:
-                core.model = transformers.AutoModelForObjectDetection.from_pretrained(model_id)
-            elif task in {"image_segmentation", "semantic_segmentation", "segmentation"}:
-                core.model = transformers.AutoModelForSemanticSegmentation.from_pretrained(model_id)
-            elif task in {"image_captioning", "image_to_text"}:
-                core.model = transformers.AutoModelForVision2Seq.from_pretrained(model_id)
-            elif task in {"text_image_retrieval", "image_text_retrieval"}:
-                core.model = transformers.AutoModel.from_pretrained(model_id)
-            elif task in {"visual_question_answering", "vqa"}:
-                core.model = transformers.AutoModelForVisualQuestionAnswering.from_pretrained(model_id)
-            else:
-                core.model = transformers.AutoModelForSequenceClassification.from_pretrained(model_id)
+            def _load_model():
+                if task in {"causal_lm_generation", "causal_lm", "text_generation"}:
+                    return transformers.AutoModelForCausalLM.from_pretrained(model_id)
+                if task in {"seq2seq_generation", "text2text_generation", "text2text"}:
+                    return transformers.AutoModelForSeq2SeqLM.from_pretrained(model_id)
+                if task == "fill_mask":
+                    return transformers.AutoModelForMaskedLM.from_pretrained(model_id)
+                if task == "token_classification":
+                    return transformers.AutoModelForTokenClassification.from_pretrained(model_id)
+                if task in {"image_classification", "vision_classification"}:
+                    return transformers.AutoModelForImageClassification.from_pretrained(model_id)
+                if task in {"object_detection", "image_detection", "detection"}:
+                    return transformers.AutoModelForObjectDetection.from_pretrained(model_id)
+                if task in {"image_segmentation", "semantic_segmentation", "segmentation"}:
+                    return transformers.AutoModelForSemanticSegmentation.from_pretrained(model_id)
+                if task in {"image_captioning", "image_to_text"}:
+                    return transformers.AutoModelForVision2Seq.from_pretrained(model_id)
+                if task in {"text_image_retrieval", "image_text_retrieval"}:
+                    return transformers.AutoModel.from_pretrained(model_id)
+                if task in {"visual_question_answering", "vqa"}:
+                    return transformers.AutoModelForVisualQuestionAnswering.from_pretrained(model_id)
+                return transformers.AutoModelForSequenceClassification.from_pretrained(model_id)
+
+            core.model, core.model_load_s, core.model_cache_hit = get_cached_model(
+                hf_model_id=model_id,
+                task=task,
+                device=core.device,
+                loader_fn=_load_model,
+            )
 
         core.model.to(core.device)
         core.model.eval()
-        core.cold_start_time += float(time.time() - model_load_start)
 
         self.core = core
         self.model_id = model_id

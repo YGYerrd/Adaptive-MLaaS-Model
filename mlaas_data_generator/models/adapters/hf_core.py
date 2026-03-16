@@ -2,6 +2,7 @@ import time
 import numpy as np
 
 from .hf_task import SequenceClassificationSpec
+from .hf_cache import get_cached_tokenizer
 
 
 class HFCore:
@@ -47,23 +48,33 @@ class HFCore:
         self.task_spec = task_spec or SequenceClassificationSpec()
         self.generation_config = self._resolve_generation_config(generation_config)
         self.task_tag = (task_tag or "").strip().lower().replace("-", "_") or None
-        cold_start_begin = time.time()
-        try:
-            self.tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, use_fast=True)
-        except Exception:
-            self.tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, use_fast=False)
-
-        if getattr(self.tokenizer, "pad_token_id", None) is None and getattr(self.tokenizer, "eos_token_id", None) is not None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.tokenizer, self.tokenizer_load_s, self.tokenizer_cache_hit = get_cached_tokenizer(
+            hf_model_id=model_id,
+            task=getattr(self.task_spec, "name", None),
+            device=self.device,
+            transformers_module=transformers,
+        )
 
         self.model = None
         self.weight_format = None
+        self.model_load_s = 0.0
+        self.model_cache_hit = False
         needs_num_labels = bool(getattr(self.task_spec, "requires_num_labels", True))
         if num_labels is not None or not needs_num_labels:
+            model_load_start = time.time()
             self.model = self.task_spec.build_model(transformers, model_id, num_labels)
+            self.model_load_s = float(time.time() - model_load_start)
             self.weight_format = getattr(self.task_spec, "weight_format", None)
             self.model.to(self.device)
-        self.cold_start_time = float(time.time() - cold_start_begin)
+
+    def _qos_startup(self):
+        return {
+            "tokenizer_load_s": float(self.tokenizer_load_s),
+            "model_load_s": float(self.model_load_s),
+            "cold_start_time": float(self.tokenizer_load_s + self.model_load_s),
+            "tokenizer_cache_hit": bool(self.tokenizer_cache_hit),
+            "model_cache_hit": bool(self.model_cache_hit),
+        }
 
     def _resolve_generation_config(self, generation_config):
         defaults = {
@@ -242,7 +253,7 @@ class HFCore:
             "train_step_latency_ms_steady_mean": steady_step_mean,
             "train_step_latency_ms_steady_p95": steady_step_p95,
             "train_throughput_eps": train_throughput,
-            "cold_start_time": float(self.cold_start_time),
+            **self._qos_startup(),
             "train_samples": int(total_loss_weight),
             "tokens_total": int(total_tokens),
             "tokens_per_second": token_throughput,
@@ -394,7 +405,7 @@ class HFCore:
             "eval_latency_ms_steady_mean": lat_steady_mean,
             "eval_latency_ms_steady_p95": lat_steady_p95,
             "eval_throughput_eps": throughput,
-            "cold_start_time": float(self.cold_start_time),
+            **self._qos_startup(),
             "eval_samples": int(n_eval),
             "tokens_total": int(total_tokens),
             "tokens_per_second": token_throughput,
