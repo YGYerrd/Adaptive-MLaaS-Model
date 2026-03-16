@@ -95,6 +95,7 @@ def preprocess_hf_text_similarity(
     text_column,
     label_column="label",
     label_mode="auto",
+    dynamic_padding=False,
 ):
     ds_train, _ = train
     ds_test, _ = test
@@ -144,6 +145,8 @@ def preprocess_hf_text_similarity(
         ) from e
 
     max_length = int(meta.get("max_length", 128))
+    dynamic_padding = bool(dynamic_padding)
+    padding_mode = "dynamic" if dynamic_padding else "max_length"
     try:
         tokenizer = AutoTokenizer.from_pretrained(hf_model_id, use_fast=True)
     except Exception:
@@ -153,18 +156,26 @@ def preprocess_hf_text_similarity(
         list(ds_train[text_col_a]),
         list(ds_train[text_col_b]),
         truncation=True,
-        padding="max_length",
+        padding=False if dynamic_padding else "max_length",
         max_length=max_length,
-        return_tensors="np",
     )
     enc_test = tokenizer(
         list(ds_test[text_col_a]),
         list(ds_test[text_col_b]),
         truncation=True,
-        padding="max_length",
+        padding=False if dynamic_padding else "max_length",
         max_length=max_length,
-        return_tensors="np",
     )
+
+    if dynamic_padding:
+        train_max_len = max((len(ids) for ids in enc_train["input_ids"]), default=0)
+        test_max_len = max((len(ids) for ids in enc_test["input_ids"]), default=0)
+        pad_to = max(train_max_len, test_max_len)
+    else:
+        pad_to = max_length
+
+    enc_train = tokenizer.pad(enc_train, padding="max_length", max_length=pad_to, return_tensors="np")
+    enc_test = tokenizer.pad(enc_test, padding="max_length", max_length=pad_to, return_tensors="np")
 
     X_train = {
         "input_ids": enc_train["input_ids"].astype("int32"),
@@ -182,7 +193,7 @@ def preprocess_hf_text_similarity(
     task_type = "regression" if is_regression else "classification"
     meta2 = dict(meta)
     meta2.update({
-        "input_shape": (max_length,),
+        "input_shape": (pad_to,),
         "num_classes": None if is_regression else int(num_classes),
         "label_mapping": label_mapping,
         "text_column": list(text_column),
@@ -195,6 +206,8 @@ def preprocess_hf_text_similarity(
         "modality": "text",
         "task_type": task_type,
         "is_regression": bool(is_regression),
+        "dynamic_padding": dynamic_padding,
+        "padding_mode": padding_mode,
     })
 
     if is_regression:

@@ -76,6 +76,7 @@ def preprocess_hf_text_sequence(
     hf_model_id,
     text_column="text",
     label_column="label",
+    dynamic_padding=False,
 ):
     ds_train, _ = train
     ds_test, _ = test
@@ -156,6 +157,8 @@ def preprocess_hf_text_sequence(
         ) from e
 
     max_length = int(meta.get("max_length", 128))
+    dynamic_padding = bool(dynamic_padding)
+    padding_mode = "dynamic" if dynamic_padding else "max_length"
     tokenizer, _, _ = get_cached_tokenizer(
         hf_model_id=hf_model_id,
         task="sequence_classification",
@@ -163,21 +166,21 @@ def preprocess_hf_text_sequence(
         transformers_module=transformers,
     )
 
+    tokenize_padding = False if dynamic_padding else "max_length"
+
     if not is_pair:
 
         enc_train = tokenizer(
             list(ds_train[text_col_1]),
             truncation=True,
-            padding="max_length",
+            padding=tokenize_padding,
             max_length=max_length,
-            return_tensors="np",
         )
         enc_test = tokenizer(
             list(ds_test[text_col_1]),
             truncation=True,
-            padding="max_length",
+            padding=tokenize_padding,
             max_length=max_length,
-            return_tensors="np",
         )
     else:
 
@@ -185,18 +188,26 @@ def preprocess_hf_text_sequence(
             list(ds_train[text_col_1]),
             list(ds_train[text_col_2]),
             truncation=True,
-            padding="max_length",
+            padding=tokenize_padding,
             max_length=max_length,
-            return_tensors="np",
         )
         enc_test = tokenizer(
             list(ds_test[text_col_1]),
             list(ds_test[text_col_2]),
             truncation=True,
-            padding="max_length",
+            padding=tokenize_padding,
             max_length=max_length,
-            return_tensors="np",
         )
+
+    if dynamic_padding:
+        train_max_len = max((len(ids) for ids in enc_train["input_ids"]), default=0)
+        test_max_len = max((len(ids) for ids in enc_test["input_ids"]), default=0)
+        pad_to = max(train_max_len, test_max_len)
+    else:
+        pad_to = max_length
+
+    enc_train = tokenizer.pad(enc_train, padding="max_length", max_length=pad_to, return_tensors="np")
+    enc_test = tokenizer.pad(enc_test, padding="max_length", max_length=pad_to, return_tensors="np")
 
     X_train = {
         "input_ids": enc_train["input_ids"].astype("int32"),
@@ -226,7 +237,10 @@ def preprocess_hf_text_sequence(
         "is_multilabel": bool(is_multilabel),
         "classification_type": "multilabel" if is_multilabel else "single_label",
         "modality": "text",
+        "dynamic_padding": dynamic_padding,
+        "padding_mode": padding_mode,
     })
+    meta2["input_shape"] = (pad_to,)
     meta2 = attach_label_schema(meta2, y_train, default_num_labels=num_classes)
 
     return (X_train, y_train), (X_test, y_test), meta2
