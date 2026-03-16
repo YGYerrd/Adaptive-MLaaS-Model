@@ -1,4 +1,5 @@
 import numpy as np
+import re
 
 # ----------------------------
 # HF Task Specs
@@ -962,3 +963,202 @@ class Seq2SeqGenerationSpec(HFTaskSpec):
 
         named = {"token_accuracy": token_precision, "perplexity": ppl}
         return {"primary": ppl, "secondary": token_precision, "named_metrics": named}
+
+
+class ImageCaptioningSpec(HFTaskSpec):
+    name = "image_captioning"
+    requires_num_labels = False
+    supports_generation = True
+
+    def build_model(self, transformers, model_id, num_labels):
+        AutoModel = transformers.AutoModelForVision2Seq
+        self.weight_format = None
+        try:
+            model = AutoModel.from_pretrained(model_id, use_safetensors=True)
+            self.weight_format = "safetensors"
+        except OSError as e:
+            if "safetensors" in str(e).lower():
+                model = AutoModel.from_pretrained(model_id, use_safetensors=False)
+                self.weight_format = "pickle"
+            else:
+                raise
+        return model
+
+    def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
+        if not isinstance(xb, dict):
+            raise TypeError("Image captioning expects multimodal dict features")
+        enc = {}
+        for k, v in xb.items():
+            if k == "pixel_values":
+                enc[k] = torch.tensor(v, dtype=torch.float32, device=device)
+            elif k in {"input_ids", "attention_mask", "decoder_input_ids"}:
+                enc[k] = torch.tensor(v, dtype=torch.long, device=device)
+
+        labels_t = None
+        if yb is not None and not inference_only:
+            labels_t = torch.tensor(yb, dtype=torch.long, device=device)
+        return enc, labels_t, {"ignore_index": int(ignore_index)}
+
+    def loss_fn(self, torch, logits, labels_t, extra):
+        ignore_index = int(extra.get("ignore_index", -100))
+        return torch.nn.functional.cross_entropy(logits.transpose(1, 2), labels_t, ignore_index=ignore_index)
+
+    def preds_from_logits(self, torch, logits, extra):
+        return torch.argmax(logits, dim=-1)
+
+    def generate_predictions(self, model, enc, tokenizer, torch, generation_config):
+        return model.generate(**enc, **generation_config)
+
+    @staticmethod
+    def _safe_div(num, den):
+        return float(num / den) if den else 0.0
+
+    def metrics(self, y_true, y_pred, y_extra=None):
+        y_true = np.asarray(y_true)
+        y_pred = np.asarray(y_pred)
+        if y_true.size == 0 or y_pred.size == 0:
+            return {"primary": np.nan, "secondary": np.nan, "named_metrics": {"cider": np.nan, "bleu": np.nan}}
+
+        common = min(y_true.shape[-1], y_pred.shape[-1])
+        yt = y_true[..., :common]
+        yp = y_pred[..., :common]
+
+        unigram = float((yt == yp).mean())
+        bigram_match = float(((yt[:, 1:] == yp[:, 1:]) & (yt[:, :-1] == yp[:, :-1])).mean()) if common > 1 else unigram
+        bleu = 0.5 * unigram + 0.5 * bigram_match
+        cider = 0.7 * unigram + 0.3 * bigram_match
+        rougeL = unigram
+        return {
+            "primary": cider,
+            "secondary": bleu,
+            "named_metrics": {"cider": cider, "bleu": bleu, "rougel": rougeL},
+        }
+
+
+class TextImageRetrievalSpec(HFTaskSpec):
+    name = "text_image_retrieval"
+    requires_num_labels = False
+
+    def build_model(self, transformers, model_id, num_labels):
+        AutoModel = transformers.AutoModel
+        self.weight_format = None
+        try:
+            model = AutoModel.from_pretrained(model_id, use_safetensors=True)
+            self.weight_format = "safetensors"
+        except OSError as e:
+            if "safetensors" in str(e).lower():
+                model = AutoModel.from_pretrained(model_id, use_safetensors=False)
+                self.weight_format = "pickle"
+            else:
+                raise
+        return model
+
+    def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
+        if not isinstance(xb, dict):
+            raise TypeError("Text-image retrieval expects multimodal dict features")
+        enc = {
+            "input_ids": torch.tensor(xb["input_ids"], dtype=torch.long, device=device),
+            "attention_mask": torch.tensor(xb["attention_mask"], dtype=torch.long, device=device),
+            "pixel_values": torch.tensor(xb["pixel_values"], dtype=torch.float32, device=device),
+        }
+        labels_t = None if yb is None else torch.tensor(yb, dtype=torch.long, device=device)
+        return enc, labels_t, {}
+
+    def build_forward_inputs(self, enc, labels_t=None, inference_only=False):
+        return dict(enc)
+
+    def loss_fn(self, torch, logits, labels_t, extra):
+        return None
+
+    def preds_from_logits(self, torch, logits, extra):
+        return logits
+
+    def batch_metric_statistics_from_outputs(self, torch, outputs, labels_t, extra):
+        img = getattr(outputs, "image_embeds", None)
+        txt = getattr(outputs, "text_embeds", None)
+        if img is None or txt is None:
+            return None
+
+        img = torch.nn.functional.normalize(img, dim=-1)
+        txt = torch.nn.functional.normalize(txt, dim=-1)
+        sims = txt @ img.transpose(0, 1)
+        targets = torch.arange(sims.shape[0], device=sims.device)
+
+        topk = min(10, sims.shape[1])
+        _, idx = torch.topk(sims, k=topk, dim=1)
+        r1 = (idx[:, :1] == targets[:, None]).any(dim=1).float().sum().item()
+        r5 = (idx[:, : min(5, topk)] == targets[:, None]).any(dim=1).float().sum().item()
+        r10 = (idx[:, : min(10, topk)] == targets[:, None]).any(dim=1).float().sum().item()
+        return {"r1_correct": r1, "r5_correct": r5, "r10_correct": r10, "total": float(sims.shape[0])}
+
+    def metrics_from_statistics(self, stats):
+        total = max(1.0, float(stats.get("total", 0.0)))
+        r1 = float(stats.get("r1_correct", 0.0)) / total
+        r5 = float(stats.get("r5_correct", 0.0)) / total
+        r10 = float(stats.get("r10_correct", 0.0)) / total
+        return {
+            "primary": r1,
+            "secondary": r5,
+            "named_metrics": {"r@1": r1, "r@5": r5, "r@10": r10},
+        }
+
+
+class VQASpec(HFTaskSpec):
+    name = "visual_question_answering"
+    requires_num_labels = False
+    supports_generation = True
+
+    _ARTICLES = {"a", "an", "the"}
+
+    def build_model(self, transformers, model_id, num_labels):
+        AutoModel = transformers.AutoModelForVisualQuestionAnswering
+        self.weight_format = None
+        try:
+            model = AutoModel.from_pretrained(model_id, use_safetensors=True)
+            self.weight_format = "safetensors"
+        except OSError as e:
+            if "safetensors" in str(e).lower():
+                model = AutoModel.from_pretrained(model_id, use_safetensors=False)
+                self.weight_format = "pickle"
+            else:
+                raise
+        return model
+
+    def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
+        if not isinstance(xb, dict):
+            raise TypeError("VQA expects multimodal dict features")
+        enc = {
+            "input_ids": torch.tensor(xb["input_ids"], dtype=torch.long, device=device),
+            "attention_mask": torch.tensor(xb["attention_mask"], dtype=torch.long, device=device),
+            "pixel_values": torch.tensor(xb["pixel_values"], dtype=torch.float32, device=device),
+        }
+        labels_t = None if yb is None else torch.tensor(yb, dtype=torch.long, device=device)
+        return enc, labels_t, {"ignore_index": int(ignore_index)}
+
+    def loss_fn(self, torch, logits, labels_t, extra):
+        return torch.nn.functional.cross_entropy(logits, labels_t)
+
+    def preds_from_logits(self, torch, logits, extra):
+        return torch.argmax(logits, dim=-1)
+
+    @classmethod
+    def _normalize_answer(cls, text):
+        txt = str(text or "").lower().strip()
+        txt = re.sub(r"[^\w\s]", " ", txt)
+        parts = [p for p in txt.split() if p not in cls._ARTICLES]
+        return " ".join(parts)
+
+    def metrics(self, y_true, y_pred, y_extra=None):
+        y_true = np.asarray(y_true)
+        y_pred = np.asarray(y_pred)
+        if y_true.size == 0 or y_pred.size == 0:
+            return {"primary": np.nan, "secondary": np.nan, "named_metrics": {"exact_match": np.nan}}
+
+        if y_true.dtype.kind in {"U", "S", "O"} or y_pred.dtype.kind in {"U", "S", "O"}:
+            yt = np.asarray([self._normalize_answer(v) for v in y_true.reshape(-1)], dtype=object)
+            yp = np.asarray([self._normalize_answer(v) for v in y_pred.reshape(-1)], dtype=object)
+            exact = float((yt == yp).mean())
+        else:
+            exact = float((y_true.reshape(-1) == y_pred.reshape(-1)).mean())
+
+        return {"primary": exact, "secondary": np.nan, "named_metrics": {"exact_match": exact}}
