@@ -684,3 +684,31 @@ FILLMASK_CASES = [
         config_overrides={"learning_rate": 5e-5},
     ),
 ]
+
+COMPOSITION_BENCHMARKS = [
+    {
+        "name": "detector_to_captioner_to_classifier",
+        "stages": ["object_detection", "image_captioning", "sequence_classification"],
+        "report": {
+            "primary_metric": "cider",
+            "secondary_metric": "bleu",
+            "stage_metrics": {
+                "object_detection": ["map", "map@0.5"],
+                "image_captioning": ["cider", "bleu"],
+                "sequence_classification": ["accuracy", "f1"],
+            },
+        },
+    },
+    {
+        "name": "retriever_to_vqa",
+        "stages": ["text_image_retrieval", "visual_question_answering"],
+        "report": {
+            "primary_metric": "exact_match",
+            "secondary_metric": "r@5",
+            "stage_metrics": {
+                "text_image_retrieval": ["r@1", "r@5", "r@10"],
+                "visual_question_answering": ["exact_match"],
+            },
+        },
+    },
+]

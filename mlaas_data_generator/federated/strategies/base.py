@@ -53,6 +53,11 @@ def normalize_hf_task(hf_task: str | None) -> str:
         "detection": "image_detection",
         "semantic_segmentation": "image_segmentation",
         "segmentation": "image_segmentation",
+        "image_to_text": "image_captioning",
+        "image_caption": "image_captioning",
+        "image_text_retrieval": "text_image_retrieval",
+        "retrieval": "text_image_retrieval",
+        "vqa": "visual_question_answering",
     }
     return mapping.get(task, task or "unknown")
 
@@ -77,8 +82,12 @@ def canonical_task_family(task_type: str | None, hf_task: str | None = None) -> 
             return "detection"
         if hf in {"image_segmentation"}:
             return "segmentation"
-        if hf in {"causal_lm_generation", "seq2seq_generation"}:
+        if hf in {"causal_lm_generation", "seq2seq_generation", "image_captioning"}:
             return "generation"
+        if hf in {"text_image_retrieval"}:
+            return "retrieval"
+        if hf in {"visual_question_answering"}:
+            return "vqa"
         return f"hf_{hf}"
     return "unknown"
 
@@ -93,6 +102,8 @@ def canonical_label_format(task_family: str) -> str:
         "clustering": "cluster_id",
         "detection": "bbox_coco",
         "segmentation": "mask",
+        "retrieval": "paired_rank",
+        "vqa": "answer_text",
     }
     return mapping.get(task_family, "unknown")
 
@@ -114,6 +125,10 @@ def canonical_metric_names(task_family: str, metric_key: str) -> tuple[str, str 
         return ("map", "map@0.5")
     if task_family == "segmentation":
         return ("iou", "dice")
+    if task_family == "retrieval":
+        return ("r@1", "r@5")
+    if task_family == "vqa":
+        return ("exact_match", None)
     return ((metric_key or "metric").lower(), None)
 
 
@@ -124,6 +139,8 @@ def canonical_generation_metrics(task_tag: str | None, has_labels: bool) -> tupl
         base = ("rouge1", "rouge2", "rougeL")
     elif tag == "translation":
         base = ("sacrebleu",)
+    elif tag in {"captioning", "image_captioning", "image_to_text"}:
+        base = ("cider", "bleu")
     else:
         base = tuple()
 
@@ -139,6 +156,12 @@ def metric_availability(task_family: str, task_tag: str | None = None, has_label
             "train": ("loss", "perplexity") if has_labels else tuple(),
             "eval": canonical_generation_metrics(task_tag=task_tag, has_labels=has_labels),
         }
+
+    if task_family == "retrieval":
+        return {"train": ("loss",), "eval": ("r@1", "r@5", "r@10")}
+
+    if task_family == "vqa":
+        return {"train": ("loss",), "eval": ("exact_match",)}
 
     if task_family == "detection":
         return {"train": ("loss",), "eval": ("map", "map@0.5")}

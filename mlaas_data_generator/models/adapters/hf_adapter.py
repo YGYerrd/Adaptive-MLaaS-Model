@@ -9,6 +9,9 @@ from .hf_task import (
     ImageClassificationSpec,
     ObjectDetectionSpec,
     ImageSegmentationSpec,
+    ImageCaptioningSpec,
+    TextImageRetrievalSpec,
+    VQASpec,
 )
 import time
 
@@ -52,6 +55,12 @@ class TransformersTextFineTuneAdapter:
             spec = ObjectDetectionSpec()
         elif hf_task in {"image_segmentation", "semantic_segmentation", "segmentation"}:
             spec = ImageSegmentationSpec()
+        elif hf_task in {"image_captioning", "image_to_text"}:
+            spec = ImageCaptioningSpec()
+        elif hf_task in {"text_image_retrieval", "image_text_retrieval"}:
+            spec = TextImageRetrievalSpec()
+        elif hf_task in {"visual_question_answering", "vqa"}:
+            spec = VQASpec()
         else:
             spec = SequenceClassificationSpec(multilabel=multilabel, label_format=label_format)
 
@@ -128,6 +137,12 @@ class TransformersTextClassifierAdapter:
             spec = ObjectDetectionSpec()
         elif task in {"image_segmentation", "semantic_segmentation", "segmentation"}:
             spec = ImageSegmentationSpec()
+        elif task in {"image_captioning", "image_to_text"}:
+            spec = ImageCaptioningSpec()
+        elif task in {"text_image_retrieval", "image_text_retrieval"}:
+            spec = TextImageRetrievalSpec()
+        elif task in {"visual_question_answering", "vqa"}:
+            spec = VQASpec()
         else:
             spec = SequenceClassificationSpec()
 
@@ -159,6 +174,12 @@ class TransformersTextClassifierAdapter:
                 core.model = transformers.AutoModelForObjectDetection.from_pretrained(model_id)
             elif task in {"image_segmentation", "semantic_segmentation", "segmentation"}:
                 core.model = transformers.AutoModelForSemanticSegmentation.from_pretrained(model_id)
+            elif task in {"image_captioning", "image_to_text"}:
+                core.model = transformers.AutoModelForVision2Seq.from_pretrained(model_id)
+            elif task in {"text_image_retrieval", "image_text_retrieval"}:
+                core.model = transformers.AutoModel.from_pretrained(model_id)
+            elif task in {"visual_question_answering", "vqa"}:
+                core.model = transformers.AutoModelForVisualQuestionAnswering.from_pretrained(model_id)
             else:
                 core.model = transformers.AutoModelForSequenceClassification.from_pretrained(model_id)
 
