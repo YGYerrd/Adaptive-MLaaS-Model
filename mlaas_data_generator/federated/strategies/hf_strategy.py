@@ -85,6 +85,63 @@ class HFStrategy(TaskStrategy):
         return {"adapter": adapter, "dataset": dataset}
 
     # -------------------------
+    # Federation-safe metric stats
+    # -------------------------
+
+    def _collect_metric_stats(self, outcomes):
+        stats = {}
+        for o in outcomes:
+            extras = getattr(o, "extras", {}) or {}
+            if not isinstance(extras, dict):
+                continue
+            for k, v in extras.items():
+                if not str(k).startswith("metric_stat_"):
+                    continue
+                key = str(k)[12:]
+                try:
+                    stats[key] = float(stats.get(key, 0.0)) + float(v)
+                except Exception:
+                    continue
+        return stats
+
+    def _metrics_from_stats(self, stats):
+        if not stats:
+            return None
+        task = str(self.hf_task or "").lower()
+
+        if task in {"image_classification"}:
+            total = float(stats.get("total", 0.0))
+            if total <= 0:
+                return None
+            top1 = float(stats.get("top1_correct", 0.0)) / total
+            top5 = float(stats.get("top5_correct", 0.0)) / total
+            return top1, top5
+
+        if task in {"image_detection", "object_detection"}:
+            gt = float(stats.get("gt", 0.0))
+            if gt <= 0:
+                return None
+            vals = []
+            for thr in (0.5, 0.75, 0.95):
+                tp = float(stats.get(f"tp_{thr}", 0.0))
+                fp = float(stats.get(f"fp_{thr}", 0.0))
+                vals.append(tp / max(gt + fp, 1e-9))
+            return float(np.mean(vals)), float(vals[0])
+
+        if task in {"image_segmentation", "semantic_segmentation"}:
+            inter = float(stats.get("intersection", 0.0))
+            union = float(stats.get("union", 0.0))
+            pred_total = float(stats.get("pred_total", 0.0))
+            target_total = float(stats.get("target_total", 0.0))
+            if union <= 0 or (pred_total + target_total) <= 0:
+                return None
+            iou = inter / union
+            dice = (2.0 * inter) / max(pred_total + target_total, 1e-9)
+            return iou, dice
+
+        return None
+
+    # -------------------------
     # Model/adapter management
     # -------------------------
     def comm_down_bytes(self, global_model):
@@ -277,8 +334,13 @@ class HFStrategy(TaskStrategy):
                 secondary = _weighted([o.extra_metric for o in participated], weights)
             else:
                 loss = _nanmean([o.loss for o in participated])
-                primary = _nanmean([o.metric_value for o in participated])
-                secondary = _nanmean([o.extra_metric for o in participated])
+                stats = self._collect_metric_stats(participated)
+                derived = self._metrics_from_stats(stats)
+                if derived is not None:
+                    primary, secondary = derived
+                else:
+                    primary = _nanmean([o.metric_value for o in participated])
+                    secondary = _nanmean([o.extra_metric for o in participated])
             mscore = self._metric_score(primary)
             return loss, primary, mscore, secondary
 

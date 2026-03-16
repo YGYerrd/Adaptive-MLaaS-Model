@@ -35,6 +35,12 @@ def _normalize_hf_task_name(hf_task):
         "causal_lm": "causal_lm_generation",
         "text2text": "seq2seq_generation",
         "text2text_generation": "seq2seq_generation",
+        "vision_classification": "image_classification",
+        "image_cls": "image_classification",
+        "object_detection": "image_detection",
+        "detection": "image_detection",
+        "semantic_segmentation": "image_segmentation",
+        "segmentation": "image_segmentation",
     }
     return aliases.get(task, task)
 

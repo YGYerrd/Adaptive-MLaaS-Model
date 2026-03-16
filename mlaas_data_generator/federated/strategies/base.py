@@ -47,6 +47,12 @@ def normalize_hf_task(hf_task: str | None) -> str:
         "causal_lm": "causal_lm_generation",
         "text2text": "seq2seq_generation",
         "text2text_generation": "seq2seq_generation",
+        "vision_classification": "image_classification",
+        "image_cls": "image_classification",
+        "object_detection": "image_detection",
+        "detection": "image_detection",
+        "semantic_segmentation": "image_segmentation",
+        "segmentation": "image_segmentation",
     }
     return mapping.get(task, task or "unknown")
 
@@ -65,8 +71,12 @@ def canonical_task_family(task_type: str | None, hf_task: str | None = None) -> 
             return "token_classification"
         if hf == "fill_mask":
             return "fill_mask"
-        if hf == "sequence_classification" or hf == "unknown":
+        if hf in {"sequence_classification", "image_classification"} or hf == "unknown":
             return "classification"
+        if hf in {"image_detection"}:
+            return "detection"
+        if hf in {"image_segmentation"}:
+            return "segmentation"
         if hf in {"causal_lm_generation", "seq2seq_generation"}:
             return "generation"
         return f"hf_{hf}"
@@ -81,6 +91,8 @@ def canonical_label_format(task_family: str) -> str:
         "regression": "continuous",
         "generation": "token_labels",
         "clustering": "cluster_id",
+        "detection": "bbox_coco",
+        "segmentation": "mask",
     }
     return mapping.get(task_family, "unknown")
 
@@ -98,6 +110,10 @@ def canonical_metric_names(task_family: str, metric_key: str) -> tuple[str, str 
         return ("perplexity", None)
     if task_family == "clustering":
         return ("silhouette", None)
+    if task_family == "detection":
+        return ("map", "map@0.5")
+    if task_family == "segmentation":
+        return ("iou", "dice")
     return ((metric_key or "metric").lower(), None)
 
 
@@ -123,6 +139,12 @@ def metric_availability(task_family: str, task_tag: str | None = None, has_label
             "train": ("loss", "perplexity") if has_labels else tuple(),
             "eval": canonical_generation_metrics(task_tag=task_tag, has_labels=has_labels),
         }
+
+    if task_family == "detection":
+        return {"train": ("loss",), "eval": ("map", "map@0.5")}
+
+    if task_family == "segmentation":
+        return {"train": ("loss",), "eval": ("iou", "dice")}
 
     return {
         "train": ("loss",),
