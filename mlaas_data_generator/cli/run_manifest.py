@@ -41,7 +41,7 @@ FLOAT_COLUMNS = {
     "momentum",
     "dirichlet_alpha",
 }
-ENUM_COLUMNS = {"aggregation", "distribution", "optimizer", "device", "model_type", "hf_task", "task_type"}
+ENUM_COLUMNS = {"aggregation", "distribution", "optimizer", "device", "model_type", "hf_task", "task_type", "modality"}
 
 DATASET_ARG_COLUMNS = {
     "dataset_name",  
@@ -53,6 +53,9 @@ DATASET_ARG_COLUMNS = {
     "test_split",
     "label_column",
     "text_column",
+    "image_column",
+    "modality",
+    "missing_pair_handling",
     "max_samples",
     "task_tag",
 }
@@ -83,6 +86,7 @@ COLUMN_ALIASES = {
     "test split": "test_split",
     "label column": "label_column",
     "text column": "text_column",
+    "image column": "image_column",
     "task tag": "task_tag",
 }
 
@@ -266,6 +270,14 @@ def _validate_row(resolved: dict[str, Any]) -> RowValidation:
     if str(dataset).strip().lower() == "hf":
         if _is_blank(resolved.get("hf_model_id")) and _is_blank(resolved.get("case_name")):
             return RowValidation(False, "HF runs require 'hf_model_id' or 'case_name'")
+
+
+    modality = str(resolved.get("modality") or "").strip().lower()
+    if modality == "multimodal":
+        if _is_blank(resolved.get("image_column")):
+            return RowValidation(False, "Multimodal runs require 'image_column'")
+        if _is_blank(resolved.get("text_column")):
+            return RowValidation(False, "Multimodal runs require 'text_column'")
 
     return RowValidation(True)
 

@@ -7,6 +7,7 @@ from .hf_text_generation import (
     preprocess_hf_text_seq2seq_generation,
 )
 from .hf_image import preprocess_hf_image
+from .hf_multimodal import preprocess_hf_multimodal
 
 
 _EXPECTED_BATCH_KEYS = {
@@ -19,7 +20,9 @@ _EXPECTED_BATCH_KEYS = {
     "image_classification": {"pixel_values"},
     "image_detection": {"pixel_values"},
     "image_segmentation": {"pixel_values"},
+    "multimodal": {"input_ids", "attention_mask", "pixel_values"},
 }
+
 
 
 def _validate_hf_preprocessor_output(train, test, meta):
@@ -82,6 +85,22 @@ def preprocess_hf(train, test, meta, **dataset_args):
             eval_augmentations=dataset_args.get("eval_augmentations", False),
             on_decode_error=dataset_args.get("on_decode_error", "skip"),
             report_decode_errors=dataset_args.get("report_decode_errors", True),
+        )
+        return _validate_hf_preprocessor_output(*out)
+
+
+    if modality == "multimodal":
+        meta["hf_task"] = "multimodal"
+        out = preprocess_hf_multimodal(
+            train,
+            test,
+            meta,
+            hf_model_id=hf_model_id,
+            image_column=dataset_args.get("image_column", "image"),
+            text_column=dataset_args.get("text_column", "text"),
+            label_column=dataset_args.get("label_column"),
+            max_length=dataset_args.get("max_length", meta.get("max_length", 128)),
+            missing_pair_handling=dataset_args.get("missing_pair_handling", "drop"),
         )
         return _validate_hf_preprocessor_output(*out)
 

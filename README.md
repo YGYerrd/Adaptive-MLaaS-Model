@@ -318,6 +318,19 @@ At minimum include:
 - `text_column` (source/prompt text)
 - `label_column` (target text; required for supervised train/perplexity)
 
+
+### Multimodal manifest schema (paired image + text)
+
+For multimodal HF rows, set:
+
+- `modality=multimodal`
+- `image_column` (required image field)
+- `text_column` (required text field)
+- `label_column` (optional supervised label)
+- `missing_pair_handling` (`drop` or `error`)
+
+Paired integrity checks enforce image/text alignment per split. With `drop`, rows missing one side of the pair are filtered. With `error`, the run fails fast.
+
 ### Metric availability rules
 
 - **Train**: `loss`, `perplexity` (when labels are present)
