@@ -1,6 +1,8 @@
 # orchestrator.py
 from __future__ import annotations
 import os, uuid, json
+import time
+from datetime import datetime, timezone
 import numpy as np
 from numbers import Number
 
@@ -350,6 +352,9 @@ class FederatedDataGenerator:
         return rollups
     
     def run(self):
+        run_start_epoch = time.time()
+        run_start_ts = datetime.now(timezone.utc).isoformat()
+
         os.makedirs("weights", exist_ok=True)
 
         verbose_progress = bool(self.config.get("verbose_progress", True))
@@ -516,6 +521,19 @@ class FederatedDataGenerator:
                 writer.write_run_param(run_id, "runner", "client_dropout_rate", self.config.get("client_dropout_rate", 0.0))
                 writer.write_run_param(run_id, "runner", "save_weights", self.save_weights)
 
+                # benchmark identity for cross-run comparisons
+                benchmark_identity = {
+                    "dataset": self.dataset,
+                    "model": self.model_type,
+                    "clients": self.knobs.get("num_clients"),
+                    "rounds": self.knobs.get("num_rounds"),
+                    "batch": self.knobs.get("batch_size"),
+                    "max_length": self.dataset_args.get("max_length", self.config.get("max_length", self.meta.get("max_length"))),
+                    "device": execution_device,
+                }
+                for key, value in benchmark_identity.items():
+                    writer.write_run_param(run_id, "benchmark", key, value)
+
                 # splitter / distribution
                 writer.write_run_param(run_id, "splitter", "distribution_type", self.knobs.get("distribution_type"))
                 writer.write_run_param(run_id, "splitter", "distribution_param", self.knobs.get("distribution_param"))
@@ -573,7 +591,10 @@ class FederatedDataGenerator:
                 run_id=run_id,
                 round=None,
                 client_id=None,
-                values=self._canonical_run_metadata(),
+                values={
+                    **self._canonical_run_metadata(),
+                    "run_start_ts": run_start_ts,
+                },
             )
 
             # --- clients dimension
@@ -802,6 +823,17 @@ class FederatedDataGenerator:
                     print("----------------------------------------")
 
         finally:
+            run_end_epoch = time.time()
+            run_end_ts = datetime.now(timezone.utc).isoformat()
+            writer.write_measurements(
+                run_id=run_id,
+                round=None,
+                client_id=None,
+                values={
+                    "run_end_ts": run_end_ts,
+                    "run_total_runtime_s": float(run_end_epoch - run_start_epoch),
+                },
+            )
             writer.finish()
 
         print("Federated Learning Process Complete!\n")
