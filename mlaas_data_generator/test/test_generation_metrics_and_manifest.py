@@ -15,27 +15,12 @@ def test_manifest_registers_generation_tasks_and_task_tag_column():
     assert "text2text-generation" in SUPPORTED_DATASETS
     assert "task_tag" in MANIFEST_COLUMNS
 
-    assert "image_classification" in TASK_SPECS
-    assert TASK_SPECS["image_classification"].hf_task == "image_classification"
-    assert "object_detection" in TASK_SPECS
-    assert TASK_SPECS["object_detection"].hf_task == "image_detection"
-    assert "image_segmentation" in TASK_SPECS
-    assert TASK_SPECS["image_segmentation"].hf_task == "image_segmentation"
-
-    assert "image-classification" in SUPPORTED_DATASETS
-    assert "object-detection" in SUPPORTED_DATASETS
-    assert "image-segmentation" in SUPPORTED_DATASETS
-
-    assert "image_captioning" in TASK_SPECS
-    assert TASK_SPECS["image_captioning"].hf_task == "image_captioning"
-    assert "text_image_retrieval" in TASK_SPECS
-    assert TASK_SPECS["text_image_retrieval"].hf_task == "text_image_retrieval"
-    assert "visual_question_answering" in TASK_SPECS
-    assert TASK_SPECS["visual_question_answering"].hf_task == "visual_question_answering"
-
-    assert "image-to-text" in SUPPORTED_DATASETS
-    assert "zero-shot-image-classification" in SUPPORTED_DATASETS
-    assert "visual-question-answering" in SUPPORTED_DATASETS
+    assert "image_classification" not in TASK_SPECS
+    assert "object_detection" not in TASK_SPECS
+    assert "image_segmentation" not in TASK_SPECS
+    assert "image_captioning" not in TASK_SPECS
+    assert "text_image_retrieval" not in TASK_SPECS
+    assert "visual_question_answering" not in TASK_SPECS
 
 
 def test_generation_metric_availability_by_subtype():
