@@ -59,6 +59,7 @@ class HFStrategy(TaskStrategy):
             "batch_size": self.knobs.get("batch_size"),
             "local_epochs": self.knobs.get("local_epochs"),
             "lr": self.knobs.get("learning_rate"),
+            "max_train_time_s": self.knobs.get("max_train_time_s", self.config.get("max_train_time_s", 60)),
         }
 
         dataset = {
@@ -115,6 +116,7 @@ class HFStrategy(TaskStrategy):
             y_train,
             epochs=self.knobs.get("local_epochs", 1),
             lr=self.knobs.get("learning_rate", 5e-5),
+            max_train_time_s=self.knobs.get("max_train_time_s", self.config.get("max_train_time_s", 60)),
         )
         loss, primary, secondary, eval_qos = adapter.evaluate(self.x_test, self.y_test)
         return loss, primary, secondary, train_qos, eval_qos

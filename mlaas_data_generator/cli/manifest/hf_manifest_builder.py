@@ -261,9 +261,7 @@ def _row_for(
     model_id: str,
     dataset_spec: dict[str, Any],
     run_index: int,
-    learning_rate: float,
     training_knobs: dict[str, Any],
-    seed: int,
 ) -> dict[str, Any]:
     ds_slug = dataset_spec["dataset_name"].replace("/", "_")
     ext_id = f"hf_{task_spec.task_label}_{run_index:06d}"

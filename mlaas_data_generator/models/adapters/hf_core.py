@@ -117,7 +117,12 @@ class HFCore:
         self.model.load_state_dict(new_sd, strict=False)
         self.model.to(self.device)
 
-    def finetune(self, xs, ys, epochs=1, lr=5e-5):
+    def _training_timed_out(self, train_start_ts, max_train_time_s):
+        if max_train_time_s is None:
+            return False
+        return (time.time() - float(train_start_ts)) > float(max_train_time_s)
+
+    def finetune(self, xs, ys, epochs=1, lr=5e-5, max_train_time_s=60):
         torch = self.torch
 
         def _count_supervised_tokens(labels_t, ignore_index):
@@ -136,9 +141,14 @@ class HFCore:
         total_tokens = 0
         step_lat_ms = []
         t_start = time.time()
+        timeout_hit = False
 
         for _ in range(int(epochs)):
             for xb, yb in self._batch_iter(xs, y_local):
+                if self._training_timed_out(t_start, max_train_time_s):
+                    timeout_hit = True
+                    break
+
                 t0 = time.time()
 
                 enc, labels_t, extra = self.task_spec.encode_batch(
@@ -172,6 +182,9 @@ class HFCore:
                 total_loss_weight += int(max(1, w))
 
                 step_lat_ms.append((time.time() - t0) * 1000.0)
+            
+            if timeout_hit:
+                break
 
         duration_s = time.time() - t_start
         self.model.eval()
@@ -205,6 +218,8 @@ class HFCore:
             "hf_task": getattr(self.task_spec, "name", None),
             "label_pad_value": int(self.label_pad_value),
             "hf_weights_format": self.weight_format,
+            "train_timeout_s": (None if max_train_time_s is None else float(max_train_time_s)),
+            "train_stopped_early": bool(timeout_hit),
         }
 
     def eval(self, xs, ys):

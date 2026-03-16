@@ -60,9 +60,15 @@ class TransformersTextFineTuneAdapter:
     def set_weights(self, weights_dict):
         self.core.set_weights(weights_dict)
 
-    def fit(self, x, y, epochs=1, lr=5e-5):
+    def fit(self, x, y, epochs=1, lr=5e-5, max_train_time_s=60):
         # x may be dict-of-arrays (new loader schema) or legacy list-like
-        return self.core.finetune(x, y, epochs=epochs, lr=lr)
+        return self.core.finetune(
+            x,
+            y,
+            epochs=epochs,
+            lr=lr,
+            max_train_time_s=max_train_time_s,
+        )
 
     def evaluate(self, x, y):
         # core returns (loss, primary, secondary, qos)

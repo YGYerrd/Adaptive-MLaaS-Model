@@ -150,6 +150,15 @@ class SequenceClassificationSpec(HFTaskSpec):
             labels_t = torch.argmax(labels_t, dim=-1)
         if logits.ndim == 3 and labels_t.ndim == 1:
             logits = logits[:, 0, :]
+        
+        if labels_t.ndim == 1:
+            num_classes = int(logits.shape[-1])
+            valid = (labels_t >= 0) & (labels_t < num_classes)
+            if not bool(torch.any(valid)):
+                return logits.new_tensor(0.0)
+            logits = logits[valid]
+            labels_t = labels_t[valid]
+            
         return torch.nn.functional.cross_entropy(logits, labels_t)
 
     def preds_from_logits(self, torch, logits, extra):
