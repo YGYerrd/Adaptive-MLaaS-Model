@@ -1,6 +1,7 @@
 import numpy as np
 
 from .label_schema import attach_label_schema
+from ...models.adapters.hf_cache import get_cached_tokenizer
 
 
 def _resolve_text_column_spec(text_column):
@@ -148,17 +149,19 @@ def preprocess_hf_text_sequence(
         label_mapping = {str(k): int(v) for k, v in uniq.items()}
 
     try:
-        from transformers import AutoTokenizer
+        import transformers
     except Exception as e:
         raise ImportError(
             "HF text preprocessing requires 'transformers'. Install with: pip install transformers"
         ) from e
 
     max_length = int(meta.get("max_length", 128))
-    try:
-        tokenizer = AutoTokenizer.from_pretrained(hf_model_id, use_fast=True)
-    except Exception:
-        tokenizer = AutoTokenizer.from_pretrained(hf_model_id, use_fast=False)
+    tokenizer, _, _ = get_cached_tokenizer(
+        hf_model_id=hf_model_id,
+        task="sequence_classification",
+        device="cpu",
+        transformers_module=transformers,
+    )
 
     if not is_pair:
 
