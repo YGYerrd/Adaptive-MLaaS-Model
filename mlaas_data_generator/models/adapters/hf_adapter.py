@@ -1,5 +1,12 @@
 from .hf_core import HFCore
-from .hf_task import SequenceClassificationSpec, SentenceSimilaritySpec, TokenClassificationSpec, FillMaskSpec
+from .hf_task import (
+    SequenceClassificationSpec,
+    SentenceSimilaritySpec,
+    TokenClassificationSpec,
+    FillMaskSpec,
+    CausalLMSpec,
+    Seq2SeqSpec,
+)
 import time
 
 
@@ -32,6 +39,12 @@ class TransformersTextFineTuneAdapter:
 
         elif hf_task == "fill_mask":
             spec = FillMaskSpec()
+
+        elif hf_task == "causal_lm":
+            spec = CausalLMSpec()
+
+        elif hf_task == "seq2seq":
+            spec = Seq2SeqSpec()
             
         else:
              spec = SequenceClassificationSpec(multilabel=multilabel, label_format=label_format)
