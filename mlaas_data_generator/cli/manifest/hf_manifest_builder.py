@@ -2,6 +2,7 @@ import argparse
 import random
 import uuid
 from dataclasses import dataclass
+import re
 from pathlib import Path
 from typing import Any
 
@@ -62,45 +63,6 @@ TASK_SPECS: dict[str, TaskSpec] = {
         task_type="classification",
         task_label="text2text",
         task_tag="summarization",
-    ),
-    "image_classification": TaskSpec(
-        pipeline_tag="image-classification",
-        hf_task="image_classification",
-        task_type="classification",
-        task_label="imgcls",
-    ),
-    "object_detection": TaskSpec(
-        pipeline_tag="object-detection",
-        hf_task="image_detection",
-        task_type="detection",
-        task_label="objdet",
-    ),
-    "image_segmentation": TaskSpec(
-        pipeline_tag="image-segmentation",
-        hf_task="image_segmentation",
-        task_type="segmentation",
-        task_label="imgseg",
-    ),
-    "image_captioning": TaskSpec(
-        pipeline_tag="image-to-text",
-        hf_task="image_captioning",
-        task_type="classification",
-        task_label="imgcap",
-        task_tag="captioning",
-    ),
-    "text_image_retrieval": TaskSpec(
-        pipeline_tag="zero-shot-image-classification",
-        hf_task="text_image_retrieval",
-        task_type="classification",
-        task_label="imgret",
-        task_tag="retrieval",
-    ),
-    "visual_question_answering": TaskSpec(
-        pipeline_tag="visual-question-answering",
-        hf_task="visual_question_answering",
-        task_type="classification",
-        task_label="vqa",
-        task_tag="vqa",
     ),
 }
 
@@ -295,10 +257,20 @@ PREFERRED_MODEL_OVERRIDES: dict[tuple[str, str | None], list[str]] = {
         "dslim/bert-base-NER",
     ],
     ("wnut_17", None): [
-        "Jean-Baptiste/roberta-large-ner-english",
-        "xlm-roberta-base-finetuned-conll03-english",
+        "TweebankNLP/bertweet-wnut17-ner",
+        "xlm-roberta-base",
     ],
 }
+
+ALLOWED_DATASET_TRANSFER_HINTS: dict[str, set[str]] = {
+    "stsb": {"qqp", "mrpc"},
+    "mrpc": {"qqp", "stsb"},
+    "qqp": {"mrpc", "stsb"},
+    "mnli": {"snli", "qnli", "rte"},
+    "snli": {"mnli", "qnli", "rte"},
+}
+
+FROZEN_ONLY_MODEL_ROLES = {"embedding_model", "reranker_model", "zero_shot_classifier"}
 
 MANIFEST_COLUMNS = [
     "external_run_id",
@@ -387,76 +359,36 @@ def _model_downloads(model: Any) -> int:
 
 
 def _dataset_schema(dataset_spec: dict[str, Any]) -> str:
-    image_column = dataset_spec.get("image_column")
-    text_column = dataset_spec.get("text_column")
-    if image_column and text_column:
-        return "multimodal_pair"
-    if isinstance(text_column, str) and text_column.strip().startswith("["):
+    schema = dataset_spec.get("input_schema")
+    if schema:
+        return str(schema)
+    text_column = str(dataset_spec.get("text_column") or "")
+    if text_column.startswith("[") and text_column.endswith("]"):
         return "text_pair"
-    if image_column:
-        return "single_image"
+    if "tokens" in text_column:
+        return "token_sequence"
     return "single_text"
 
 
-def _task_output_type(task_spec: TaskSpec) -> str:
-    if task_spec.pipeline_tag in {"sentence-similarity", "zero-shot-image-classification"}:
-        return "relevance_score"
-    if task_spec.pipeline_tag in {"text-generation", "text2text-generation", "image-to-text", "visual-question-answering"}:
-        return "generated_text"
-    if task_spec.pipeline_tag == "object-detection":
-        return "boxes"
-    if task_spec.pipeline_tag == "image-segmentation":
-        return "segmentation_mask"
-    return "class_label"
+def _effective_dataset_name(dataset_spec: dict[str, Any]) -> str:
+    dataset_name = dataset_spec["dataset_name"]
+    dataset_config = dataset_spec.get("dataset_config")
+    if dataset_name == "glue" and dataset_config:
+        return str(dataset_config)
+    return str(dataset_name)
 
 
-def _model_capabilities(model: Any) -> tuple[str, str, set[str]]:
-    model_id = str(getattr(model, "id", "") or "").lower()
-    tags = {str(t).lower() for t in (getattr(model, "tags", None) or [])}
-    pipeline_tag = str(getattr(model, "pipeline_tag", "") or "").lower()
-
-    role = "classifier"
-    output_type = "class_label"
-    schemas = {"single_text", "text_pair", "single_image", "multimodal_pair"}
-
-    if "reranker" in model_id or "rerank" in model_id or "text-ranking" in tags or "reranker" in tags:
-        role = "reranker"
-        output_type = "relevance_score"
-        schemas = {"query_document_pair", "text_pair"}
-    elif pipeline_tag in {"sentence-similarity", "text-similarity"}:
-        role = "similarity"
-        output_type = "relevance_score"
-        schemas = {"text_pair"}
-    elif pipeline_tag in {"text-generation", "text2text-generation", "image-to-text", "visual-question-answering"}:
-        role = "generator"
-        output_type = "generated_text"
-    elif pipeline_tag == "object-detection":
-        role = "detector"
-        output_type = "boxes"
-        schemas = {"single_image"}
-    elif pipeline_tag == "image-segmentation":
-        role = "segmenter"
-        output_type = "segmentation_mask"
-        schemas = {"single_image"}
-
-    return role, output_type, schemas
-
-
-def _is_model_compatible_for_task(model: Any, task_spec: TaskSpec, dataset_spec: dict[str, Any]) -> bool:
-    role, output_type, schemas = _model_capabilities(model)
-    dataset_schema = _dataset_schema(dataset_spec)
-    task_output = _task_output_type(task_spec)
-
-    if output_type != task_output:
-        return False
-    if dataset_schema not in schemas:
-        return False
-
-    if task_spec.pipeline_tag == "text-classification" and role != "classifier":
-        return False
-    if task_spec.pipeline_tag == "sentence-similarity" and role not in {"similarity", "reranker"}:
-        return False
-    return True
+def _extract_num_labels(model: Any, tags: list[str]) -> int | None:
+    for source in (getattr(model, "config", None), getattr(model, "cardData", None)):
+        if isinstance(source, dict):
+            value = source.get("num_labels")
+            if isinstance(value, int):
+                return value
+    for tag in tags:
+        m = re.search(r"num_labels:(\d+)", tag)
+        if m:
+            return int(m.group(1))
+    return None
 
 
 def _normalize_model_profile(model: Any) -> dict[str, Any]:
@@ -467,12 +399,16 @@ def _normalize_model_profile(model: Any) -> dict[str, Any]:
     author = model_id.split("/", 1)[0].lower() if "/" in model_id else "unknown"
     suffix = model_id.split("/", 1)[-1].lower()
 
+    is_embedding_model = any(t in tags for t in ["sentence-transformers", "feature-extraction"])
+    is_reranker_model = "reranker" in suffix or any("rerank" in t for t in tags)
+    is_zero_shot_classifier = "zero-shot-classification" in tags
+
     task_family = "generic"
     if any(x in tags for x in ["text-classification", "sequence-classification"]):
         task_family = "text_classification"
     elif "token-classification" in tags:
         task_family = "token_classification"
-    elif "sentence-similarity" in tags:
+    elif "sentence-similarity" in tags or is_embedding_model or is_reranker_model:
         task_family = "sentence_similarity"
     elif "fill-mask" in tags:
         task_family = "masked_language_modeling"
@@ -482,8 +418,8 @@ def _normalize_model_profile(model: Any) -> dict[str, Any]:
         task_family = "seq2seq_generation"
 
     input_schemas = ["single_text"]
-    if task_family in {"sentence_similarity"}:
-        input_schemas = ["text_pair"]
+    if task_family == "sentence_similarity":
+        input_schemas = ["text_pair", "single_text"]
     elif task_family == "token_classification":
         input_schemas = ["token_sequence"]
     elif task_family == "masked_language_modeling":
@@ -493,33 +429,53 @@ def _normalize_model_profile(model: Any) -> dict[str, Any]:
     if task_family == "sentence_similarity":
         output_type = "score"
 
+    hint_keywords = {
+        "sst2": ["sst-2", "sst2"],
+        "ag_news": ["ag_news", "ag-news"],
+        "conll2003": ["conll", "conll03"],
+        "wnut_17": ["wnut", "wnut17"],
+        "qqp": ["qqp", "quora"],
+        "mrpc": ["mrpc"],
+        "mnli": ["mnli", "multinli"],
+        "qnli": ["qnli"],
+        "rte": ["rte"],
+        "stsb": ["stsb", "sts-b"],
+        "imdb": ["imdb"],
+        "snli": ["snli"],
+        "cola": ["cola"],
+        "squad": ["squad"],
+    }
     dataset_hint = None
-    if "sst-2" in suffix or "sst2" in suffix:
-        dataset_hint = "sst2"
-    elif "ag_news" in suffix:
-        dataset_hint = "ag_news"
-    elif "conll" in suffix:
-        dataset_hint = "conll2003"
-    elif "wnut" in suffix:
-        dataset_hint = "wnut_17"
+    for hint, keys in hint_keywords.items():
+        if any(k in suffix for k in keys) or any(any(k in t for k in keys) for t in tags):
+            dataset_hint = hint
+            break
 
-    is_dataset_specific = dataset_hint is not None or any(
-        tag in tags for tag in ["dataset:glue", "dataset:conll2003", "dataset:wnut_17", "dataset:ag_news"]
-    )
+    known_dataset_tags = [
+        "dataset:glue", "dataset:conll2003", "dataset:wnut_17", "dataset:ag_news", "dataset:imdb", "dataset:snli"
+    ]
+    is_dataset_specific = dataset_hint is not None or any(tag in tags for tag in known_dataset_tags)
     is_base_backbone = any(x in suffix for x in ["base", "large"]) and any(
-        x in family for x in ["bert", "roberta", "deberta", "gpt", "t5"]
-    ) and not is_dataset_specific
-    is_zero_shot_capable = any(t in tags for t in ["zero-shot-classification", "sentence-transformers", "feature-extraction"])
+        x in family for x in ["bert", "roberta", "deberta", "gpt", "t5", "llama", "mistral"]
+    ) and not is_dataset_specific and task_family != "sentence_similarity"
 
-    role = "base_backbone" if is_base_backbone else "task_head"
-    if is_zero_shot_capable:
-        role = "zero_shot_model"
+    role = "task_head"
+    if is_base_backbone:
+        role = "base_backbone"
+    elif is_embedding_model:
+        role = "embedding_model"
+    elif is_reranker_model:
+        role = "reranker_model"
+    elif is_zero_shot_classifier:
+        role = "zero_shot_classifier"
 
     domain = "general"
     if any(x in suffix for x in ["twitter", "tweet", "wnut"]):
         domain = "social_media"
-    elif "news" in suffix or dataset_hint in {"ag_news", "conll2003"}:
+    elif "news" in suffix or dataset_hint in {"ag_news", "conll2003", "cnn_dailymail"}:
         domain = "news"
+    elif "imdb" in suffix:
+        domain = "movie_reviews"
 
     return {
         "model_id": model_id,
@@ -533,47 +489,51 @@ def _normalize_model_profile(model: Any) -> dict[str, Any]:
         "is_dataset_specific_checkpoint": is_dataset_specific,
         "dataset_hint": dataset_hint,
         "is_base_backbone": is_base_backbone,
-        "is_zero_shot_capable": is_zero_shot_capable,
+        "is_zero_shot_capable": is_zero_shot_classifier,
+        "is_embedding_model": is_embedding_model,
+        "is_reranker_model": is_reranker_model,
+        "num_labels": _extract_num_labels(model, tags),
     }
 
 
 def _assess_model_dataset_fit(model_profile: dict[str, Any], dataset_spec: dict[str, Any]) -> ModelFitAssessment:
     """Assess model/dataset compatibility with explicit semantic and label-space checks."""
-    if dataset_spec["task_family"] not in {model_profile["task_family"], "sentence_similarity"} and not model_profile["is_base_backbone"]:
-        return ModelFitAssessment("reject", "Task family mismatch for non-backbone checkpoint", "none")
+    dataset_task_family = dataset_spec["task_family"]
+    dataset_schema = _dataset_schema(dataset_spec)
+    if dataset_task_family != model_profile["task_family"] and not model_profile["is_base_backbone"]:
+        if not (model_profile["is_zero_shot_capable"] and "inference" in dataset_spec.get("preferred_run_regimes", [])):
+            return ModelFitAssessment("reject", "Task family mismatch for non-backbone checkpoint", "none")
 
-    if dataset_spec["input_schema"] not in model_profile["input_schemas"] and not model_profile["is_base_backbone"]:
+    if dataset_schema not in model_profile["input_schemas"] and not model_profile["is_base_backbone"]:
         return ModelFitAssessment("reject", "Input schema mismatch", "none")
 
-    if model_profile["is_dataset_specific_checkpoint"]:
-        hint = model_profile["dataset_hint"]
-        dataset_name = dataset_spec["dataset_name"]
-        dataset_config = dataset_spec.get("dataset_config")
-        effective_name = dataset_config if dataset_name == "glue" and dataset_config else dataset_name
+    effective_name = _effective_dataset_name(dataset_spec)
+    hint = model_profile["dataset_hint"]
+    if model_profile["is_dataset_specific_checkpoint"] and hint and hint != effective_name:
+        allowed = ALLOWED_DATASET_TRANSFER_HINTS.get(hint, set())
+        if effective_name not in allowed:
+            return ModelFitAssessment("reject", "Dataset-specific head does not align with selected dataset", "none")
 
-        if dataset_spec["task_family"] == "text_classification" and hint and hint != effective_name:
-            return ModelFitAssessment(
-                "reject",
-                "Dataset-specific text-classification head has incompatible label space",
-                "none",
-            )
-
-        if dataset_spec["task_family"] == "token_classification" and hint and hint != effective_name:
-            return ModelFitAssessment(
-                "reject",
-                "Dataset-specific token-classification head has incompatible entity schema",
-                "none",
-            )
+    expected_num_labels = dataset_spec.get("num_labels")
+    observed_num_labels = model_profile.get("num_labels")
+    if (
+        expected_num_labels is not None
+        and observed_num_labels is not None
+        and dataset_task_family in {"text_classification", "token_classification", "sentence_similarity"}
+        and model_profile["is_dataset_specific_checkpoint"]
+        and expected_num_labels != observed_num_labels
+    ):
+        return ModelFitAssessment("reject", "Label-count mismatch between checkpoint head and dataset", "none")
 
     preferred = dataset_spec.get("preferred_run_regimes", [])
-
-    if dataset_spec["task_family"] == model_profile["task_family"]:
-        if model_profile["is_dataset_specific_checkpoint"]:
+    if dataset_task_family == model_profile["task_family"]:
+        if model_profile["is_dataset_specific_checkpoint"] and hint == effective_name:
             return ModelFitAssessment("exact_match", "Task and dataset-specific head align", "finetune_exact")
-        return ModelFitAssessment("acceptable_transfer", "Task aligns and generic checkpoint is transferable", "finetune_transfer")
+        if "finetune_transfer" in preferred:
+            return ModelFitAssessment("acceptable_transfer", "Task aligns and generic checkpoint is transferable", "finetune_transfer")
 
     if model_profile["is_zero_shot_capable"] and "inference" in preferred:
-        return ModelFitAssessment("inference_only", "Zero-shot capable model used in inference regime", "inference")
+        return ModelFitAssessment("inference_only", "Zero-shot classifier used in inference regime", "inference")
 
     if model_profile["is_base_backbone"] and "finetune_transfer" in preferred:
         return ModelFitAssessment("acceptable_transfer", "Generic backbone can be adapted via transfer learning", "finetune_transfer")
@@ -587,11 +547,16 @@ def _choose_model_type(run_regime: str) -> str:
         return "hf"
     if run_regime in {"finetune_exact", "finetune_transfer"}:
         return "hf_finetune"
-    return "hf"
+    raise ValueError(f"Unknown run regime: {run_regime}")
 
 
-def _sample_training_knobs(rng: random.Random, run_regime: str, model_profile: dict[str, Any]) -> dict[str, Any]:
-    """Generate regime-aware, realistic transformer training and inference knobs."""
+def _sample_training_knobs(
+    rng: random.Random,
+    run_regime: str,
+    model_profile: dict[str, Any],
+    dataset_spec: dict[str, Any],
+) -> dict[str, Any]:
+    """Generate task-aware transformer training and inference knobs."""
     distribution = rng.choices(["iid", "dirichlet", "shards"], weights=[0.55, 0.3, 0.15], k=1)[0]
     num_shards: int | None = None
     dirichlet_alpha: float | None = None
@@ -600,9 +565,14 @@ def _sample_training_knobs(rng: random.Random, run_regime: str, model_profile: d
     elif distribution == "dirichlet":
         dirichlet_alpha = rng.choice([0.1, 0.3, 0.5])
 
+    task_family = dataset_spec["task_family"]
+    family = model_profile["family"]
+    is_large_model = any(x in family for x in ["llama", "mistral", "t5"]) or "large" in family
+
     if run_regime == "inference":
+        batch_choices = [4, 8, 16] if task_family == "token_classification" else [8, 16, 32]
         return {
-            "batch_size": rng.choice([8, 16, 32]),
+            "batch_size": rng.choice(batch_choices),
             "learning_rate": 0.0,
             "optimizer": "adamw",
             "seed": rng.randint(1, 1_000_000),
@@ -614,16 +584,24 @@ def _sample_training_knobs(rng: random.Random, run_regime: str, model_profile: d
             "save_weights": False,
         }
 
-    family = model_profile["family"]
-    if any(x in family for x in ["bert", "roberta", "deberta", "electra"]):
+    if task_family == "token_classification":
+        batch_choices = [4, 8, 16]
+    elif task_family == "seq2seq_generation":
+        batch_choices = [2, 4, 8]
+    else:
+        batch_choices = [8, 16, 32]
+    if is_large_model:
+        batch_choices = [x for x in batch_choices if x <= 8] or [4]
+
+    if task_family in {"seq2seq_generation", "causal_lm"}:
+        learning_rate = rng.choice([1e-5, 2e-5, 3e-5])
+    elif any(x in family for x in ["bert", "roberta", "deberta", "electra"]):
         learning_rate = rng.choice([1e-5, 2e-5, 3e-5, 5e-5])
-    elif any(x in family for x in ["t5", "bart"]):
-        learning_rate = rng.choice([3e-5, 5e-5, 1e-4])
     else:
         learning_rate = rng.choice([2e-5, 5e-5, 1e-4])
 
     return {
-        "batch_size": rng.choice([8, 16, 32]),
+        "batch_size": rng.choice(batch_choices),
         "learning_rate": learning_rate,
         "optimizer": "adamw",
         "seed": rng.randint(1, 1_000_000),
@@ -634,6 +612,18 @@ def _sample_training_knobs(rng: random.Random, run_regime: str, model_profile: d
         "dirichlet_alpha": dirichlet_alpha,
         "save_weights": True,
     }
+
+
+def _federated_defaults(run_regime: str, model_profile: dict[str, Any], dataset_spec: dict[str, Any]) -> dict[str, Any]:
+    task_family = dataset_spec["task_family"]
+    if run_regime == "inference":
+        return {"num_rounds": 1, "num_clients": 1, "local_epochs": 1, "device": "cpu"}
+    local_epochs = 2 if model_profile["is_base_backbone"] else 1
+    if task_family == "token_classification":
+        return {"num_rounds": 5, "num_clients": 5, "local_epochs": local_epochs, "device": "cpu"}
+    if task_family in {"seq2seq_generation", "causal_lm"}:
+        return {"num_rounds": 3, "num_clients": 3, "local_epochs": local_epochs, "device": "cpu"}
+    return {"num_rounds": 4, "num_clients": 5, "local_epochs": local_epochs, "device": "cpu"}
 
 
 def _compute_realism_score(
@@ -679,6 +669,7 @@ def _row_for(
     model_id = model_profile["model_id"]
     ext_id = f"hf_{task_spec.task_label}_{run_index:06d}"
     case_name = f"{task_spec.task_label}__{model_id.replace('/', '__')}__{ds_slug}"
+    fed_defaults = _federated_defaults(fit.recommended_run_regime, model_profile, dataset_spec)
 
     return {
         "external_run_id": ext_id,
@@ -689,10 +680,10 @@ def _row_for(
         "enabled": True,
         "measure_system_metrics": True,
         "mixed_precision": False,
-        "num_rounds": 3,
-        "num_clients": 5,
+        "num_rounds": fed_defaults["num_rounds"],
+        "num_clients": fed_defaults["num_clients"],
         "client_participation_rate": 1.0,
-        "local_epochs": 1,
+        "local_epochs": fed_defaults["local_epochs"],
         "batch_size": training_knobs["batch_size"],
         "earning_rate": training_knobs["learning_rate"],
         "learning_rate": training_knobs["learning_rate"],
@@ -708,13 +699,12 @@ def _row_for(
         "momentum": training_knobs["momentum"],
         "dirichlet_alpha": training_knobs["dirichlet_alpha"],
         "aggregation": "mean",
-        "device": "cpu",
+        "device": fed_defaults["device"],
         "save_weights": training_knobs["save_weights"],
         "model_type": _choose_model_type(fit.recommended_run_regime),
         "hf_task": task_spec.hf_task,
         "task_type": task_spec.task_type,
-        "modality": dataset_spec.get("modality")
-        or ("image" if task_spec.pipeline_tag.startswith("image") or task_spec.pipeline_tag == "object-detection" else "text"),
+        "modality": dataset_spec.get("modality") or "text",
         "dataset_name": dataset_spec["dataset_name"],
         "dataset_config": dataset_spec.get("dataset_config"),
         "hf_model_id": model_id,
@@ -726,7 +716,7 @@ def _row_for(
         "task_tag": dataset_spec.get("task_tag") or task_spec.task_tag,
         "run_regime": fit.recommended_run_regime,
         "model_role": model_profile["role"],
-        "input_schema": dataset_spec["input_schema"],
+        "input_schema": _dataset_schema(dataset_spec),
         "fit_decision": fit.decision,
         "fit_reason": fit.reason,
         "realism_score": realism_score,
@@ -735,7 +725,7 @@ def _row_for(
     }
 
 
-def _is_row_valid(row: dict[str, Any]) -> bool:
+def _is_row_valid(row: dict[str, Any], model_profile: dict[str, Any], dataset_spec: dict[str, Any]) -> bool:
     """Validate final manifest rows and drop semantically invalid entries."""
     if row["fit_decision"] == "reject":
         return False
@@ -745,6 +735,38 @@ def _is_row_valid(row: dict[str, Any]) -> bool:
         return False
     if row["model_type"] == "hf_finetune" and row["run_regime"] == "inference":
         return False
+
+    required_columns = {"dataset_name", "hf_model_id", "run_regime", "input_schema", "task_type", "model_type"}
+    if any(row.get(c) in {None, ""} for c in required_columns):
+        return False
+
+    dataset_schema = _dataset_schema(dataset_spec)
+    if dataset_schema == "text_pair" and "text_pair" not in model_profile["input_schemas"] and not model_profile["is_base_backbone"]:
+        return False
+
+    dataset_task_family = dataset_spec["task_family"]
+    if dataset_task_family != model_profile["task_family"] and not model_profile["is_base_backbone"] and not model_profile["is_zero_shot_capable"]:
+        return False
+
+    effective_name = _effective_dataset_name(dataset_spec)
+    hint = model_profile.get("dataset_hint")
+    if model_profile["is_dataset_specific_checkpoint"] and hint and hint != effective_name:
+        allowed = ALLOWED_DATASET_TRANSFER_HINTS.get(hint, set())
+        if effective_name not in allowed:
+            return False
+
+    if (
+        model_profile.get("num_labels") is not None
+        and dataset_spec.get("num_labels") is not None
+        and model_profile["is_dataset_specific_checkpoint"]
+        and dataset_task_family in {"text_classification", "token_classification", "sentence_similarity"}
+        and int(model_profile["num_labels"]) != int(dataset_spec["num_labels"])
+    ):
+        return False
+
+    if row["run_regime"] != "inference" and model_profile["role"] in FROZEN_ONLY_MODEL_ROLES:
+        return False
+
     return True
 
 
@@ -823,13 +845,12 @@ def build_hf_manifest(
         dataset_pool = SUPPORTED_DATASETS.get(task_spec.pipeline_tag, [])
         for model in selected_models:
             model_profile = _normalize_model_profile(model)
-            candidate_rows: list[tuple[float, dict[str, Any]]] = []
+            candidates: list[dict[str, Any]] = []
 
             for dataset_spec in dataset_pool:
                 fit = _assess_model_dataset_fit(model_profile, dataset_spec)
                 key = (dataset_spec["dataset_name"], dataset_spec.get("dataset_config"))
-                overrides = PREFERRED_MODEL_OVERRIDES.get(key, [])
-                is_override = model_profile["model_id"] in overrides
+                is_override = model_profile["model_id"] in PREFERRED_MODEL_OVERRIDES.get(key, [])
                 realism_score, domain_alignment = _compute_realism_score(
                     model_profile=model_profile,
                     dataset_spec=dataset_spec,
@@ -838,33 +859,38 @@ def build_hf_manifest(
                 )
                 if realism_score <= 0:
                     continue
+                candidates.append(
+                    {
+                        "dataset_spec": dataset_spec,
+                        "fit": fit,
+                        "realism_score": realism_score,
+                        "domain_alignment": domain_alignment,
+                        "is_override": is_override,
+                    }
+                )
 
-            model_id = getattr(model, "id")
-            chosen_datasets = [ds for ds in dataset_pool if _is_model_compatible_for_task(model, task_spec, ds)]
-            if not chosen_datasets:
-                continue
-            rng.shuffle(chosen_datasets)
-            chosen_datasets = chosen_datasets[: max(1, datasets_per_model)]
-
-            for dataset_spec in chosen_datasets:
+            candidates.sort(key=lambda c: (c["realism_score"], c["is_override"]), reverse=True)
+            for candidate in candidates[: max(1, datasets_per_model)]:
+                fit = candidate["fit"]
                 row = _row_for(
                     run_group_id=run_group_id,
                     task_spec=task_spec,
                     model_profile=model_profile,
-                    dataset_spec=dataset_spec,
-                    run_index=len(rows) + len(candidate_rows) + 1,
-                    training_knobs=_sample_training_knobs(rng, fit.recommended_run_regime, model_profile),
+                    dataset_spec=candidate["dataset_spec"],
+                    run_index=len(rows) + 1,
+                    training_knobs=_sample_training_knobs(
+                        rng,
+                        fit.recommended_run_regime,
+                        model_profile,
+                        candidate["dataset_spec"],
+                    ),
                     fit=fit,
-                    realism_score=realism_score,
-                    domain_alignment=domain_alignment,
+                    realism_score=candidate["realism_score"],
+                    domain_alignment=candidate["domain_alignment"],
                 )
-                if _is_row_valid(row):
-                    candidate_rows.append((realism_score, row))
-
-            candidate_rows.sort(key=lambda x: x[0], reverse=True)
-            for _, row in candidate_rows[: max(1, datasets_per_model)]:
-                row["external_run_id"] = f"hf_{task_spec.task_label}_{len(rows) + 1:06d}"
-                rows.append(row)
+                if _is_row_valid(row, model_profile, candidate["dataset_spec"]):
+                    row["external_run_id"] = f"hf_{task_spec.task_label}_{len(rows) + 1:06d}"
+                    rows.append(row)
 
         print(f"[{task_key}] fetched={len(all_models)} selected={len(selected_models)} rows={len(rows)}")
 
