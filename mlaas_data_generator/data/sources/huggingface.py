@@ -80,17 +80,17 @@ def load_huggingface_source(**kwargs):
         if policy not in {"drop", "error"}:
             raise ValueError("missing_pair_handling must be one of ['drop', 'error']")
 
-        valid = []
-        missing_pair_rows = []
-        for idx in range(len(ds)):
-            row = ds[idx]
-            has_image = _has_value(row.get(image_column))
-            has_text = _has_value(row.get(text_column))
-            if has_image and has_text:
-                valid.append(idx)
-                continue
-            if has_image != has_text:
-                missing_pair_rows.append(idx)
+        image_values = ds[image_column]
+        text_values = ds[text_column]
+
+        has_image_mask = [_has_value(value) for value in image_values]
+        has_text_mask = [_has_value(value) for value in text_values]
+
+        valid_mask = [has_image and has_text for has_image, has_text in zip(has_image_mask, has_text_mask)]
+        missing_pair_mask = [has_image != has_text for has_image, has_text in zip(has_image_mask, has_text_mask)]
+
+        valid = [idx for idx, is_valid in enumerate(valid_mask) if is_valid]
+        missing_pair_rows = [idx for idx, is_missing_pair in enumerate(missing_pair_mask) if is_missing_pair]
 
         if missing_pair_rows and policy == "error":
             raise ValueError(

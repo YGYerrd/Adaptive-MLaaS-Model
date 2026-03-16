@@ -300,6 +300,7 @@ class HFCore:
         with torch.no_grad():
             for xb, yb in self._batch_iter(xs, y_true):
                 t0 = time.time()
+                labels_recorded = False
 
                 enc, labels_t, extra = self.task_spec.encode_batch(
                     self.tokenizer,
@@ -343,6 +344,7 @@ class HFCore:
                     loss = self.task_spec.extract_loss(torch, outputs, logits, labels_t, extra)
                     if loss is not None and labels_t is not None:
                         labels_all.append(labels_t.detach().cpu().numpy())
+                        labels_recorded = True
                         total_tokens += _count_supervised_tokens(labels_t, self.label_pad_value)
 
                         if labels_t.ndim >= 2:
@@ -355,7 +357,7 @@ class HFCore:
                         total_loss += float(loss.detach().cpu().item()) * float(max(1, w))
                         total_loss_weight += int(max(1, w))
 
-                if labels_t is not None and bool(inference_only) and yb is not None:
+                if labels_t is not None and bool(inference_only) and yb is not None and not labels_recorded:
                     labels_all.append(labels_t.detach().cpu().numpy())
 
                 latencies_ms.append((time.time() - t0) * 1000.0)

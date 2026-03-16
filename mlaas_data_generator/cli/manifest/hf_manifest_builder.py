@@ -409,6 +409,79 @@ def _model_downloads(model: Any) -> int:
     return int(value or 0)
 
 
+def _dataset_schema(dataset_spec: dict[str, Any]) -> str:
+    image_column = dataset_spec.get("image_column")
+    text_column = dataset_spec.get("text_column")
+    if image_column and text_column:
+        return "multimodal_pair"
+    if isinstance(text_column, str) and text_column.strip().startswith("["):
+        return "text_pair"
+    if image_column:
+        return "single_image"
+    return "single_text"
+
+
+def _task_output_type(task_spec: TaskSpec) -> str:
+    if task_spec.pipeline_tag in {"sentence-similarity", "zero-shot-image-classification"}:
+        return "relevance_score"
+    if task_spec.pipeline_tag in {"text-generation", "text2text-generation", "image-to-text", "visual-question-answering"}:
+        return "generated_text"
+    if task_spec.pipeline_tag == "object-detection":
+        return "boxes"
+    if task_spec.pipeline_tag == "image-segmentation":
+        return "segmentation_mask"
+    return "class_label"
+
+
+def _model_capabilities(model: Any) -> tuple[str, str, set[str]]:
+    model_id = str(getattr(model, "id", "") or "").lower()
+    tags = {str(t).lower() for t in (getattr(model, "tags", None) or [])}
+    pipeline_tag = str(getattr(model, "pipeline_tag", "") or "").lower()
+
+    role = "classifier"
+    output_type = "class_label"
+    schemas = {"single_text", "text_pair", "single_image", "multimodal_pair"}
+
+    if "reranker" in model_id or "rerank" in model_id or "text-ranking" in tags or "reranker" in tags:
+        role = "reranker"
+        output_type = "relevance_score"
+        schemas = {"query_document_pair", "text_pair"}
+    elif pipeline_tag in {"sentence-similarity", "text-similarity"}:
+        role = "similarity"
+        output_type = "relevance_score"
+        schemas = {"text_pair"}
+    elif pipeline_tag in {"text-generation", "text2text-generation", "image-to-text", "visual-question-answering"}:
+        role = "generator"
+        output_type = "generated_text"
+    elif pipeline_tag == "object-detection":
+        role = "detector"
+        output_type = "boxes"
+        schemas = {"single_image"}
+    elif pipeline_tag == "image-segmentation":
+        role = "segmenter"
+        output_type = "segmentation_mask"
+        schemas = {"single_image"}
+
+    return role, output_type, schemas
+
+
+def _is_model_compatible_for_task(model: Any, task_spec: TaskSpec, dataset_spec: dict[str, Any]) -> bool:
+    role, output_type, schemas = _model_capabilities(model)
+    dataset_schema = _dataset_schema(dataset_spec)
+    task_output = _task_output_type(task_spec)
+
+    if output_type != task_output:
+        return False
+    if dataset_schema not in schemas:
+        return False
+
+    if task_spec.pipeline_tag == "text-classification" and role != "classifier":
+        return False
+    if task_spec.pipeline_tag == "sentence-similarity" and role not in {"similarity", "reranker"}:
+        return False
+    return True
+
+
 def _select_diverse_models(
     models: list[Any],
     *,
@@ -574,7 +647,9 @@ def build_hf_manifest(
         dataset_pool = SUPPORTED_DATASETS[task_spec.pipeline_tag]
         for model in selected_models:
             model_id = getattr(model, "id")
-            chosen_datasets = dataset_pool[:]
+            chosen_datasets = [ds for ds in dataset_pool if _is_model_compatible_for_task(model, task_spec, ds)]
+            if not chosen_datasets:
+                continue
             rng.shuffle(chosen_datasets)
             chosen_datasets = chosen_datasets[: max(1, datasets_per_model)]
 

@@ -555,7 +555,7 @@ class FederatedDataGenerator:
                     "device": execution_device,
                 }
                 for key, value in benchmark_identity.items():
-                    writer.write_run_param(run_id, "benchmark", key, value)
+                    writer.write_run_param(run_id, "runner", f"benchmark_{key}", value)
 
                 # splitter / distribution
                 writer.write_run_param(run_id, "splitter", "distribution_type", self.knobs.get("distribution_type"))
@@ -710,7 +710,8 @@ class FederatedDataGenerator:
                         f"(samples={n_samples}, round={round_idx}, participation_count={next_rounds_so_far})"
                     )
                     if verbose_progress:
-                        print(f"{client_id}: invoking strategy.train_client")
+                        action = "evaluate_client" if bool(getattr(self.strategy, "inference_only", False)) else "train_client"
+                        print(f"{client_id}: invoking strategy.{action}")
 
                     outcome = self.strategy.train_client(
                         client_id=client_id,
@@ -729,6 +730,27 @@ class FederatedDataGenerator:
                             f"duration_s={float(outcome.duration):.3f}, "
                             f"metric={self.metric_key}:{float(outcome.metric_value) if outcome.metric_value == outcome.metric_value else 'nan'}"
                         )
+                        extras = outcome.extras if isinstance(getattr(outcome, "extras", None), dict) else {}
+                        if extras:
+                            perf_keys = (
+                                "cold_start_time",
+                                "tokenizer_load_s",
+                                "model_load_s",
+                                "tokenizer_cache_hit",
+                                "model_cache_hit",
+                                "eval_latency_ms_mean",
+                                "eval_latency_ms_p95",
+                                "eval_latency_ms_steady_mean",
+                                "eval_latency_ms_steady_p95",
+                                "eval_throughput_eps",
+                                "tokens_per_second",
+                                "eval_samples",
+                                "batch_size",
+                                "device",
+                            )
+                            perf_parts = [f"{k}={extras[k]}" for k in perf_keys if k in extras and extras[k] is not None]
+                            if perf_parts:
+                                print(f"{client_id}: perf " + ", ".join(perf_parts))
 
                     client_outcomes.append(outcome)
 
