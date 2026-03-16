@@ -294,3 +294,49 @@ outputs/runs/
 All experiments are fully parameterised via the CLI. Re-running a command with the same configuration yields identical dataset schemas and comparable metrics, enabling controlled experimental evaluation.
 
 ---
+
+## Hugging Face Generation Tasks in Manifests
+
+The HF manifest generator now includes generation-oriented task registrations:
+
+- `text-generation` → `CausalLMGenerationSpec` (`hf_task=causal_lm_generation`)
+- `text2text-generation` → `Seq2SeqGenerationSpec` (`hf_task=seq2seq_generation`)
+
+### Task tags and required columns
+
+When creating or editing run manifests for generation runs, prefer these tags/columns:
+
+- `task_type`: `generation`
+- `task_subtype`: one of `lm_modeling`, `summarization`, or `translation`
+- `task_spec`: task schema tag (for example `CausalLMGenerationSpec` or `Seq2SeqGenerationSpec`)
+- `hf_task`: canonical HF task (`causal_lm_generation` or `seq2seq_generation`)
+- `text_column`: source text for generation
+- `label_column`: reference/target text (required for supervised eval, optional for pure inference)
+- `source_column` / `target_column`: explicit source-target mapping for seq2seq workflows
+
+### Canonical metric naming and interpretation
+
+Metric naming is standardized by task subtype:
+
+- Summarization: `rouge1`, `rouge2`, `rougeL`
+- Translation: `bleu`
+- LM modeling: `perplexity` (derived from eval loss where appropriate)
+
+Metric availability by phase:
+
+- **Train:** `loss`, `perplexity`
+- **Eval / Inference:** decoding metrics (`bleu` or `rouge*`) and optional perplexity when labels exist.
+
+### Discoverability in CLI workflows
+
+You can generate manifests that include generation tasks with:
+
+```bash
+python -m mlaas_data_generator.cli hf-manifest --output outputs/hf_manifest_generation.csv
+```
+
+And resolve/validate generated rows through:
+
+```bash
+python -m mlaas_data_generator.cli run-manifest --file outputs/hf_manifest_generation.csv --dry_run
+```

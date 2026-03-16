@@ -53,6 +53,10 @@ DATASET_ARG_COLUMNS = {
     "test_split",
     "label_column",
     "text_column",
+    "source_column",
+    "target_column",
+    "task_subtype",
+    "task_spec",
     "max_samples",
 }
 
@@ -82,6 +86,10 @@ COLUMN_ALIASES = {
     "test split": "test_split",
     "label column": "label_column",
     "text column": "text_column",
+    "source column": "source_column",
+    "target column": "target_column",
+    "task subtype": "task_subtype",
+    "task spec": "task_spec",
 }
 
 @dataclass
@@ -230,6 +238,8 @@ def _resolve_row(row: pd.Series, manifest_defaults: dict[str, Any]) -> dict[str,
         "token_classification",
         "fill_mask",
         "sentence_similarity",
+        "causal_lm_generation",
+        "seq2seq_generation",
     }:
         resolved["model_type"] = "hf_finetune"
 
