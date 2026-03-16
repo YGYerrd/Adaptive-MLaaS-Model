@@ -18,6 +18,16 @@ from .system_metrics import capture_hardware_snapshot, summarize_round_usage
 from ..models.label_schema import infer_label_format, infer_num_labels
 
 
+class _StageTimer:
+    """Small helper for consistent stage timing in seconds."""
+
+    def __init__(self):
+        self._start = time.perf_counter()
+
+    def elapsed_s(self):
+        return float(time.perf_counter() - self._start)
+
+
 class FederatedDataGenerator:
     """Generate MLaaS client records using a simple federated-learning loop."""
     def __init__(
@@ -28,6 +38,9 @@ class FederatedDataGenerator:
         model_type: str | None = None,
         dataset_args: dict | None = None,
     ):
+        config_init_timer = _StageTimer()
+        self._run_stage_measurements = {}
+
         self.config = CONFIG.copy()
         if config:
             self.config.update(config)
@@ -47,8 +60,12 @@ class FederatedDataGenerator:
         if self.dataset_args:
             self.config["dataset_args"] = dict(self.dataset_args)
 
+        self._run_stage_measurements["stage_config_init_s"] = config_init_timer.elapsed_s()
+
         # load data
+        dataset_load_timer = _StageTimer()
         train, test, meta = load_dataset(self.dataset, **self.dataset_args)
+        self._run_stage_measurements["stage_dataset_load_s"] = dataset_load_timer.elapsed_s()
         (self.x_train, self.y_train), (self.x_test, self.y_test) = train, test
         self.meta = meta
         self.input_shape = tuple(meta["input_shape"])
@@ -366,6 +383,9 @@ class FederatedDataGenerator:
             print("Warning: label-based partitioning not supported for regression; using 'iid'.")
             self.knobs["distribution_type"] = "iid"
 
+        run_stage_measurements = dict(getattr(self, "_run_stage_measurements", {}))
+
+        split_timer = _StageTimer()
         clients, split_info = split_data(
             self.x_train,
             self.y_train,
@@ -377,8 +397,11 @@ class FederatedDataGenerator:
             sample_frac=self.knobs["sample_frac"],
             rng=self.rng,
         )
+        run_stage_measurements["stage_split_s"] = split_timer.elapsed_s()
         
+        model_build_timer = _StageTimer()
         global_model = self.strategy.build_model()
+        run_stage_measurements["stage_global_model_build_s"] = model_build_timer.elapsed_s()
         execution_device = self._resolve_execution_device(global_model)
 
         print("\n========== RUN SUMMARY ==========")
@@ -587,14 +610,16 @@ class FederatedDataGenerator:
                 writer.write_run_param(run_id, "runner", "params_count", params_count)
                 writer.write_run_param(run_id, "runner", "hardware_snapshot", hardware_snapshot)
 
+            run_init_measurements = {
+                **self._canonical_run_metadata(),
+                **run_stage_measurements,
+                "run_start_ts": run_start_ts,
+            }
             writer.write_measurements(
                 run_id=run_id,
                 round=None,
                 client_id=None,
-                values={
-                    **self._canonical_run_metadata(),
-                    "run_start_ts": run_start_ts,
-                },
+                values=run_init_measurements,
             )
 
             # --- clients dimension
@@ -613,6 +638,9 @@ class FederatedDataGenerator:
             for round_num in range(self.knobs["num_rounds"]):
                 round_idx = round_num + 1
                 print(f"--- Round {round_idx} ---")
+                round_total_timer = _StageTimer()
+                round_log_time_s = 0.0
+                round_pre_overhead_timer = _StageTimer()
 
                 client_payloads = []
                 client_outcomes = []
@@ -628,6 +656,7 @@ class FederatedDataGenerator:
                     )
 
                 # Round dimension row
+                write_round_timer = _StageTimer()
                 writer.write_round(
                     {
                         "run_id": run_id,
@@ -638,6 +667,8 @@ class FederatedDataGenerator:
                         "dropped_clients": None,
                     }
                 )
+                round_log_time_s += write_round_timer.elapsed_s()
+                round_pre_overhead_s = round_pre_overhead_timer.elapsed_s()
 
                 for client_id, data in clients.items():
                     dist = client_distributions.get(client_id)
@@ -647,6 +678,7 @@ class FederatedDataGenerator:
                     if self.rng.random() < self.config.get("client_dropout_rate", 0.0):
                         skipped_clients += 1
                         # record dropout as measurements
+                        write_dropout_timer = _StageTimer()
                         writer.write_measurements(
                             run_id=run_id,
                             round=round_idx,
@@ -668,6 +700,7 @@ class FederatedDataGenerator:
                                 "fail_reason_category": "dropout",
                             },
                         )
+                        round_log_time_s += write_dropout_timer.elapsed_s()
                         print(f"{client_id} dropped out")
                         continue
 
@@ -727,12 +760,14 @@ class FederatedDataGenerator:
                         round_qos_records.append(client_values)
 
                     # write client-round measurements
+                    write_client_timer = _StageTimer()
                     writer.write_measurements(
                         run_id=run_id,
                         round=round_idx,
                         client_id=client_id,
                         values=client_values,
                     )
+                    round_log_time_s += write_client_timer.elapsed_s()
 
                     round_metrics.append(
                         {
@@ -760,6 +795,7 @@ class FederatedDataGenerator:
                         f"Round {round_idx}: aggregating {len(client_payloads)} payload(s) from "
                         f"{sum(1 for o in client_outcomes if getattr(o, 'participated', False))} participating client(s)."
                     )
+                aggregation_timer = _StageTimer()
                 loss, global_metric, global_score, global_extra = self.strategy.aggregate_and_eval(
                     global_model=global_model,
                     client_payloads=client_payloads,
@@ -769,6 +805,7 @@ class FederatedDataGenerator:
                     x_test=self.x_test,
                     y_test=self.y_test,
                 )
+                round_aggregation_s = aggregation_timer.elapsed_s()
 
                 round_usage_summary = summarize_round_usage(
                     round_metrics,
@@ -777,6 +814,7 @@ class FederatedDataGenerator:
                 )
 
                 # update round dimension with aggregates
+                write_round_summary_timer = _StageTimer()
                 writer.write_round(
                     {
                         "run_id": run_id,
@@ -787,8 +825,19 @@ class FederatedDataGenerator:
                         "dropped_clients": int(skipped_clients),
                     }
                 )
+                round_log_time_s += write_round_summary_timer.elapsed_s()
+
+                round_client_compute_s = float(
+                    sum(float(getattr(outcome, "duration", 0.0) or 0.0) for outcome in client_outcomes)
+                )
+                round_total_s = round_total_timer.elapsed_s()
+                round_overhead_s = max(
+                    0.0,
+                    round_total_s - round_client_compute_s - round_aggregation_s - round_log_time_s,
+                )
 
                 # write round-level measurements (client_id NULL)
+                write_round_metrics_timer = _StageTimer()
                 writer.write_measurements(
                     run_id=run_id,
                     round=round_idx,
@@ -798,10 +847,15 @@ class FederatedDataGenerator:
                         f"global_{self.metric_key}": global_metric,
                         "global_metric_score": global_score,
                         "global_aux_metric": global_extra,
+                        "round_aggregation_s": round_aggregation_s,
+                        "round_logging_s": round_log_time_s,
+                        "round_overhead_s": round_overhead_s,
+                        "round_overhead_pre_client_loop_s": round_pre_overhead_s,
                         "round_resource_summary": round_usage_summary,
                         **self._round_qos_rollups(round_qos_records),
                     },
                 )
+                round_log_time_s += write_round_metrics_timer.elapsed_s()
 
                 if self.task_type == "regression" and self.target_scaler and self.target_scaler.get("type") == "standard":
                     rmse_std = float(global_metric)
