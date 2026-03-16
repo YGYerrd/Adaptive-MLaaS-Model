@@ -1,6 +1,7 @@
 import numpy as np
 
 from .label_schema import attach_label_schema
+from ...models.adapters.hf_cache import get_cached_tokenizer
 
 
 def _tokenize_texts(tokenizer, texts, max_length):
@@ -74,7 +75,7 @@ def preprocess_hf_text_fill_mask(
         raise ValueError(f"Missing text_column '{text_column}' in dataset '{meta.get('hf_id')}'")
 
     try:
-        from transformers import AutoTokenizer
+        import transformers
     except Exception as e:
         raise ImportError(
             "HF fill-mask preprocessing requires 'transformers'. Install with: pip install transformers"
@@ -87,10 +88,12 @@ def preprocess_hf_text_fill_mask(
     if mlm_probability <= 0.0 or mlm_probability >= 1.0:
         raise ValueError("mlm_probability must be in the open interval (0, 1)")
 
-    try:
-        tokenizer = AutoTokenizer.from_pretrained(hf_model_id, use_fast=True)
-    except Exception:
-        tokenizer = AutoTokenizer.from_pretrained(hf_model_id, use_fast=False)
+    tokenizer, _, _ = get_cached_tokenizer(
+        hf_model_id=hf_model_id,
+        task="fill_mask",
+        device="cpu",
+        transformers_module=transformers,
+    )
 
     seed = int(meta.get("seed", 42))
     train_rng = np.random.default_rng(seed)

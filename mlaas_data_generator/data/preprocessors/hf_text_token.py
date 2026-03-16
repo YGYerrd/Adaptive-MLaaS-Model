@@ -1,6 +1,7 @@
 import numpy as np
 
 from .label_schema import attach_label_schema
+from ...models.adapters.hf_cache import get_cached_tokenizer
 
 def preprocess_hf_text_token(train, test, meta, *, hf_model_id, tokens_column, label_column):
     ds_train, _ = train
@@ -22,17 +23,19 @@ def preprocess_hf_text_token(train, test, meta, *, hf_model_id, tokens_column, l
         raise ValueError("Token classification requires Sequence(ClassLabel) style labels.")
 
     try:
-        from transformers import AutoTokenizer
+        import transformers
     except Exception as e:
         raise ImportError(
             "HF token preprocessing requires 'transformers'. Install with: pip install transformers"
         ) from e
 
     max_length = int(meta.get("max_length", 128))
-    try:
-        tokenizer = AutoTokenizer.from_pretrained(hf_model_id, use_fast=True)
-    except Exception:
-        tokenizer = AutoTokenizer.from_pretrained(hf_model_id, use_fast=False)
+    tokenizer, _, _ = get_cached_tokenizer(
+        hf_model_id=hf_model_id,
+        task="token_classification",
+        device="cpu",
+        transformers_module=transformers,
+    )
 
     def _encode_tokens_and_labels(tokens_list, tags_list):
         enc = tokenizer(
