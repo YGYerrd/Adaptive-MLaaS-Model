@@ -31,6 +31,10 @@ def _normalize_hf_task_name(hf_task):
         "token_cls": "token_classification",
         "masked_lm": "fill_mask",
         "mlm": "fill_mask",
+        "text_generation": "causal_lm_generation",
+        "causal_lm": "causal_lm_generation",
+        "text2text_generation": "seq2seq_generation",
+        "seq2seq": "seq2seq_generation",
     }
     return aliases.get(task, task)
 

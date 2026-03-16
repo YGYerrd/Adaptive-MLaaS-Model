@@ -11,7 +11,7 @@ from ..data.distributions import get_data_distribution, get_mlm_masked_token_sta
 from ..data.sources.hf_meta import fetch_hf_model_meta
 from ..storage.writer import make_writer
 from .strategies.factory import make_task_strategy
-from .strategies.base import canonical_task_family, canonical_label_format, canonical_metric_names, normalize_hf_task
+from .strategies.base import canonical_task_family, canonical_label_format, canonical_metric_names, canonical_metrics_by_phase, normalize_hf_task
 from .system_metrics import capture_hardware_snapshot, summarize_round_usage
 from ..models.label_schema import infer_label_format, infer_num_labels
 
@@ -179,11 +179,17 @@ class FederatedDataGenerator:
         task_family = canonical_task_family(self.task_type, hf_task)
         label_format = infer_label_format(self.meta, task_type=self.task_type) or canonical_label_format(task_family)
         metric_primary_name, metric_secondary_name = canonical_metric_names(task_family, self.metric_key)
+        task_subtype = self.dataset_args.get("task_subtype") or self.config.get("task_subtype") or self.meta.get("task_subtype")
+        metric_policy = canonical_metrics_by_phase(task_family, task_subtype)
         return {
             "task_family": task_family,
             "label_format": label_format,
+            "task_subtype": task_subtype,
             "metric_primary_name": metric_primary_name,
             "metric_secondary_name": metric_secondary_name,
+            "train_metrics": list(metric_policy.get("train", ())),
+            "eval_metrics": list(metric_policy.get("eval", ())),
+            "inference_metrics": list(metric_policy.get("inference", ())),
             "num_labels": infer_num_labels(self.meta, fallback=self.num_classes),
             "train_set_size": int(len(self.y_train)),
             "eval_set_size": int(len(self.y_test)),

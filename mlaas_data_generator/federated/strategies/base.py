@@ -43,6 +43,11 @@ def normalize_hf_task(hf_task: str | None) -> str:
         "ner": "token_classification",
         "masked_lm": "fill_mask",
         "mlm": "fill_mask",
+        "text_generation": "causal_lm_generation",
+        "causal_lm": "causal_lm_generation",
+        "causal_lm_modeling": "causal_lm_generation",
+        "text2text_generation": "seq2seq_generation",
+        "seq2seq": "seq2seq_generation",
     }
     return mapping.get(task, task or "unknown")
 
@@ -64,6 +69,12 @@ def canonical_task_family(task_type: str | None, hf_task: str | None = None) -> 
         if hf == "sequence_classification" or hf == "unknown":
             return "classification"
         return f"hf_{hf}"
+    if base == "generation":
+        if hf == "seq2seq_generation":
+            return "seq2seq_generation"
+        if hf == "causal_lm_generation" or hf == "unknown":
+            return "causal_lm_generation"
+        return f"hf_{hf}"
     return "unknown"
 
 
@@ -74,6 +85,8 @@ def canonical_label_format(task_family: str) -> str:
         "fill_mask": "token_labels",
         "regression": "continuous",
         "clustering": "cluster_id",
+        "causal_lm_generation": "next_token",
+        "seq2seq_generation": "sequence_to_sequence",
     }
     return mapping.get(task_family, "unknown")
 
@@ -89,7 +102,41 @@ def canonical_metric_names(task_family: str, metric_key: str) -> tuple[str, str 
         return ("rmse", "mae")
     if task_family == "clustering":
         return ("silhouette", None)
+    if task_family == "causal_lm_generation":
+        return ("perplexity", "loss")
+    if task_family == "seq2seq_generation":
+        return ("bleu", "rougeL")
     return ((metric_key or "metric").lower(), None)
+
+
+def canonical_metrics_by_phase(task_family: str, task_subtype: str | None = None) -> dict[str, tuple[str, ...]]:
+    subtype = (task_subtype or "").strip().lower()
+
+    if task_family == "seq2seq_generation":
+        if subtype == "summarization":
+            eval_metrics = ("rouge1", "rouge2", "rougeL")
+        elif subtype == "translation":
+            eval_metrics = ("bleu",)
+        else:
+            eval_metrics = ("bleu", "rougeL")
+        return {
+            "train": ("loss", "perplexity"),
+            "eval": eval_metrics + ("perplexity_if_labels",),
+            "inference": eval_metrics + ("perplexity_if_labels",),
+        }
+
+    if task_family == "causal_lm_generation":
+        return {
+            "train": ("loss", "perplexity"),
+            "eval": ("perplexity",),
+            "inference": ("perplexity_if_labels",),
+        }
+
+    return {
+        "train": tuple(),
+        "eval": tuple(),
+        "inference": tuple(),
+    }
 
 @dataclass
 class ClientOutcome:

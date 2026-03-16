@@ -14,6 +14,8 @@ class TaskSpec:
     hf_task: str
     task_type: str
     task_label: str
+    task_spec: str
+    task_subtype: str | None = None
 
 
 TASK_SPECS: dict[str, TaskSpec] = {
@@ -22,24 +24,43 @@ TASK_SPECS: dict[str, TaskSpec] = {
         hf_task="sequence_classification",
         task_type="classification",
         task_label="textcls",
+        task_spec="SequenceClassificationSpec",
     ),
     "token_classification": TaskSpec(
         pipeline_tag="token-classification",
         hf_task="token_classification",
         task_type="classification",
         task_label="tokencls",
+        task_spec="TokenClassificationSpec",
     ),
     "sentence_similarity": TaskSpec(
         pipeline_tag="sentence-similarity",
         hf_task="sentence_similarity",
         task_type="classification",
         task_label="pairscore",
+        task_spec="SentenceSimilaritySpec",
     ),
     "fill_mask": TaskSpec(
         pipeline_tag="fill-mask",
         hf_task="fill_mask",
         task_type="classification",
         task_label="fillmask",
+        task_spec="MaskedLMGenerationSpec",
+    ),
+    "text_generation": TaskSpec(
+        pipeline_tag="text-generation",
+        hf_task="causal_lm_generation",
+        task_type="generation",
+        task_label="causallm",
+        task_spec="CausalLMGenerationSpec",
+        task_subtype="lm_modeling",
+    ),
+    "text2text_generation": TaskSpec(
+        pipeline_tag="text2text-generation",
+        hf_task="seq2seq_generation",
+        task_type="generation",
+        task_label="seq2seq",
+        task_spec="Seq2SeqGenerationSpec",
     ),
 }
 
@@ -142,6 +163,49 @@ SUPPORTED_DATASETS: dict[str, list[dict[str, Any]]] = {
             "max_length": 128,
         },
     ],
+    "text-generation": [
+        {
+            "dataset_name": "wikitext",
+            "dataset_config": "wikitext-2-raw-v1",
+            "train_split": "train",
+            "test_split": "validation",
+            "text_column": "text",
+            "label_column": "text",
+            "source_column": "text",
+            "target_column": "text",
+            "task_subtype": "lm_modeling",
+            "max_samples": 1500,
+            "max_length": 256,
+        },
+    ],
+    "text2text-generation": [
+        {
+            "dataset_name": "xsum",
+            "dataset_config": None,
+            "train_split": "train",
+            "test_split": "validation",
+            "text_column": "document",
+            "label_column": "summary",
+            "source_column": "document",
+            "target_column": "summary",
+            "task_subtype": "summarization",
+            "max_samples": 1200,
+            "max_length": 512,
+        },
+        {
+            "dataset_name": "wmt14",
+            "dataset_config": "de-en",
+            "train_split": "train",
+            "test_split": "validation",
+            "text_column": "translation.de",
+            "label_column": "translation.en",
+            "source_column": "translation.de",
+            "target_column": "translation.en",
+            "task_subtype": "translation",
+            "max_samples": 1200,
+            "max_length": 256,
+        },
+    ],
 }
 
 MANIFEST_COLUMNS = [
@@ -176,6 +240,8 @@ MANIFEST_COLUMNS = [
     "model_type",
     "hf_task",
     "task_type",
+    "task_spec",
+    "task_subtype",
     "dataset_name",
     "dataset_config",
     "hf_model_id",
@@ -183,6 +249,8 @@ MANIFEST_COLUMNS = [
     "test_split",
     "label_column",
     "text_column",
+    "source_column",
+    "target_column",
 ]
 
 
@@ -261,9 +329,7 @@ def _row_for(
     model_id: str,
     dataset_spec: dict[str, Any],
     run_index: int,
-    learning_rate: float,
     training_knobs: dict[str, Any],
-    seed: int,
 ) -> dict[str, Any]:
     ds_slug = dataset_spec["dataset_name"].replace("/", "_")
     ext_id = f"hf_{task_spec.task_label}_{run_index:06d}"
@@ -301,6 +367,8 @@ def _row_for(
         "model_type": "hf",
         "hf_task": task_spec.hf_task,
         "task_type": task_spec.task_type,
+        "task_spec": task_spec.task_spec,
+        "task_subtype": dataset_spec.get("task_subtype") or task_spec.task_subtype,
         "dataset_name": dataset_spec["dataset_name"],
         "dataset_config": dataset_spec.get("dataset_config"),
         "hf_model_id": model_id,
@@ -308,6 +376,8 @@ def _row_for(
         "test_split": dataset_spec["test_split"],
         "label_column": dataset_spec.get("label_column"),
         "text_column": dataset_spec.get("text_column"),
+        "source_column": dataset_spec.get("source_column"),
+        "target_column": dataset_spec.get("target_column"),
     }
 
 
