@@ -21,8 +21,8 @@ def load_huggingface_source(**kwargs):
 
     task_type = kwargs.get("task", "classification")
     modality = str(kwargs.get("modality", "text")).strip().lower()
-    if modality not in {"text", "image"}:
-        raise ValueError(f"Unsupported HF modality '{modality}'. Expected one of ['text', 'image']")
+    if modality not in {"text", "image", "multimodal"}:
+        raise ValueError(f"Unsupported HF modality '{modality}'. Expected one of ['text', 'image', 'multimodal']")
     hf_task = kwargs.get("hf_task", "sequence_classification")
 
     ds_train = load_dataset(dataset_name, dataset_config, split=train_split)
@@ -69,6 +69,49 @@ def load_huggingface_source(**kwargs):
         ds_test = ds_test.select(range(min(max(1, n // 5), len(ds_test))))
 
     schema = None
+    def _has_value(value):
+        if value is None:
+            return False
+        if isinstance(value, str):
+            return bool(value.strip())
+        return True
+
+    def _apply_pair_integrity(ds, *, split_name, image_column, text_column, policy):
+        if policy not in {"drop", "error"}:
+            raise ValueError("missing_pair_handling must be one of ['drop', 'error']")
+
+        valid = []
+        missing_pair_rows = []
+        for idx in range(len(ds)):
+            row = ds[idx]
+            has_image = _has_value(row.get(image_column))
+            has_text = _has_value(row.get(text_column))
+            if has_image and has_text:
+                valid.append(idx)
+                continue
+            if has_image != has_text:
+                missing_pair_rows.append(idx)
+
+        if missing_pair_rows and policy == "error":
+            raise ValueError(
+                f"HF multimodal pair integrity failed for split='{split_name}': "
+                f"{len(missing_pair_rows)} rows have missing image/text counterparts. "
+                f"Set missing_pair_handling='drop' to filter invalid rows."
+            )
+
+        if missing_pair_rows and policy == "drop":
+            ds = ds.select(valid)
+
+        return ds, {
+            "split": split_name,
+            "policy": policy,
+            "dropped_rows": len(missing_pair_rows) if policy == "drop" else 0,
+            "missing_pair_rows": len(missing_pair_rows),
+            "aligned_pairs": len(valid),
+            "original_rows": len(ds) + (len(missing_pair_rows) if policy == "drop" else 0),
+            "output_rows": len(ds),
+        }
+
     if modality == "image":
         image_column = kwargs.get("image_column", "image")
         label_column = kwargs.get("label_column", "label")
@@ -108,6 +151,46 @@ def load_huggingface_source(**kwargs):
 
         if task_type == "segmentation" and mask_column and mask_column not in train_cols:
             raise ValueError(f"HF image segmentation mask_column '{mask_column}' not found in dataset")
+
+    if modality == "multimodal":
+        image_column = kwargs.get("image_column", "image")
+        text_column = kwargs.get("text_column", "text")
+        label_column = kwargs.get("label_column")
+        missing_pair_handling = str(kwargs.get("missing_pair_handling", "drop")).strip().lower()
+
+        train_cols = set(getattr(ds_train, "column_names", []) or [])
+        for required_col, name in ((image_column, "image_column"), (text_column, "text_column")):
+            if required_col not in train_cols:
+                raise ValueError(
+                    f"HF multimodal modality requires {name} '{required_col}' to exist in dataset '{dataset_name}'. "
+                    f"Available columns: {sorted(train_cols)}"
+                )
+
+        ds_train, train_pair_report = _apply_pair_integrity(
+            ds_train,
+            split_name="train",
+            image_column=image_column,
+            text_column=text_column,
+            policy=missing_pair_handling,
+        )
+        ds_test, test_pair_report = _apply_pair_integrity(
+            ds_test,
+            split_name=chosen_test_split,
+            image_column=image_column,
+            text_column=text_column,
+            policy=missing_pair_handling,
+        )
+
+        schema = {
+            "image_column": image_column,
+            "text_column": text_column,
+            "label_column": label_column if label_column in train_cols else None,
+            "pair_validation": {
+                "missing_pair_handling": missing_pair_handling,
+                "train": train_pair_report,
+                "test": test_pair_report,
+            },
+        }
 
     dataset_args = dict(kwargs)
     dataset_args.pop("preprocessors", None)
