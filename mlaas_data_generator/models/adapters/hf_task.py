@@ -511,3 +511,71 @@ class FillMaskSpec(HFTaskSpec):
         acc = float((yp == yt).mean())
 
         return {"primary": acc, "secondary": np.nan}
+
+
+class CausalLMSpec(HFTaskSpec):
+    name = "causal_lm"
+    requires_num_labels = False
+
+    def build_model(self, transformers, model_id, num_labels):
+        AutoModel = transformers.AutoModelForCausalLM
+        self.weight_format = None
+        try:
+            model = AutoModel.from_pretrained(model_id, use_safetensors=True)
+            self.weight_format = "safetensors"
+        except OSError as e:
+            if "safetensors" in str(e).lower():
+                model = AutoModel.from_pretrained(model_id, use_safetensors=False)
+                self.weight_format = "pickle"
+            else:
+                raise
+        return model
+
+    def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100):
+        if not isinstance(xb, dict):
+            enc = tokenizer(xb, truncation=True, padding=True, max_length=int(max_length), return_tensors="pt")
+            enc = {k: v.to(device) for k, v in enc.items()}
+        else:
+            enc = {k: torch.tensor(v, dtype=torch.long, device=device) for k, v in xb.items()}
+
+        labels_t = None
+        if yb is not None:
+            labels_t = torch.tensor(yb, dtype=torch.long, device=device)
+
+        return enc, labels_t, {"ignore_index": int(ignore_index)}
+
+    def loss_fn(self, torch, logits, labels_t, extra):
+        ignore_index = int(extra.get("ignore_index", -100))
+        return torch.nn.functional.cross_entropy(logits.transpose(1, 2), labels_t, ignore_index=ignore_index)
+
+    def preds_from_logits(self, torch, logits, extra):
+        return torch.argmax(logits, dim=-1)
+
+    def metrics(self, y_true, y_pred, y_extra=None):
+        ignore_index = int((y_extra or {}).get("ignore_index", -100))
+        y_true = np.asarray(y_true)
+        y_pred = np.asarray(y_pred)
+        mask = y_true != ignore_index
+        yt = y_true[mask]
+        yp = y_pred[mask]
+        if yt.size == 0:
+            return {"primary": np.nan, "secondary": np.nan}
+        return {"primary": float((yt == yp).mean()), "secondary": np.nan}
+
+
+class Seq2SeqSpec(CausalLMSpec):
+    name = "seq2seq"
+
+    def build_model(self, transformers, model_id, num_labels):
+        AutoModel = transformers.AutoModelForSeq2SeqLM
+        self.weight_format = None
+        try:
+            model = AutoModel.from_pretrained(model_id, use_safetensors=True)
+            self.weight_format = "safetensors"
+        except OSError as e:
+            if "safetensors" in str(e).lower():
+                model = AutoModel.from_pretrained(model_id, use_safetensors=False)
+                self.weight_format = "pickle"
+            else:
+                raise
+        return model
