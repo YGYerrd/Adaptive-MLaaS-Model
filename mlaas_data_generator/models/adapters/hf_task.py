@@ -42,6 +42,15 @@ class HFTaskSpec:
         """
         raise NotImplementedError
 
+    def batch_metric_statistics(self, torch, logits, labels_t, extra):
+        return None
+
+    def batch_metric_statistics_from_outputs(self, torch, outputs, labels_t, extra):
+        return None
+
+    def metrics_from_statistics(self, stats):
+        return None
+
     def build_forward_inputs(self, enc, labels_t=None, inference_only=False):
         model_inputs = dict(enc)
         if labels_t is not None and not inference_only:
@@ -364,6 +373,260 @@ class TokenClassificationSpec(HFTaskSpec):
         acc = float((yp == yt).mean())
         f1 = float(f1_score(yt, yp, average="weighted"))
         return {"primary": acc, "secondary": f1}
+
+
+class ImageClassificationSpec(HFTaskSpec):
+    name = "image_classification"
+
+    def build_model(self, transformers, model_id, num_labels):
+        return transformers.AutoModelForImageClassification.from_pretrained(
+            model_id,
+            num_labels=int(num_labels),
+            ignore_mismatched_sizes=True,
+        )
+
+    def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
+        if not isinstance(xb, dict) or "pixel_values" not in xb:
+            raise ValueError("image classification expects dict input with 'pixel_values'")
+        enc = {"pixel_values": torch.tensor(xb["pixel_values"], dtype=torch.float32, device=device)}
+        labels_t = None if yb is None else torch.tensor(yb, dtype=torch.long, device=device)
+        return enc, labels_t, {"top_k": 5}
+
+    def loss_fn(self, torch, logits, labels_t, extra):
+        return torch.nn.functional.cross_entropy(logits, labels_t)
+
+    def preds_from_logits(self, torch, logits, extra):
+        return torch.argmax(logits, dim=-1)
+
+    def batch_metric_statistics(self, torch, logits, labels_t, extra):
+        if labels_t is None:
+            return None
+        labels_t = labels_t.view(-1)
+        top1 = torch.argmax(logits, dim=-1)
+        k = int(min(int(extra.get("top_k", 5)), int(logits.shape[-1])))
+        topk = torch.topk(logits, k=k, dim=-1).indices
+        top1_correct = int((top1 == labels_t).sum().detach().cpu().item())
+        topk_correct = int((topk == labels_t.unsqueeze(-1)).any(dim=-1).sum().detach().cpu().item())
+        total = int(labels_t.shape[0])
+        return {"top1_correct": top1_correct, "top5_correct": topk_correct, "total": total}
+
+    def metrics_from_statistics(self, stats):
+        total = float(stats.get("total", 0.0))
+        if total <= 0:
+            return {"primary": np.nan, "secondary": np.nan, "named_metrics": {}}
+        top1 = float(stats.get("top1_correct", 0.0)) / total
+        top5 = float(stats.get("top5_correct", 0.0)) / total
+        return {
+            "primary": top1,
+            "secondary": top5,
+            "named_metrics": {"top1_accuracy": top1, "top5_accuracy": top5},
+        }
+
+    def metrics(self, y_true, y_pred, y_extra=None):
+        y_true = np.asarray(y_true)
+        y_pred = np.asarray(y_pred)
+        if y_true.size == 0:
+            return {"primary": np.nan, "secondary": np.nan}
+        acc = float((y_true == y_pred).mean())
+        return {"primary": acc, "secondary": acc}
+
+
+class ObjectDetectionSpec(HFTaskSpec):
+    name = "object_detection"
+
+    def __init__(self, score_threshold=0.05):
+        self.score_threshold = float(score_threshold)
+
+    def build_model(self, transformers, model_id, num_labels):
+        return transformers.AutoModelForObjectDetection.from_pretrained(
+            model_id,
+            num_labels=int(num_labels),
+            ignore_mismatched_sizes=True,
+        )
+
+    def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
+        if not isinstance(xb, dict) or "pixel_values" not in xb:
+            raise ValueError("object detection expects dict input with 'pixel_values'")
+        enc = {"pixel_values": torch.tensor(xb["pixel_values"], dtype=torch.float32, device=device)}
+        labels_t = None
+        if yb is not None:
+            labels_t = []
+            for item in yb:
+                labels_t.append(
+                    {
+                        "class_labels": torch.tensor(item.get("classes", []), dtype=torch.long, device=device),
+                        "boxes": torch.tensor(item.get("boxes", []), dtype=torch.float32, device=device),
+                    }
+                )
+        return enc, labels_t, {"score_threshold": self.score_threshold}
+
+    def build_forward_inputs(self, enc, labels_t=None, inference_only=False):
+        out = dict(enc)
+        if labels_t is not None and not inference_only:
+            out["labels"] = labels_t
+        return out
+
+    def loss_fn(self, torch, logits, labels_t, extra):
+        return None
+
+    def extract_loss(self, torch, outputs, logits, labels_t, extra):
+        return getattr(outputs, "loss", None)
+
+    def preds_from_logits(self, torch, logits, extra):
+        return torch.argmax(logits, dim=-1)
+
+    def _box_iou(self, boxes_a, boxes_b):
+        if boxes_a.size == 0 or boxes_b.size == 0:
+            return np.zeros((boxes_a.shape[0], boxes_b.shape[0]), dtype=np.float32)
+        tl = np.maximum(boxes_a[:, None, :2], boxes_b[None, :, :2])
+        br = np.minimum(boxes_a[:, None, 2:], boxes_b[None, :, 2:])
+        wh = np.clip(br - tl, a_min=0.0, a_max=None)
+        inter = wh[..., 0] * wh[..., 1]
+        area_a = np.clip(boxes_a[:, 2] - boxes_a[:, 0], 0, None) * np.clip(boxes_a[:, 3] - boxes_a[:, 1], 0, None)
+        area_b = np.clip(boxes_b[:, 2] - boxes_b[:, 0], 0, None) * np.clip(boxes_b[:, 3] - boxes_b[:, 1], 0, None)
+        union = np.clip(area_a[:, None] + area_b[None, :] - inter, a_min=1e-9, a_max=None)
+        return inter / union
+
+    def batch_metric_statistics_from_outputs(self, torch, outputs, labels_t, extra):
+        if labels_t is None or outputs is None or not hasattr(outputs, "pred_boxes"):
+            return None
+        probs = torch.softmax(outputs.logits, dim=-1).detach().cpu().numpy()
+        boxes = outputs.pred_boxes.detach().cpu().numpy()
+
+        stats = {"gt": 0.0}
+        thresholds = [0.5, 0.75, 0.95]
+        for thr in thresholds:
+            stats[f"tp_{thr}"] = 0.0
+            stats[f"fp_{thr}"] = 0.0
+
+        for bidx, gt in enumerate(labels_t):
+            gt_boxes = gt["boxes"].detach().cpu().numpy()
+            gt_classes = gt["class_labels"].detach().cpu().numpy()
+            stats["gt"] += float(len(gt_classes))
+
+            p_scores = probs[bidx, :, :-1].max(axis=-1)
+            p_cls = probs[bidx, :, :-1].argmax(axis=-1)
+            keep = p_scores >= float(extra.get("score_threshold", self.score_threshold))
+            p_scores = p_scores[keep]
+            p_cls = p_cls[keep]
+            p_boxes = boxes[bidx][keep]
+            p_boxes = np.column_stack([
+                p_boxes[:, 0] - p_boxes[:, 2] / 2.0,
+                p_boxes[:, 1] - p_boxes[:, 3] / 2.0,
+                p_boxes[:, 0] + p_boxes[:, 2] / 2.0,
+                p_boxes[:, 1] + p_boxes[:, 3] / 2.0,
+            ]) if p_boxes.size else np.zeros((0, 4), dtype=np.float32)
+
+            for thr in thresholds:
+                matched_gt = set()
+                tp = 0
+                fp = 0
+                for pb, pc in zip(p_boxes, p_cls):
+                    cand_idx = np.where(gt_classes == pc)[0]
+                    if cand_idx.size == 0:
+                        fp += 1
+                        continue
+                    ious = self._box_iou(np.asarray([pb]), gt_boxes[cand_idx])[0]
+                    best = int(np.argmax(ious)) if ious.size else -1
+                    if best >= 0 and ious[best] >= thr:
+                        gt_id = int(cand_idx[best])
+                        if gt_id not in matched_gt:
+                            matched_gt.add(gt_id)
+                            tp += 1
+                        else:
+                            fp += 1
+                    else:
+                        fp += 1
+                stats[f"tp_{thr}"] += float(tp)
+                stats[f"fp_{thr}"] += float(fp)
+        return stats
+
+    def metrics_from_statistics(self, stats):
+        gt = float(stats.get("gt", 0.0))
+        if gt <= 0:
+            return {"primary": np.nan, "secondary": np.nan, "named_metrics": {}}
+        maps = []
+        named = {}
+        for thr in [0.5, 0.75, 0.95]:
+            tp = float(stats.get(f"tp_{thr}", 0.0))
+            fp = float(stats.get(f"fp_{thr}", 0.0))
+            denom = max(gt + fp, 1e-9)
+            ap = tp / denom
+            maps.append(ap)
+            named[f"map@{thr}"] = ap
+        m_ap = float(np.mean(maps)) if maps else np.nan
+        named["map"] = m_ap
+        return {"primary": m_ap, "secondary": float(named.get("map@0.5", np.nan)), "named_metrics": named}
+
+    def metrics(self, y_true, y_pred, y_extra=None):
+        return {"primary": np.nan, "secondary": np.nan}
+
+
+class ImageSegmentationSpec(HFTaskSpec):
+    name = "image_segmentation"
+
+    def build_model(self, transformers, model_id, num_labels):
+        return transformers.AutoModelForSemanticSegmentation.from_pretrained(
+            model_id,
+            num_labels=int(num_labels),
+            ignore_mismatched_sizes=True,
+        )
+
+    def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
+        if not isinstance(xb, dict) or "pixel_values" not in xb:
+            raise ValueError("image segmentation expects dict input with 'pixel_values'")
+        enc = {"pixel_values": torch.tensor(xb["pixel_values"], dtype=torch.float32, device=device)}
+        labels_t = None
+        if yb is not None:
+            labels_t = torch.tensor(np.asarray(yb), dtype=torch.long, device=device)
+        return enc, labels_t, {"ignore_index": int(ignore_index)}
+
+    def loss_fn(self, torch, logits, labels_t, extra):
+        if logits.shape[-2:] != labels_t.shape[-2:]:
+            logits = torch.nn.functional.interpolate(logits, size=labels_t.shape[-2:], mode="bilinear", align_corners=False)
+        return torch.nn.functional.cross_entropy(logits, labels_t, ignore_index=int(extra.get("ignore_index", -100)))
+
+    def preds_from_logits(self, torch, logits, extra):
+        return torch.argmax(logits, dim=1)
+
+    def batch_metric_statistics(self, torch, logits, labels_t, extra):
+        if labels_t is None:
+            return None
+        if logits.shape[-2:] != labels_t.shape[-2:]:
+            logits = torch.nn.functional.interpolate(logits, size=labels_t.shape[-2:], mode="bilinear", align_corners=False)
+        pred = torch.argmax(logits, dim=1)
+        ignore_index = int(extra.get("ignore_index", -100))
+        valid = labels_t != ignore_index
+        pred = pred[valid]
+        tgt = labels_t[valid]
+        if pred.numel() == 0:
+            return {"intersection": 0.0, "pred_total": 0.0, "target_total": 0.0, "union": 0.0}
+        intersection = float((pred == tgt).sum().detach().cpu().item())
+        pred_total = float(pred.numel())
+        target_total = float(tgt.numel())
+        union = pred_total + target_total - intersection
+        return {"intersection": intersection, "pred_total": pred_total, "target_total": target_total, "union": union}
+
+    def metrics_from_statistics(self, stats):
+        intersection = float(stats.get("intersection", 0.0))
+        union = float(stats.get("union", 0.0))
+        pred_total = float(stats.get("pred_total", 0.0))
+        target_total = float(stats.get("target_total", 0.0))
+        iou = intersection / union if union > 0 else np.nan
+        denom = pred_total + target_total
+        dice = (2.0 * intersection) / denom if denom > 0 else np.nan
+        return {"primary": iou, "secondary": dice, "named_metrics": {"iou": iou, "dice": dice}}
+
+    def metrics(self, y_true, y_pred, y_extra=None):
+        y_true = np.asarray(y_true)
+        y_pred = np.asarray(y_pred)
+        if y_true.size == 0:
+            return {"primary": np.nan, "secondary": np.nan}
+        inter = float((y_true == y_pred).sum())
+        union = float(y_true.size + y_pred.size - inter)
+        iou = inter / union if union > 0 else np.nan
+        dice = (2 * inter) / float(y_true.size + y_pred.size) if (y_true.size + y_pred.size) > 0 else np.nan
+        return {"primary": iou, "secondary": dice}
     
 
 class SentenceSimilaritySpec(HFTaskSpec):

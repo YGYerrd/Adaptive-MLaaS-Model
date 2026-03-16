@@ -6,6 +6,9 @@ from .hf_task import (
     FillMaskSpec,
     CausalLMGenerationSpec,
     Seq2SeqGenerationSpec,
+    ImageClassificationSpec,
+    ObjectDetectionSpec,
+    ImageSegmentationSpec,
 )
 import time
 
@@ -43,6 +46,12 @@ class TransformersTextFineTuneAdapter:
             spec = CausalLMGenerationSpec()
         elif hf_task in {"seq2seq_generation", "text2text_generation", "text2text"}:
             spec = Seq2SeqGenerationSpec()
+        elif hf_task in {"image_classification", "vision_classification"}:
+            spec = ImageClassificationSpec()
+        elif hf_task in {"object_detection", "image_detection", "detection"}:
+            spec = ObjectDetectionSpec()
+        elif hf_task in {"image_segmentation", "semantic_segmentation", "segmentation"}:
+            spec = ImageSegmentationSpec()
         else:
             spec = SequenceClassificationSpec(multilabel=multilabel, label_format=label_format)
 
@@ -113,6 +122,12 @@ class TransformersTextClassifierAdapter:
             spec = TokenClassificationSpec()
         elif task == "sentence_similarity":
             spec = SentenceSimilaritySpec()
+        elif task in {"image_classification", "vision_classification"}:
+            spec = ImageClassificationSpec()
+        elif task in {"object_detection", "image_detection", "detection"}:
+            spec = ObjectDetectionSpec()
+        elif task in {"image_segmentation", "semantic_segmentation", "segmentation"}:
+            spec = ImageSegmentationSpec()
         else:
             spec = SequenceClassificationSpec()
 
@@ -138,6 +153,12 @@ class TransformersTextClassifierAdapter:
                 core.model = transformers.AutoModelForMaskedLM.from_pretrained(model_id)
             elif task == "token_classification":
                 core.model = transformers.AutoModelForTokenClassification.from_pretrained(model_id)
+            elif task in {"image_classification", "vision_classification"}:
+                core.model = transformers.AutoModelForImageClassification.from_pretrained(model_id)
+            elif task in {"object_detection", "image_detection", "detection"}:
+                core.model = transformers.AutoModelForObjectDetection.from_pretrained(model_id)
+            elif task in {"image_segmentation", "semantic_segmentation", "segmentation"}:
+                core.model = transformers.AutoModelForSemanticSegmentation.from_pretrained(model_id)
             else:
                 core.model = transformers.AutoModelForSequenceClassification.from_pretrained(model_id)
 

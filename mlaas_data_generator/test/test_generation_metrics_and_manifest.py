@@ -15,6 +15,17 @@ def test_manifest_registers_generation_tasks_and_task_tag_column():
     assert "text2text-generation" in SUPPORTED_DATASETS
     assert "task_tag" in MANIFEST_COLUMNS
 
+    assert "image_classification" in TASK_SPECS
+    assert TASK_SPECS["image_classification"].hf_task == "image_classification"
+    assert "object_detection" in TASK_SPECS
+    assert TASK_SPECS["object_detection"].hf_task == "image_detection"
+    assert "image_segmentation" in TASK_SPECS
+    assert TASK_SPECS["image_segmentation"].hf_task == "image_segmentation"
+
+    assert "image-classification" in SUPPORTED_DATASETS
+    assert "object-detection" in SUPPORTED_DATASETS
+    assert "image-segmentation" in SUPPORTED_DATASETS
+
 
 def test_generation_metric_availability_by_subtype():
     assert canonical_generation_metrics("summarization", has_labels=True) == ("rouge1", "rouge2", "rougeL", "perplexity")

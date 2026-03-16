@@ -275,6 +275,7 @@ class HFCore:
 
         preds_all = []
         labels_all = []
+        stats_accum = {}
 
         if isinstance(xs, dict):
             n_eval = len(next(iter(xs.values())))
@@ -282,6 +283,8 @@ class HFCore:
             n_eval = len(xs)
 
         t_start = time.time()
+
+        last_extra = {}
 
         with torch.no_grad():
             for xb, yb in self._batch_iter(xs, y_true):
@@ -298,6 +301,8 @@ class HFCore:
                     inference_only=bool(inference_only),
                 )
 
+                last_extra = dict(extra or {})
+
                 if bool(inference_only) and bool(getattr(self.task_spec, "supports_generation", False)):
                     pred_t = self.task_spec.generate_predictions(
                         self.model,
@@ -313,6 +318,16 @@ class HFCore:
                     logits = outputs.logits
                     pred_t = self.task_spec.preds_from_logits(torch, logits, extra)
                     preds_all.append(pred_t.detach().cpu().numpy())
+
+                    stat = self.task_spec.batch_metric_statistics(torch, logits, labels_t, extra)
+                    if stat:
+                        for k, v in stat.items():
+                            stats_accum[k] = float(stats_accum.get(k, 0.0)) + float(v)
+
+                    stat_out = self.task_spec.batch_metric_statistics_from_outputs(torch, outputs, labels_t, extra)
+                    if stat_out:
+                        for k, v in stat_out.items():
+                            stats_accum[k] = float(stats_accum.get(k, 0.0)) + float(v)
 
                     loss = self.task_spec.extract_loss(torch, outputs, logits, labels_t, extra)
                     if loss is not None and labels_t is not None:
@@ -340,18 +355,23 @@ class HFCore:
         y_pred_np = np.concatenate(preds_all, axis=0) if preds_all else np.asarray([], dtype="int64")
 
         named_metrics = None
-        if y_true_np.size == 0 or y_pred_np.size == 0:
+        loss_mean = float(total_loss / max(1, total_loss_weight)) if total_loss_weight > 0 else np.nan
+
+        m_stats = self.task_spec.metrics_from_statistics(stats_accum) if stats_accum else None
+        if isinstance(m_stats, dict) and m_stats:
+            primary = float(m_stats.get("primary", np.nan))
+            secondary = float(m_stats.get("secondary", np.nan))
+            named_metrics = m_stats.get("named_metrics") if isinstance(m_stats, dict) else None
+        elif y_true_np.size == 0 or y_pred_np.size == 0:
             primary = np.nan
             secondary = np.nan
-            loss_mean = np.nan
         else:
-            metrics_extra = dict(extra or {})
+            metrics_extra = dict(last_extra or {})
             metrics_extra["task_tag"] = self.task_tag
-            metrics_extra["loss_mean"] = float(total_loss / max(1, total_loss_weight)) if total_loss_weight > 0 else np.nan
+            metrics_extra["loss_mean"] = loss_mean
             m = self.task_spec.metrics(y_true_np, y_pred_np, y_extra=metrics_extra)
             primary = float(m.get("primary", np.nan))
             secondary = float(m.get("secondary", np.nan))
-            loss_mean = float(total_loss / max(1, total_loss_weight)) if total_loss_weight > 0 else np.nan
             named_metrics = m.get("named_metrics") if isinstance(m, dict) else None
 
             if getattr(self.task_spec, "name", None) == "fill_mask" and loss_mean == loss_mean:
@@ -391,6 +411,10 @@ class HFCore:
             for mk, mv in named_metrics.items():
                 if mv is not None and not (isinstance(mv, float) and np.isnan(mv)):
                     qos[str(mk).lower()] = float(mv)
+
+        if stats_accum:
+            for sk, sv in stats_accum.items():
+                qos[f"metric_stat_{sk}"] = float(sv)
 
         if getattr(self.task_spec, "supports_generation", False):
             qos.update({f"generation_{k}": v for k, v in self.generation_config.items()})
