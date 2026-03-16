@@ -12,6 +12,7 @@ class HFCore:
       - xs can be dict-of-arrays (preferred, from loader preprocessors)
       - xs can be list of raw texts or list-of-token-lists (legacy)
     """
+
     def __init__(
         self,
         model_id,
@@ -21,6 +22,7 @@ class HFCore:
         device=None,
         task_spec=None,
         label_pad_value=-100,
+        generation_config=None,
     ):
         try:
             import torch
@@ -42,11 +44,15 @@ class HFCore:
         self.device = self._resolve_device(device)
 
         self.task_spec = task_spec or SequenceClassificationSpec()
+        self.generation_config = self._resolve_generation_config(generation_config)
         cold_start_begin = time.time()
         try:
             self.tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, use_fast=True)
         except Exception:
             self.tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, use_fast=False)
+
+        if getattr(self.tokenizer, "pad_token_id", None) is None and getattr(self.tokenizer, "eos_token_id", None) is not None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
 
         self.model = None
         self.weight_format = None
@@ -57,6 +63,33 @@ class HFCore:
             self.model.to(self.device)
         self.cold_start_time = float(time.time() - cold_start_begin)
 
+    def _resolve_generation_config(self, generation_config):
+        defaults = {
+            "max_new_tokens": 64,
+            "num_beams": 1,
+            "do_sample": False,
+            "temperature": 1.0,
+            "top_k": 50,
+            "top_p": 1.0,
+            "length_penalty": 1.0,
+        }
+        cfg = dict(defaults)
+        if isinstance(generation_config, dict):
+            cfg.update({k: generation_config[k] for k in defaults.keys() if k in generation_config and generation_config[k] is not None})
+        cfg["max_new_tokens"] = int(cfg["max_new_tokens"])
+        cfg["num_beams"] = int(cfg["num_beams"])
+        cfg["do_sample"] = bool(cfg["do_sample"])
+        cfg["temperature"] = float(cfg["temperature"])
+        cfg["top_k"] = int(cfg["top_k"])
+        cfg["top_p"] = float(cfg["top_p"])
+        cfg["length_penalty"] = float(cfg["length_penalty"])
+
+        if not cfg["do_sample"]:
+            cfg["temperature"] = 1.0
+        if cfg["num_beams"] > 1:
+            cfg["do_sample"] = False
+
+        return cfg
 
     def _resolve_device(self, device):
         torch = self.torch
@@ -73,11 +106,10 @@ class HFCore:
             return torch_directml.device()
         except Exception:
             return "cpu"
-        
+
     def _batch_iter(self, xs, ys):
         bs = self.batch_size
 
-        # New loader path: dict of arrays
         if isinstance(xs, dict):
             n = len(next(iter(xs.values())))
             for i in range(0, n, bs):
@@ -86,7 +118,6 @@ class HFCore:
                 yield xb, yb
             return
 
-        # Legacy path: list-like
         n = len(xs)
         for i in range(0, n, bs):
             xb = xs[i:i + bs]
@@ -124,8 +155,7 @@ class HFCore:
             if labels_t is None or labels_t.ndim < 2:
                 return 0
             return int((labels_t != int(ignore_index)).sum().detach().cpu().item())
-        
-        # xs may be dict-of-arrays or list-like; do not force list(xs)
+
         y_local = ys
 
         self.model.train()
@@ -149,18 +179,21 @@ class HFCore:
                     torch,
                     self.device,
                     ignore_index=self.label_pad_value,
+                    inference_only=False,
                 )
 
                 optimizer.zero_grad(set_to_none=True)
-                outputs = self.model(**enc)
+                model_inputs = self.task_spec.build_forward_inputs(enc, labels_t=labels_t, inference_only=False)
+                outputs = self.model(**model_inputs)
                 logits = outputs.logits
-                loss = self.task_spec.loss_fn(torch, logits, labels_t, extra)
+                loss = self.task_spec.extract_loss(torch, outputs, logits, labels_t, extra)
+                if loss is None:
+                    raise ValueError("Supervised fine-tune mode requires labels/loss-capable batch")
                 loss.backward()
                 optimizer.step()
 
                 total_tokens += _count_supervised_tokens(labels_t, self.label_pad_value)
 
-                # batch size for dict path or list path
                 if isinstance(labels_t, torch.Tensor) and labels_t.ndim >= 2:
                     w = _count_supervised_tokens(labels_t, self.label_pad_value)
                 elif isinstance(xb, dict):
@@ -207,7 +240,7 @@ class HFCore:
             "hf_weights_format": self.weight_format,
         }
 
-    def eval(self, xs, ys):
+    def eval(self, xs, ys, inference_only=False):
         torch = self.torch
 
         def _count_supervised_tokens(labels_t, ignore_index):
@@ -226,7 +259,6 @@ class HFCore:
         preds_all = []
         labels_all = []
 
-        # evaluation sample count
         if isinstance(xs, dict):
             n_eval = len(next(iter(xs.values())))
         else:
@@ -246,43 +278,49 @@ class HFCore:
                     torch,
                     self.device,
                     ignore_index=self.label_pad_value,
+                    inference_only=bool(inference_only),
                 )
 
-                outputs = self.model(**enc)
-                logits = outputs.logits
-                pred_t = self.task_spec.preds_from_logits(torch, logits, extra)
+                if bool(inference_only) and bool(getattr(self.task_spec, "supports_generation", False)):
+                    pred_t = self.task_spec.generate_predictions(
+                        self.model,
+                        enc,
+                        self.tokenizer,
+                        torch,
+                        self.generation_config,
+                    )
+                    preds_all.append(pred_t.detach().cpu().numpy())
+                else:
+                    model_inputs = self.task_spec.build_forward_inputs(enc, labels_t=labels_t, inference_only=bool(inference_only))
+                    outputs = self.model(**model_inputs)
+                    logits = outputs.logits
+                    pred_t = self.task_spec.preds_from_logits(torch, logits, extra)
+                    preds_all.append(pred_t.detach().cpu().numpy())
 
-                preds_all.append(pred_t.detach().cpu().numpy())
+                    loss = self.task_spec.extract_loss(torch, outputs, logits, labels_t, extra)
+                    if loss is not None and labels_t is not None:
+                        labels_all.append(labels_t.detach().cpu().numpy())
+                        total_tokens += _count_supervised_tokens(labels_t, self.label_pad_value)
 
-                if labels_t is not None:
+                        if labels_t.ndim >= 2:
+                            w = _count_supervised_tokens(labels_t, self.label_pad_value)
+                        elif isinstance(xb, dict):
+                            w = len(next(iter(xb.values())))
+                        else:
+                            w = len(xb)
+
+                        total_loss += float(loss.detach().cpu().item()) * float(max(1, w))
+                        total_loss_weight += int(max(1, w))
+
+                if labels_t is not None and bool(inference_only) and yb is not None:
                     labels_all.append(labels_t.detach().cpu().numpy())
-
-                    loss = self.task_spec.loss_fn(torch, logits, labels_t, extra)
-                    total_tokens += _count_supervised_tokens(labels_t, self.label_pad_value)
-
-                    if labels_t.ndim >= 2:
-                        w = _count_supervised_tokens(labels_t, self.label_pad_value)
-                    elif isinstance(xb, dict):
-                        w = len(next(iter(xb.values())))
-                    else:
-                        w = len(xb)
-
-                    total_loss += float(loss.detach().cpu().item()) * float(max(1, w))
-                    total_loss_weight += int(max(1, w))
 
                 latencies_ms.append((time.time() - t0) * 1000.0)
 
         duration_s = time.time() - t_start
 
-        if labels_all:
-            y_true_np = np.concatenate(labels_all, axis=0)
-        else:
-            y_true_np = np.asarray([], dtype="int64")
-
-        if preds_all:
-            y_pred_np = np.concatenate(preds_all, axis=0)
-        else:
-            y_pred_np = np.asarray([], dtype="int64")
+        y_true_np = np.concatenate(labels_all, axis=0) if labels_all else np.asarray([], dtype="int64")
+        y_pred_np = np.concatenate(preds_all, axis=0) if preds_all else np.asarray([], dtype="int64")
 
         if y_true_np.size == 0 or y_pred_np.size == 0:
             primary = np.nan
@@ -290,12 +328,11 @@ class HFCore:
             loss_mean = np.nan
         else:
             m = self.task_spec.metrics(y_true_np, y_pred_np, y_extra=extra)
-
             primary = float(m.get("primary", np.nan))
             secondary = float(m.get("secondary", np.nan))
-            loss_mean = float(total_loss / max(1, total_loss_weight))
+            loss_mean = float(total_loss / max(1, total_loss_weight)) if total_loss_weight > 0 else np.nan
 
-            if getattr(self.task_spec, "name", None) == "fill_mask":
+            if getattr(self.task_spec, "name", None) == "fill_mask" and loss_mean == loss_mean:
                 try:
                     secondary = float(np.exp(np.clip(loss_mean, a_min=-50.0, a_max=50.0)))
                 except Exception:
@@ -326,6 +363,9 @@ class HFCore:
             "hf_task": getattr(self.task_spec, "name", None),
             "label_pad_value": int(self.label_pad_value),
             "hf_weights_format": self.weight_format,
+            "inference_only": bool(inference_only),
         }
+        if getattr(self.task_spec, "supports_generation", False):
+            qos.update({f"generation_{k}": v for k, v in self.generation_config.items()})
 
         return loss_mean, primary, secondary, qos
