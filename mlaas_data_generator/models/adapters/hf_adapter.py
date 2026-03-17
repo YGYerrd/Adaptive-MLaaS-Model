@@ -42,7 +42,9 @@ class TransformersTextFineTuneAdapter:
         if hf_task == "token_classification":
             spec = TokenClassificationSpec(multilabel=multilabel, label_format=label_format)
         elif hf_task == "sentence_similarity":
-            spec = SentenceSimilaritySpec(is_regression=(str(label_format).lower() == "continuous"))
+            resolved_num_labels = None if num_labels is None else int(num_labels)
+            is_regression = (str(label_format).lower() == "continuous") or (resolved_num_labels == 1)
+            spec = SentenceSimilaritySpec(is_regression=is_regression)
         elif hf_task == "fill_mask":
             spec = FillMaskSpec()
         elif hf_task in {"causal_lm_generation", "causal_lm", "text_generation"}:
@@ -130,7 +132,7 @@ class TransformersTextClassifierAdapter:
         elif task == "token_classification":
             spec = TokenClassificationSpec()
         elif task == "sentence_similarity":
-            spec = SentenceSimilaritySpec()
+            spec = SentenceSimilaritySpec(is_regression=True)
         elif task in {"image_classification", "vision_classification"}:
             spec = ImageClassificationSpec()
         elif task in {"object_detection", "image_detection", "detection"}:

@@ -526,17 +526,62 @@ def _assess_model_dataset_fit(model_profile: dict[str, Any], dataset_spec: dict[
         return ModelFitAssessment("reject", "Label-count mismatch between checkpoint head and dataset", "none")
 
     preferred = dataset_spec.get("preferred_run_regimes", [])
-    if dataset_task_family == model_profile["task_family"]:
-        if model_profile["is_dataset_specific_checkpoint"] and hint == effective_name:
-            return ModelFitAssessment("exact_match", "Task and dataset-specific head align", "finetune_exact")
-        if "finetune_transfer" in preferred:
-            return ModelFitAssessment("acceptable_transfer", "Task aligns and generic checkpoint is transferable", "finetune_transfer")
+
+    if dataset_spec["task_family"] == model_profile["task_family"]:
+        # Exact dataset-specific checkpoint
+        if model_profile["is_dataset_specific_checkpoint"]:
+            if "inference" in preferred:
+                return ModelFitAssessment(
+                    "inference_only",
+                    "Task and dataset-specific checkpoint align; frozen evaluation preferred",
+                    "inference",
+                )
+            if "finetune_exact" in preferred:
+                return ModelFitAssessment(
+                    "exact_match",
+                    "Task and dataset-specific head align",
+                    "finetune_exact",
+                )
+            if "finetune_transfer" in preferred:
+                return ModelFitAssessment(
+                    "acceptable_transfer",
+                    "Task aligns and checkpoint can be adapted further",
+                    "finetune_transfer",
+                )
+
+        # Generic or non-dataset-specific model with matching task family
+        if "inference" in preferred:
+            return ModelFitAssessment(
+                "inference_only",
+                "Task family aligns and dataset prefers frozen inference",
+                "inference",
+            )
+        if model_profile["is_base_backbone"] and "finetune_transfer" in preferred:
+            return ModelFitAssessment(
+                "acceptable_transfer",
+                "Generic backbone can be adapted via transfer learning",
+                "finetune_transfer",
+            )
+        if "finetune_exact" in preferred:
+            return ModelFitAssessment(
+                "exact_match",
+                "Task family aligns and dataset allows direct fine-tuning",
+                "finetune_exact",
+            )
 
     if model_profile["is_zero_shot_capable"] and "inference" in preferred:
-        return ModelFitAssessment("inference_only", "Zero-shot classifier used in inference regime", "inference")
+        return ModelFitAssessment(
+            "inference_only",
+            "Zero-shot capable model used in inference regime",
+            "inference",
+        )
 
     if model_profile["is_base_backbone"] and "finetune_transfer" in preferred:
-        return ModelFitAssessment("acceptable_transfer", "Generic backbone can be adapted via transfer learning", "finetune_transfer")
+        return ModelFitAssessment(
+            "acceptable_transfer",
+            "Generic backbone can be adapted via transfer learning",
+            "finetune_transfer",
+        )
 
     return ModelFitAssessment("reject", "No safe transfer path for this model-task pair", "none")
 
@@ -765,7 +810,14 @@ def _is_row_valid(row: dict[str, Any], model_profile: dict[str, Any], dataset_sp
         return False
 
     if row["run_regime"] != "inference" and model_profile["role"] in FROZEN_ONLY_MODEL_ROLES:
-        return False
+        dataset_task_family = dataset_spec["task_family"]
+
+        # Allow embedding models to be fine-tuned for sentence similarity tasks
+        if not (
+            model_profile["role"] == "embedding_model"
+            and dataset_task_family == "sentence_similarity"
+        ):
+            return False
 
     return True
 
