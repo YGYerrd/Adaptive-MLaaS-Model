@@ -144,8 +144,14 @@ class TransformersTextFineTuneAdapter:
     def fit(self, x, y, epochs=1, lr=5e-5, max_train_time_s=60):
         return self.core.finetune(x, y, epochs=epochs, lr=lr, max_train_time_s=max_train_time_s)
 
-    def evaluate(self, x, y, inference_only=False):
-        loss, primary, secondary, qos = self.core.eval(x, y, inference_only=inference_only)
+    def evaluate(self, x, y, inference_only=False, max_eval_time_s=None, progress_log_interval=None):
+        loss, primary, secondary, qos = self.core.eval(
+            x,
+            y,
+            inference_only=inference_only,
+            max_eval_time_s=max_eval_time_s,
+            progress_log_interval=progress_log_interval,
+        )
         return loss, primary, secondary, qos
 
 
@@ -216,8 +222,14 @@ class TransformersTextClassifierAdapter:
         self.resolved_hf_task = task
         self.loader_template = loader_template
 
-    def evaluate(self, x, y, inference_only=True):
-        loss, primary, secondary, qos = self.core.eval(x, y, inference_only=inference_only)
+    def evaluate(self, x, y, inference_only=True, max_eval_time_s=None, progress_log_interval=None):
+        loss, primary, secondary, qos = self.core.eval(
+            x,
+            y,
+            inference_only=inference_only,
+            max_eval_time_s=max_eval_time_s,
+            progress_log_interval=progress_log_interval,
+        )
 
         qos = dict(qos)
         if "eval_latency_ms_mean" in qos:

@@ -198,7 +198,16 @@ class HFStrategy(TaskStrategy):
         try:
             if self.inference_only:
                 adapter = global_model if global_model is not None else self.build_model()
-                loss, primary, secondary, qos = adapter.evaluate(x, y, inference_only=True)
+                loss, primary, secondary, qos = adapter.evaluate(
+                    x,
+                    y,
+                    inference_only=True,
+                    max_eval_time_s=self.knobs.get("max_eval_time_s", self.config.get("max_eval_time_s")),
+                    progress_log_interval=self.knobs.get(
+                        "eval_progress_log_interval",
+                        self.config.get("eval_progress_log_interval", 10),
+                    ),
+                )
 
                 duration = time.time() - start
                 usage = tracker.stop(duration)

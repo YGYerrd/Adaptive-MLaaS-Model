@@ -352,7 +352,7 @@ class HFCore:
             "train_stopped_early": bool(timeout_hit),
         }
 
-    def eval(self, xs, ys, inference_only=False):
+    def eval(self, xs, ys, inference_only=False, max_eval_time_s=None, progress_log_interval=None):
         torch = self.torch
 
         def _count_supervised_tokens(labels_t, ignore_index):
@@ -380,13 +380,25 @@ class HFCore:
         t_start = time.time()
 
         last_extra = {}
-        print(f"[HFCore.eval] dataloader creation starts | inference_only={bool(inference_only)} | batch_size={self.batch_size}")
+        total_batches = int((n_eval + max(1, self.batch_size) - 1) / max(1, self.batch_size))
+        progress_log_interval = int(progress_log_interval) if progress_log_interval is not None else 0
+        max_eval_time_s = float(max_eval_time_s) if max_eval_time_s is not None else None
+
+        print(
+            f"[HFCore.eval] dataloader creation starts | inference_only={bool(inference_only)} "
+            f"| batch_size={self.batch_size} | eval_samples={n_eval} | total_batches={total_batches}"
+        )
         first_batch_logged = False
 
         with torch.no_grad():
-            for xb, yb in self._batch_iter(xs, y_true):
+            for batch_idx, (xb, yb) in enumerate(self._batch_iter(xs, y_true), start=1):
                 if not first_batch_logged:
                     print("[HFCore.eval] first batch pulled")
+                if max_eval_time_s is not None and (time.time() - t_start) > max_eval_time_s:
+                    raise TimeoutError(
+                        f"HF evaluation exceeded max_eval_time_s={max_eval_time_s} "
+                        f"after batch {batch_idx - 1}/{total_batches}"
+                    )
                 t0 = time.time()
                 labels_recorded = False
 
@@ -457,6 +469,11 @@ class HFCore:
                     labels_all.append(labels_t.detach().cpu().numpy())
 
                 latencies_ms.append((time.time() - t0) * 1000.0)
+                if progress_log_interval > 0 and (batch_idx % progress_log_interval == 0 or batch_idx == total_batches):
+                    print(
+                        f"[HFCore.eval] progress | batch={batch_idx}/{total_batches} "
+                        f"| elapsed_s={time.time() - t_start:.2f}"
+                    )
                 first_batch_logged = True
 
         duration_s = time.time() - t_start
