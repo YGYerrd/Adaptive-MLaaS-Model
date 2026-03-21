@@ -90,6 +90,9 @@ MANIFEST_COLUMNS = [
     "image_column",
     "task_tag",
     "run_regime",
+    "explainability_enabled",
+    "explainability_method",
+    "explainability_target",
     "model_role",
     "input_schema",
     "fit_decision",
@@ -187,6 +190,32 @@ def _regime_defaults(run_regime: str) -> dict[str, str]:
     return {"model_type": "hf_finetune", "model_role": "task_head"}
 
 
+def _resolve_explainability_metadata(
+    *,
+    model: dict[str, Any],
+    dataset_spec: dict[str, Any],
+    run_regime: str,
+) -> dict[str, Any]:
+    model_meta = model.get("explainability") if isinstance(model.get("explainability"), dict) else {}
+    dataset_meta = dataset_spec.get("explainability") if isinstance(dataset_spec.get("explainability"), dict) else {}
+
+    model_supported = bool(model_meta.get("supported", model_meta.get("supports_token_attribution") or model_meta.get("supports_gradients")))
+    dataset_supported = bool(dataset_meta.get("supported", dataset_meta.get("supports_feature_attribution") or dataset_meta.get("supports_example_level_rationales")))
+    enabled = model_supported and dataset_supported and run_regime in {"finetune_transfer", "inference_only"}
+
+    dataset_methods = [str(method) for method in dataset_meta.get("preferred_methods", []) if str(method).strip()]
+    model_methods = [str(method) for method in model_meta.get("preferred_methods", []) if str(method).strip()]
+    preferred_method = next((method for method in dataset_methods if method in model_methods), None)
+    if preferred_method is None:
+        preferred_method = (model_methods or dataset_methods or [None])[0]
+
+    return {
+        "explainability_enabled": enabled,
+        "explainability_method": preferred_method,
+        "explainability_target": dataset_meta.get("target_type") or model_meta.get("target_type"),
+    }
+
+
 def _row_from_registry(
     *,
     run_group_id: str,
@@ -211,14 +240,8 @@ def _row_from_registry(
         "registry_task": next((task_key for task_key, spec in TASK_SPECS.items() if spec == task_spec), None),
         "run_regime": run_regime,
         "audit_json_used": bool(audit_meta),
-        "dataset_pairing_source": "registry.dataset_keys",
     }
-    if model_audit.get("audit_dataset_tags") or model_audit.get("audit_raw_tags"):
-        service_payload["audit_only_metadata"] = {
-            "dataset_tags": model_audit.get("audit_dataset_tags") or [],
-            "raw_tags": model_audit.get("audit_raw_tags") or [],
-            "used_for_pairing": False,
-        }
+    explainability = _resolve_explainability_metadata(model=model, dataset_spec=dataset_spec, run_regime=run_regime)
 
     row = {
         "external_run_id": f"hf_{task_spec.task_label}_{run_index:06d}",
@@ -266,6 +289,9 @@ def _row_from_registry(
         "image_column": dataset_spec.get("image_column"),
         "task_tag": dataset_spec.get("task_tag", task_spec.task_tag),
         "run_regime": run_regime,
+        "explainability_enabled": explainability["explainability_enabled"],
+        "explainability_method": explainability["explainability_method"],
+        "explainability_target": explainability["explainability_target"],
         "model_role": model_defaults["model_role"] if run_regime == "inference_only" else (model.get("model_role") or model_defaults["model_role"]),
         "input_schema": dataset_spec.get("input_schema", "single_text"),
         "fit_decision": None,

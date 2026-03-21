@@ -23,7 +23,7 @@ BASE_DEFAULTS: dict[str, Any] = {
     "distribution": "iid",
 }
 
-BOOL_COLUMNS = {"enabled", "measure_system_metrics", "mixed_precision"}
+BOOL_COLUMNS = {"enabled", "measure_system_metrics", "mixed_precision", "explainability_enabled"}
 INT_COLUMNS = {
     "seed",
     "num_rounds",
@@ -60,6 +60,9 @@ DATASET_ARG_COLUMNS = {
     "missing_pair_handling",
     "max_samples",
     "task_tag",
+    "explainability_enabled",
+    "explainability_method",
+    "explainability_target",
 }
 
 REQUIRED_COLUMNS = {"model_type"}
