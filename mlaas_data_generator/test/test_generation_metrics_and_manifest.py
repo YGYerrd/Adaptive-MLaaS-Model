@@ -1,4 +1,7 @@
+import pandas as pd
+
 from mlaas_data_generator.cli.manifest.hf_manifest_builder import MANIFEST_COLUMNS, build_hf_manifest
+from mlaas_data_generator.cli.run_manifest import _build_dataset_args, _resolve_row
 from mlaas_data_generator.federated.strategies.base import canonical_generation_metrics, metric_availability
 from mlaas_data_generator.registry import DATASET_REGISTRY, MODEL_REGISTRY
 
@@ -11,10 +14,12 @@ def test_generation_registries_cover_curated_tasks_and_metadata():
     assert generation_datasets["wikitext2_lm"]["pipeline_tag"] == "text-generation"
     assert generation_datasets["wikitext2_lm"]["loader_template"] == "hf_causal_lm"
     assert generation_datasets["wikitext2_lm"]["explainability"]["supports_feature_attribution"] is True
+    assert generation_datasets["wikitext2_lm"]["explainability"]["preferred_methods"] == ["integrated_gradients", "token_saliency"]
 
     assert generation_datasets["cnn_dailymail"]["pipeline_tag"] == "text2text-generation"
     assert generation_datasets["cnn_dailymail"]["dataset_name"] == "cnn_dailymail"
     assert generation_datasets["cnn_dailymail"]["explainability"]["supports_example_level_rationales"] is True
+    assert generation_datasets["cnn_dailymail"]["explainability"]["target_type"] == "summary_token"
 
     generation_models = {
         model_id: spec for model_id, spec in MODEL_REGISTRY.items() if spec["task_key"] in {"text_generation", "text2text_generation"}
@@ -28,11 +33,16 @@ def test_generation_registries_cover_curated_tasks_and_metadata():
     assert generation_models["distilgpt2_textgen"]["pipeline_tag"] == "text-generation"
     assert generation_models["distilgpt2_textgen"]["loader_template"] == "hf_causal_lm"
     assert generation_models["distilgpt2_textgen"]["allowed_run_regimes"] == ["finetune_transfer", "inference_only"]
+    assert generation_models["distilgpt2_textgen"]["explainability"]["requires_attention"] is False
     assert generation_models["flan-t5-small_text2text"]["pipeline_tag"] == "text2text-generation"
     assert generation_models["flan-t5-small_text2text"]["family"] == "t5"
     assert generation_models["flan-t5-small_text2text"]["explainability"]["supports_attention_rollout"] is True
+    assert generation_models["flan-t5-small_text2text"]["explainability"]["preferred_methods"] == ["integrated_gradients", "attention_rollout"]
 
     assert "task_tag" in MANIFEST_COLUMNS
+    assert "explainability_enabled" in MANIFEST_COLUMNS
+    assert "explainability_method" in MANIFEST_COLUMNS
+    assert "explainability_target" in MANIFEST_COLUMNS
     assert not any(spec["task_key"] == "image_classification" for spec in DATASET_REGISTRY.values())
     assert not any(spec["task_key"] == "visual_question_answering" for spec in MODEL_REGISTRY.values())
 
@@ -52,6 +62,9 @@ def test_manifest_builder_uses_flat_registries_for_generation_rows():
     assert set(df["hf_model_id"]) == {"distilgpt2", "google/flan-t5-small"}
     assert set(df["run_regime"]) == {"inference_only"}
     assert set(df["model_role"]) == {"service"}
+    assert set(df["explainability_enabled"]) == {True}
+    assert set(df["explainability_method"]) == {"integrated_gradients"}
+    assert set(df["explainability_target"]) == {"generated_token", "summary_token"}
 
 
 def test_generation_metric_availability_by_subtype():
@@ -67,6 +80,31 @@ def test_generation_metric_availability_by_subtype():
     avail_infer_only = metric_availability("generation", task_tag="translation", has_labels=False)
     assert avail_infer_only["train"] == tuple()
     assert avail_infer_only["eval"] == ("sacrebleu",)
+
+
+def test_run_manifest_preserves_explainability_fields():
+    row = pd.Series(
+        {
+            "dataset": "hf",
+            "model_type": "hf",
+            "hf_task": "text_generation",
+            "hf_model_id": "distilgpt2",
+            "dataset_name": "wikitext",
+            "explainability_enabled": True,
+            "explainability_method": "integrated_gradients",
+            "explainability_target": "generated_token",
+        }
+    )
+
+    resolved = _resolve_row(row, {})
+    dataset_args = _build_dataset_args(resolved)
+
+    assert resolved["explainability_enabled"] is True
+    assert resolved["explainability_method"] == "integrated_gradients"
+    assert resolved["explainability_target"] == "generated_token"
+    assert dataset_args["explainability_enabled"] is True
+    assert dataset_args["explainability_method"] == "integrated_gradients"
+    assert dataset_args["explainability_target"] == "generated_token"
 
 
 def test_retrieval_and_vqa_metric_availability():
