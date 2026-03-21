@@ -6,20 +6,33 @@ from pathlib import Path
 from .hf_manifest_builder import build_hf_manifest, save_manifest
 
 
+def _parse_csv_arg(value: str | None) -> list[str] | None:
+    if value is None:
+        return None
+    items = [item.strip() for item in value.split(",") if item.strip()]
+    return items or None
+
+
 def register_hf_manifest(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser("hf-manifest", help="Generate HF model+dataset run manifest")
-    p.add_argument("--input-json", required=True, help="Path to HF model/dataset pairing JSON")
+    p.add_argument("--input-json", help="Optional HF audit JSON used only for metadata enrichment")
     p.add_argument("--output", default="outputs/run_manifest.xlsx", help="Output .csv or .xlsx path")
     p.add_argument("--sheet", default="runs", help="Sheet name for xlsx output")
+    p.add_argument("--task-keys", help="Comma-separated registry task keys")
     p.add_argument("--models-per-task", type=int, default=10)
     p.add_argument("--datasets-per-model", type=int, default=1)
+    p.add_argument("--run-regimes", help="Comma-separated run regimes")
+    p.add_argument("--variants-per-pair", type=int, default=1)
     p.add_argument("--seed", type=int, default=42)
 
     def _run(args: argparse.Namespace) -> None:
         df = build_hf_manifest(
             json_path=args.input_json,
+            task_keys=_parse_csv_arg(args.task_keys),
             models_per_task=args.models_per_task,
             datasets_per_model=args.datasets_per_model,
+            run_regimes=_parse_csv_arg(args.run_regimes),
+            variants_per_pair=args.variants_per_pair,
             seed=args.seed,
         )
         output_path = Path(args.output)

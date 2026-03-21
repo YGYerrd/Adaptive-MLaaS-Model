@@ -8,6 +8,8 @@ from typing import Any
 
 import pandas as pd
 
+from mlaas_data_generator.registry import DATASET_REGISTRY, MODEL_REGISTRY
+
 
 @dataclass(frozen=True)
 class TaskSpec:
@@ -27,14 +29,9 @@ TASK_SPECS: dict[str, TaskSpec] = {
     "text2text_generation": TaskSpec("text2text-generation", "seq2seq_generation", "classification", "text2text", "summarization"),
 }
 
-# Kept for compatibility with tests/importers. The builder now prefers dataset specs from the input JSON.
 SUPPORTED_DATASETS: dict[str, list[dict[str, Any]]] = {
-    "text-classification": [],
-    "token-classification": [],
-    "sentence-similarity": [],
-    "fill-mask": [],
-    "text-generation": [],
-    "text2text-generation": [],
+    spec.pipeline_tag: [dict(dataset) for dataset in DATASET_REGISTRY.get(task_key, [])]
+    for task_key, spec in TASK_SPECS.items()
 }
 
 MANIFEST_COLUMNS = [
@@ -97,7 +94,7 @@ MANIFEST_COLUMNS = [
 ]
 
 
-def _sample_training_knobs(rng: random.Random) -> dict[str, Any]:
+def _sample_training_knobs(rng: random.Random, *, seed: int) -> dict[str, Any]:
     distribution = rng.choice(["iid", "dirichlet", "shards"])
     num_shards = rng.choice([5, 10, 20]) if distribution == "shards" else None
     dirichlet_alpha = rng.choice([0.1, 0.3, 0.5]) if distribution == "dirichlet" else None
@@ -109,7 +106,7 @@ def _sample_training_knobs(rng: random.Random) -> dict[str, Any]:
         "batch_size": rng.choice(batch_choices),
         "learning_rate": learning_rate,
         "optimizer": "adamw",
-        "seed": rng.randint(1, 1_000_000),
+        "seed": seed,
         "distribution": distribution,
         "num_shards": num_shards,
         "weight_decay": rng.choice([0.0, 0.01, 0.05]),
@@ -119,101 +116,83 @@ def _sample_training_knobs(rng: random.Random) -> dict[str, Any]:
     }
 
 
-def _normalize_dataset_tag(tag: str) -> str:
-    normalized = (tag or "").strip().lower().replace("dataset:", "")
-    if normalized == "sst2":
-        return "glue/sst2"
-    return normalized
+def _parse_csv_arg(value: str | None) -> list[str] | None:
+    if value is None:
+        return None
+    items = [item.strip() for item in value.split(",") if item.strip()]
+    return items or None
 
 
-def _extract_model_datasets(model: dict[str, Any]) -> list[dict[str, Any]]:
-    if isinstance(model.get("paired_datasets"), list):
-        return [d for d in model["paired_datasets"] if isinstance(d, dict)]
-    if isinstance(model.get("datasets"), list):
-        out: list[dict[str, Any]] = []
-        for item in model["datasets"]:
-            if isinstance(item, dict):
-                out.append(item)
-            elif isinstance(item, str):
-                out.append({"dataset_name": _normalize_dataset_tag(item)})
-        return out
+def _load_audit_metadata(json_path: str | None) -> dict[str, Any]:
+    if not json_path:
+        return {}
 
-    tags = model.get("dataset_tags") or []
-    out = []
-    for tag in tags:
-        if isinstance(tag, str):
-            ds_name = _normalize_dataset_tag(tag)
-            if ds_name:
-                out.append({"dataset_name": ds_name})
-    return out
+    with open(json_path, "r", encoding="utf-8") as f:
+        source = json.load(f)
 
+    tasks = source.get("tasks") if isinstance(source, dict) else None
+    if not isinstance(tasks, list):
+        return {"raw": source}
 
-def _dataset_defaults(dataset_name: str, hf_task: str) -> dict[str, Any]:
-    name = (dataset_name or "").strip()
-    config = None
-    if name.startswith("glue/"):
-        _, config = name.split("/", 1)
-        name = "glue"
+    model_audit: dict[str, dict[str, Any]] = {}
+    for task in tasks:
+        for model in task.get("models", []) or []:
+            if not isinstance(model, dict):
+                continue
+            model_id = str(model.get("model_id") or model.get("id") or "").strip()
+            if model_id:
+                model_audit[model_id] = {
+                    "downloads": model.get("downloads"),
+                    "likes": model.get("likes"),
+                    "author": model.get("author"),
+                    "url": model.get("url"),
+                    "pipeline_tag": task.get("pipeline_tag"),
+                }
 
-    defaults = {
-        "dataset_name": name,
-        "dataset_config": config,
-        "train_split": "train",
-        "test_split": "validation",
-        "text_column": "text",
-        "label_column": "label",
-        "max_samples": 1000,
-        "max_length": 128,
-        "input_schema": "single_text",
-    }
-
-    if hf_task == "token_classification":
-        defaults.update({"text_column": "tokens", "label_column": "ner_tags", "input_schema": "token_sequence"})
-    if hf_task in {"causal_lm_generation", "seq2seq_generation"}:
-        defaults.update({"label_column": "text", "max_length": 256})
-
-    return defaults
+    return {"models": model_audit}
 
 
-def _coalesce_dataset_spec(raw_dataset: dict[str, Any], hf_task: str) -> dict[str, Any]:
-    dataset_name = str(raw_dataset.get("dataset_name") or "").strip()
-    base = _dataset_defaults(dataset_name, hf_task)
-    base.update({k: v for k, v in raw_dataset.items() if v is not None})
-
-    if isinstance(base.get("dataset_name"), str) and "/" in base["dataset_name"] and not base.get("dataset_config"):
-        if base["dataset_name"].startswith("glue/"):
-            _, cfg = base["dataset_name"].split("/", 1)
-            base["dataset_name"] = "glue"
-            base["dataset_config"] = cfg
-
-    return base
+def _regime_defaults(run_regime: str) -> dict[str, str]:
+    if run_regime == "inference_only":
+        return {"model_type": "hf", "model_role": "service"}
+    return {"model_type": "hf_finetune", "model_role": "task_head"}
 
 
-def _row_from_pair(
+def _row_from_registry(
+    *,
     run_group_id: str,
     run_index: int,
     task_spec: TaskSpec,
     model: dict[str, Any],
     dataset_spec: dict[str, Any],
     knobs: dict[str, Any],
+    run_regime: str,
+    audit_meta: dict[str, Any],
 ) -> dict[str, Any]:
     model_id = str(model.get("model_id") or model.get("id") or "").strip()
-    author = model.get("author")
+    audit_models = audit_meta.get("models", {}) if isinstance(audit_meta, dict) else {}
+    model_audit = audit_models.get(model_id, {}) if isinstance(audit_models, dict) else {}
+    author = model.get("author") or model_audit.get("author")
     if not author and "/" in model_id:
         author = model_id.split("/", 1)[0]
 
+    model_defaults = _regime_defaults(run_regime)
     service_payload = {
-        "source": "hf_dataset_manifest_json",
-        "pipeline_tag": task_spec.pipeline_tag,
-        "dataset_tags": model.get("dataset_tags", []),
+        "source": "registry",
+        "registry_task": next((task_key for task_key, spec in TASK_SPECS.items() if spec == task_spec), None),
+        "run_regime": run_regime,
+        "audit_json_used": bool(audit_meta),
     }
 
     row = {
         "external_run_id": f"hf_{task_spec.task_label}_{run_index:06d}",
         "dataset": "hf",
         "run_group_id": run_group_id,
-        "case_name": f"{model_id.replace('/', '_')}__{dataset_spec.get('dataset_name')}",
-        "notes": "Generated from pre-tagged HF model/dataset JSON",
+        "case_name": (
+            f"{model_id.replace('/', '_')}__{dataset_spec.get('dataset_name')}"
+            f"__{run_regime}__v{dataset_spec.get('_variant_index', 0)}"
+        ),
+        "notes": "Generated from registry-defined HF model and dataset compatibility",
         "enabled": True,
         "measure_system_metrics": True,
         "mixed_precision": False,
@@ -238,10 +217,10 @@ def _row_from_pair(
         "aggregation": "fedavg",
         "device": "auto",
         "save_weights": knobs["save_weights"],
-        "model_type": "hf_finetune",
+        "model_type": model.get("model_type") or model_defaults["model_type"],
         "hf_task": task_spec.hf_task,
-        "task_type": task_spec.task_type,
-        "modality": "text",
+        "task_type": dataset_spec.get("task_type", task_spec.task_type),
+        "modality": dataset_spec.get("modality", "text"),
         "dataset_name": dataset_spec.get("dataset_name"),
         "dataset_config": dataset_spec.get("dataset_config"),
         "hf_model_id": model_id,
@@ -250,87 +229,77 @@ def _row_from_pair(
         "label_column": dataset_spec.get("label_column", "label"),
         "text_column": dataset_spec.get("text_column", "text"),
         "image_column": dataset_spec.get("image_column"),
-        "task_tag": task_spec.task_tag,
-        "run_regime": "finetune_transfer",
-        "model_role": "task_head",
+        "task_tag": dataset_spec.get("task_tag", task_spec.task_tag),
+        "run_regime": run_regime,
+        "model_role": model.get("model_role") or model_defaults["model_role"],
         "input_schema": dataset_spec.get("input_schema", "single_text"),
-        "fit_decision": "json_paired",
-        "fit_reason": "Paired in source JSON",
-        "realism_score": 1.0,
-        "domain_alignment": "json_declared",
-        "dataset_hint": dataset_spec.get("dataset_name"),
+        "fit_decision": None,
+        "fit_reason": None,
+        "realism_score": dataset_spec.get("realism_score", 1.0),
+        "domain_alignment": dataset_spec.get("domain_alignment", "registry_curated"),
+        "dataset_hint": dataset_spec.get("dataset_hint") or dataset_spec.get("dataset_name"),
         "hf_pipeline_tag": task_spec.pipeline_tag,
-        "hf_downloads": model.get("downloads"),
-        "hf_likes": model.get("likes"),
+        "hf_downloads": model.get("downloads", model_audit.get("downloads")),
+        "hf_likes": model.get("likes", model_audit.get("likes")),
         "hf_author": author,
-        "hf_url": model.get("url") or (f"https://huggingface.co/{model_id}" if model_id else None),
+        "hf_url": model.get("url") or model_audit.get("url") or (f"https://huggingface.co/{model_id}" if model_id else None),
         "hf_service_meta_json": json.dumps(service_payload),
     }
-
     return row
 
 
 def build_hf_manifest(
     *,
-    json_path: str,
+    json_path: str | None = None,
+    task_keys: list[str] | None = None,
     models_per_task: int,
     datasets_per_model: int,
+    run_regimes: list[str] | None = None,
+    variants_per_pair: int = 1,
     seed: int,
 ) -> pd.DataFrame:
-    with open(json_path, "r", encoding="utf-8") as f:
-        source = json.load(f)
-
-    tasks = source.get("tasks") if isinstance(source, dict) else None
-    if not isinstance(tasks, list):
-        raise ValueError("Input JSON must contain a top-level 'tasks' list")
-
-    rng = random.Random(seed)
+    requested_task_keys = task_keys or list(TASK_SPECS.keys())
+    audit_meta = _load_audit_metadata(json_path)
     run_group_id = str(uuid.uuid4())
     rows: list[dict[str, Any]] = []
+    selected_run_regimes = run_regimes or ["finetune_transfer"]
 
-    for task in tasks:
-        pipeline_tag = str(task.get("pipeline_tag") or "").strip()
-        if not pipeline_tag:
+    for task_key in requested_task_keys:
+        task_spec = TASK_SPECS.get(task_key)
+        if task_spec is None:
             continue
 
-        matched = next((spec for spec in TASK_SPECS.values() if spec.pipeline_tag == pipeline_tag), None)
-        if not matched:
+        models = [dict(model) for model in MODEL_REGISTRY.get(task_key, [])][: max(0, models_per_task)]
+        datasets = [dict(dataset) for dataset in DATASET_REGISTRY.get(task_key, [])]
+        if not models or not datasets:
             continue
 
-        models = [m for m in (task.get("models") or []) if isinstance(m, dict)]
-        if not models:
-            continue
+        for model in models:
+            compatible_dataset_keys = model.get("dataset_keys")
+            compatible_datasets = [
+                dataset for dataset in datasets
+                if not compatible_dataset_keys or dataset.get("key") in compatible_dataset_keys
+            ]
+            compatible_datasets = compatible_datasets[: max(0, datasets_per_model)]
 
-        rng.shuffle(models)
-        picked_models = models[: max(0, models_per_task)]
-
-        for model in picked_models:
-            raw_datasets = _extract_model_datasets(model)
-            if not raw_datasets:
-                continue
-
-            deduped: list[dict[str, Any]] = []
-            seen: set[tuple[Any, Any]] = set()
-            for d in raw_datasets:
-                spec = _coalesce_dataset_spec(d, matched.hf_task)
-                key = (spec.get("dataset_name"), spec.get("dataset_config"))
-                if key in seen:
-                    continue
-                seen.add(key)
-                deduped.append(spec)
-
-            rng.shuffle(deduped)
-            for ds in deduped[: max(1, datasets_per_model)]:
-                rows.append(
-                    _row_from_pair(
-                        run_group_id=run_group_id,
-                        run_index=len(rows) + 1,
-                        task_spec=matched,
-                        model=model,
-                        dataset_spec=ds,
-                        knobs=_sample_training_knobs(rng),
-                    )
-                )
+            for dataset in compatible_datasets:
+                for run_regime in selected_run_regimes:
+                    for variant_index in range(max(1, variants_per_pair)):
+                        variant_rng = random.Random(f"{seed}:{task_key}:{model.get('model_id')}:{dataset.get('key')}:{run_regime}:{variant_index}")
+                        dataset_variant = dict(dataset)
+                        dataset_variant["_variant_index"] = variant_index
+                        rows.append(
+                            _row_from_registry(
+                                run_group_id=run_group_id,
+                                run_index=len(rows) + 1,
+                                task_spec=task_spec,
+                                model=model,
+                                dataset_spec=dataset_variant,
+                                knobs=_sample_training_knobs(variant_rng, seed=seed),
+                                run_regime=run_regime,
+                                audit_meta=audit_meta,
+                            )
+                        )
 
     df = pd.DataFrame(rows)
     return df.reindex(columns=MANIFEST_COLUMNS)
@@ -353,12 +322,15 @@ def save_manifest(df: pd.DataFrame, output_path: Path, sheet_name: str = "runs")
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate HF model+dataset run manifests from JSON")
-    parser.add_argument("--input-json", required=True, help="Path to HF model/dataset pairing JSON")
+    parser = argparse.ArgumentParser(description="Generate HF model+dataset run manifests from registries")
+    parser.add_argument("--input-json", help="Optional HF audit JSON used only for metadata enrichment")
     parser.add_argument("--output", default="outputs/run_manifest.xlsx", help="Output .csv or .xlsx path")
     parser.add_argument("--sheet", default="runs", help="Sheet name for xlsx output")
+    parser.add_argument("--task-keys", help="Comma-separated registry task keys")
     parser.add_argument("--models-per-task", type=int, default=10)
     parser.add_argument("--datasets-per-model", type=int, default=1)
+    parser.add_argument("--run-regimes", help="Comma-separated run regimes")
+    parser.add_argument("--variants-per-pair", type=int, default=1)
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
 
@@ -367,8 +339,11 @@ def main() -> None:
     args = parse_args()
     df = build_hf_manifest(
         json_path=args.input_json,
+        task_keys=_parse_csv_arg(args.task_keys),
         models_per_task=args.models_per_task,
         datasets_per_model=args.datasets_per_model,
+        run_regimes=_parse_csv_arg(args.run_regimes),
+        variants_per_pair=args.variants_per_pair,
         seed=args.seed,
     )
     output_path = Path(args.output)
