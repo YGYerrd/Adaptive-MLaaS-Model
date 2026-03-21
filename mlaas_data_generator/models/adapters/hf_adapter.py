@@ -16,15 +16,82 @@ from .hf_task import (
 )
 
 
+def _normalize_hf_task_name(hf_task):
+    task = str(hf_task or "sequence_classification").strip().lower().replace("-", "_")
+    aliases = {
+        "text_classification": "sequence_classification",
+        "seq_cls": "sequence_classification",
+        "token_cls": "token_classification",
+        "masked_lm": "fill_mask",
+        "mlm": "fill_mask",
+        "text_generation": "causal_lm_generation",
+        "causal_lm": "causal_lm_generation",
+        "text2text": "seq2seq_generation",
+        "text2text_generation": "seq2seq_generation",
+        "vision_classification": "image_classification",
+        "image_cls": "image_classification",
+        "object_detection": "image_detection",
+        "detection": "image_detection",
+        "semantic_segmentation": "image_segmentation",
+        "segmentation": "image_segmentation",
+    }
+    return aliases.get(task, task)
+
+
+_MODEL_TEMPLATE_TO_TASK = {
+    "hf_sequence_classification": "sequence_classification",
+    "hf_token_classification": "token_classification",
+    "hf_sentence_similarity": "sentence_similarity",
+    "hf_fill_mask": "fill_mask",
+    "hf_causal_lm": "causal_lm_generation",
+    "hf_seq2seq": "seq2seq_generation",
+    # backwards compatibility
+    "auto_sequence_classification": "sequence_classification",
+    "auto_token_classification": "token_classification",
+    "auto_masked_lm": "fill_mask",
+    "auto_causal_lm": "causal_lm_generation",
+    "auto_seq2seq_lm": "seq2seq_generation",
+}
+
+
+def resolve_hf_task(loader_template=None, hf_task=None):
+    template = str(loader_template).strip().lower() if loader_template else None
+    mapped = _MODEL_TEMPLATE_TO_TASK.get(template)
+    if mapped:
+        return mapped
+    return _normalize_hf_task_name(hf_task)
+
+
+def build_task_spec(hf_task=None, *, loader_template=None, num_labels=None, multilabel=False, label_format="single_index"):
+    task = resolve_hf_task(loader_template=loader_template, hf_task=hf_task)
+    if task == "token_classification":
+        return task, TokenClassificationSpec(multilabel=multilabel, label_format=label_format)
+    if task == "sentence_similarity":
+        resolved_num_labels = None if num_labels is None else int(num_labels)
+        is_regression = (str(label_format).lower() == "continuous") or (resolved_num_labels == 1)
+        return task, SentenceSimilaritySpec(is_regression=is_regression)
+    if task == "fill_mask":
+        return task, FillMaskSpec()
+    if task == "causal_lm_generation":
+        return task, CausalLMGenerationSpec()
+    if task == "seq2seq_generation":
+        return task, Seq2SeqGenerationSpec()
+    if task in {"image_classification", "vision_classification"}:
+        return "image_classification", ImageClassificationSpec()
+    if task in {"object_detection", "image_detection", "detection"}:
+        return "image_detection", ObjectDetectionSpec()
+    if task in {"image_segmentation", "semantic_segmentation", "segmentation"}:
+        return "image_segmentation", ImageSegmentationSpec()
+    if task in {"image_captioning", "image_to_text"}:
+        return "image_captioning", ImageCaptioningSpec()
+    if task in {"text_image_retrieval", "image_text_retrieval"}:
+        return "text_image_retrieval", TextImageRetrievalSpec()
+    if task in {"visual_question_answering", "vqa"}:
+        return "visual_question_answering", VQASpec()
+    return "sequence_classification", SequenceClassificationSpec(multilabel=multilabel, label_format=label_format)
+
+
 class TransformersTextFineTuneAdapter:
-    """
-    Wrapper around HFCore.
-
-    Supports loader schema:
-      - x is dict-of-arrays: {"input_ids": ..., "attention_mask": ...}
-      - x can still be legacy raw texts or token lists (kept for backwards compatibility)
-    """
-
     def __init__(
         self,
         model_id,
@@ -33,39 +100,22 @@ class TransformersTextFineTuneAdapter:
         batch_size=16,
         device=None,
         hf_task="sequence_classification",
+        loader_template=None,
         label_pad_value=-100,
         multilabel=False,
         label_format="single_index",
         generation_config=None,
         task_tag=None,
     ):
-        if hf_task == "token_classification":
-            spec = TokenClassificationSpec(multilabel=multilabel, label_format=label_format)
-        elif hf_task == "sentence_similarity":
-            resolved_num_labels = None if num_labels is None else int(num_labels)
-            is_regression = (str(label_format).lower() == "continuous") or (resolved_num_labels == 1)
-            spec = SentenceSimilaritySpec(is_regression=is_regression)
-        elif hf_task == "fill_mask":
-            spec = FillMaskSpec()
-        elif hf_task in {"causal_lm_generation", "causal_lm", "text_generation"}:
-            spec = CausalLMGenerationSpec()
-        elif hf_task in {"seq2seq_generation", "text2text_generation", "text2text"}:
-            spec = Seq2SeqGenerationSpec()
-        elif hf_task in {"image_classification", "vision_classification"}:
-            spec = ImageClassificationSpec()
-        elif hf_task in {"object_detection", "image_detection", "detection"}:
-            spec = ObjectDetectionSpec()
-        elif hf_task in {"image_segmentation", "semantic_segmentation", "segmentation"}:
-            spec = ImageSegmentationSpec()
-        elif hf_task in {"image_captioning", "image_to_text"}:
-            spec = ImageCaptioningSpec()
-        elif hf_task in {"text_image_retrieval", "image_text_retrieval"}:
-            spec = TextImageRetrievalSpec()
-        elif hf_task in {"visual_question_answering", "vqa"}:
-            spec = VQASpec()
-        else:
-            spec = SequenceClassificationSpec(multilabel=multilabel, label_format=label_format)
-
+        resolved_task, spec = build_task_spec(
+            hf_task,
+            loader_template=loader_template,
+            num_labels=num_labels,
+            multilabel=multilabel,
+            label_format=label_format,
+        )
+        self.resolved_hf_task = resolved_task
+        self.loader_template = loader_template
         self.core = HFCore(
             model_id=model_id,
             num_labels=(None if num_labels is None else int(num_labels)),
@@ -77,7 +127,6 @@ class TransformersTextFineTuneAdapter:
             generation_config=generation_config,
             task_tag=task_tag,
         )
-
         self.model_id = model_id
         self.max_length = int(max_length)
         self.batch_size = int(batch_size)
@@ -93,13 +142,7 @@ class TransformersTextFineTuneAdapter:
         self.core.set_weights(weights_dict)
 
     def fit(self, x, y, epochs=1, lr=5e-5, max_train_time_s=60):
-        return self.core.finetune(
-            x,
-            y,
-            epochs=epochs,
-            lr=lr,
-            max_train_time_s=max_train_time_s,
-        )
+        return self.core.finetune(x, y, epochs=epochs, lr=lr, max_train_time_s=max_train_time_s)
 
     def evaluate(self, x, y, inference_only=False):
         loss, primary, secondary, qos = self.core.eval(x, y, inference_only=inference_only)
@@ -107,11 +150,6 @@ class TransformersTextFineTuneAdapter:
 
 
 class TransformersTextClassifierAdapter:
-    """
-    Inference-style adapter (loads an already-finetuned sequence classification model_id).
-    Uses HFCore batching/eval utilities, including dict-of-arrays support.
-    """
-
     def __init__(
         self,
         model_id,
@@ -119,35 +157,11 @@ class TransformersTextClassifierAdapter:
         batch_size=16,
         device=None,
         hf_task="sequence_classification",
+        loader_template=None,
         generation_config=None,
         task_tag=None,
     ):
-        task = str(hf_task or "sequence_classification").lower().replace("-", "_")
-        if task in {"causal_lm_generation", "causal_lm", "text_generation"}:
-            spec = CausalLMGenerationSpec()
-        elif task in {"seq2seq_generation", "text2text_generation", "text2text"}:
-            spec = Seq2SeqGenerationSpec()
-        elif task == "fill_mask":
-            spec = FillMaskSpec()
-        elif task == "token_classification":
-            spec = TokenClassificationSpec()
-        elif task == "sentence_similarity":
-            spec = SentenceSimilaritySpec(is_regression=True)
-        elif task in {"image_classification", "vision_classification"}:
-            spec = ImageClassificationSpec()
-        elif task in {"object_detection", "image_detection", "detection"}:
-            spec = ObjectDetectionSpec()
-        elif task in {"image_segmentation", "semantic_segmentation", "segmentation"}:
-            spec = ImageSegmentationSpec()
-        elif task in {"image_captioning", "image_to_text"}:
-            spec = ImageCaptioningSpec()
-        elif task in {"text_image_retrieval", "image_text_retrieval"}:
-            spec = TextImageRetrievalSpec()
-        elif task in {"visual_question_answering", "vqa"}:
-            spec = VQASpec()
-        else:
-            spec = SequenceClassificationSpec()
-
+        task, spec = build_task_spec(hf_task, loader_template=loader_template, num_labels=None)
         core = HFCore(
             model_id=model_id,
             num_labels=None,
@@ -162,25 +176,25 @@ class TransformersTextClassifierAdapter:
         transformers = core.transformers
         if core.model is None:
             def _load_model():
-                if task in {"causal_lm_generation", "causal_lm", "text_generation"}:
+                if task == "causal_lm_generation":
                     return transformers.AutoModelForCausalLM.from_pretrained(model_id)
-                if task in {"seq2seq_generation", "text2text_generation", "text2text"}:
+                if task == "seq2seq_generation":
                     return transformers.AutoModelForSeq2SeqLM.from_pretrained(model_id)
                 if task == "fill_mask":
                     return transformers.AutoModelForMaskedLM.from_pretrained(model_id)
                 if task == "token_classification":
                     return transformers.AutoModelForTokenClassification.from_pretrained(model_id)
-                if task in {"image_classification", "vision_classification"}:
+                if task == "image_classification":
                     return transformers.AutoModelForImageClassification.from_pretrained(model_id)
-                if task in {"object_detection", "image_detection", "detection"}:
+                if task == "image_detection":
                     return transformers.AutoModelForObjectDetection.from_pretrained(model_id)
-                if task in {"image_segmentation", "semantic_segmentation", "segmentation"}:
+                if task == "image_segmentation":
                     return transformers.AutoModelForSemanticSegmentation.from_pretrained(model_id)
-                if task in {"image_captioning", "image_to_text"}:
+                if task == "image_captioning":
                     return transformers.AutoModelForVision2Seq.from_pretrained(model_id)
-                if task in {"text_image_retrieval", "image_text_retrieval"}:
+                if task == "text_image_retrieval":
                     return transformers.AutoModel.from_pretrained(model_id)
-                if task in {"visual_question_answering", "vqa"}:
+                if task == "visual_question_answering":
                     return transformers.AutoModelForVisualQuestionAnswering.from_pretrained(model_id)
                 return transformers.AutoModelForSequenceClassification.from_pretrained(model_id)
 
@@ -199,6 +213,8 @@ class TransformersTextClassifierAdapter:
         self.max_length = int(max_length)
         self.batch_size = int(batch_size)
         self.device = self.core.device
+        self.resolved_hf_task = task
+        self.loader_template = loader_template
 
     def evaluate(self, x, y, inference_only=True):
         loss, primary, secondary, qos = self.core.eval(x, y, inference_only=inference_only)

@@ -23,26 +23,7 @@ def _make_optimizer(name: str, lr: float):
         return optimizers.AdamW(learning_rate=lr)
     return optimizers.Adam(learning_rate=lr)
 
-def _normalize_hf_task_name(hf_task):
-    task = str(hf_task or "sequence_classification").strip().lower().replace("-", "_")
-    aliases = {
-        "text_classification": "sequence_classification",
-        "seq_cls": "sequence_classification",
-        "token_cls": "token_classification",
-        "masked_lm": "fill_mask",
-        "mlm": "fill_mask",
-        "text_generation": "causal_lm_generation",
-        "causal_lm": "causal_lm_generation",
-        "text2text": "seq2seq_generation",
-        "text2text_generation": "seq2seq_generation",
-        "vision_classification": "image_classification",
-        "image_cls": "image_classification",
-        "object_detection": "image_detection",
-        "detection": "image_detection",
-        "semantic_segmentation": "image_segmentation",
-        "segmentation": "image_segmentation",
-    }
-    return aliases.get(task, task)
+from .adapters.hf_adapter import resolve_hf_task
 
 def create_model(
     input_shape,
@@ -79,10 +60,12 @@ def create_model(
         if not model_id:
             raise ValueError("HF fine-tune model_type requires hf_model_id=<huggingface_model_repo_id>")
 
+        loader_template = (meta or {}).get("loader_template") if isinstance(meta, dict) else None
+        loader_template = loader_template or kwargs.get("loader_template")
         hf_task = None
         if isinstance(meta, dict):
             hf_task = meta.get("hf_task")
-        hf_task = _normalize_hf_task_name(hf_task or kwargs.get("hf_task", "sequence_classification"))
+        hf_task = resolve_hf_task(loader_template=loader_template, hf_task=hf_task or kwargs.get("hf_task", "sequence_classification"))
 
         label_pad_value = infer_ignore_index(meta if isinstance(meta, dict) else None, default=int(kwargs.get("label_pad_value", -100)))
         
@@ -127,6 +110,7 @@ def create_model(
             batch_size=batch_size,
             device=device,
             hf_task=hf_task,
+            loader_template=loader_template,
             label_pad_value=label_pad_value,
             multilabel=multilabel,
             label_format=label_format,
@@ -144,10 +128,12 @@ def create_model(
         if not model_id:
             raise ValueError("HF model_type requires hf_model_id=<huggingface_model_repo_id>")
 
+        loader_template = (meta or {}).get("loader_template") if isinstance(meta, dict) else None
+        loader_template = loader_template or kwargs.get("loader_template")
         hf_task = None
         if isinstance(meta, dict):
             hf_task = meta.get("hf_task")
-        hf_task = _normalize_hf_task_name(hf_task or kwargs.get("hf_task", "sequence_classification"))
+        hf_task = resolve_hf_task(loader_template=loader_template, hf_task=hf_task or kwargs.get("hf_task", "sequence_classification"))
 
         max_length = kwargs.get("max_length", None)
         if max_length is None and isinstance(meta, dict):
@@ -180,6 +166,7 @@ def create_model(
             batch_size=batch_size,
             device=device,
             hf_task=hf_task,
+            loader_template=loader_template,
             generation_config=generation_config,
             task_tag=kwargs.get("task_tag", (meta or {}).get("task_tag") if isinstance(meta, dict) else None),
         )

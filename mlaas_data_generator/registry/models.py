@@ -10,7 +10,7 @@ MODEL_REGISTRY: dict[str, dict[str, object]] = {
         "model_role": "task_head",
         "allowed_run_regimes": ["finetune_transfer", "inference_only"],
         "dataset_keys": ["glue_sst2", "ag_news", "imdb"],
-        "loader_template": "auto_sequence_classification",
+        "loader_template": "hf_sequence_classification",
         "explainability": {
             "supports_gradients": True,
             "supports_attention_rollout": True,
@@ -26,7 +26,7 @@ MODEL_REGISTRY: dict[str, dict[str, object]] = {
         "model_role": "task_head",
         "allowed_run_regimes": ["finetune_transfer", "inference_only"],
         "dataset_keys": ["ag_news", "imdb"],
-        "loader_template": "auto_sequence_classification",
+        "loader_template": "hf_sequence_classification",
         "explainability": {
             "supports_gradients": True,
             "supports_attention_rollout": True,
@@ -42,7 +42,7 @@ MODEL_REGISTRY: dict[str, dict[str, object]] = {
         "model_role": "task_head",
         "allowed_run_regimes": ["finetune_transfer", "inference_only"],
         "dataset_keys": ["glue_sst2", "ag_news"],
-        "loader_template": "auto_sequence_classification",
+        "loader_template": "hf_sequence_classification",
         "explainability": {
             "supports_gradients": True,
             "supports_attention_rollout": True,
@@ -58,7 +58,7 @@ MODEL_REGISTRY: dict[str, dict[str, object]] = {
         "model_role": "task_head",
         "allowed_run_regimes": ["finetune_transfer", "inference_only"],
         "dataset_keys": ["conll2003", "wnut_17"],
-        "loader_template": "auto_token_classification",
+        "loader_template": "hf_token_classification",
         "explainability": {
             "supports_gradients": True,
             "supports_attention_rollout": True,
@@ -74,7 +74,7 @@ MODEL_REGISTRY: dict[str, dict[str, object]] = {
         "model_role": "task_head",
         "allowed_run_regimes": ["finetune_transfer", "inference_only"],
         "dataset_keys": ["conll2003"],
-        "loader_template": "auto_token_classification",
+        "loader_template": "hf_token_classification",
         "explainability": {
             "supports_gradients": True,
             "supports_attention_rollout": True,
@@ -90,7 +90,7 @@ MODEL_REGISTRY: dict[str, dict[str, object]] = {
         "model_role": "task_head",
         "allowed_run_regimes": ["finetune_transfer", "inference_only"],
         "dataset_keys": ["wnut_17"],
-        "loader_template": "auto_token_classification",
+        "loader_template": "hf_token_classification",
         "explainability": {
             "supports_gradients": True,
             "supports_attention_rollout": True,
@@ -106,7 +106,7 @@ MODEL_REGISTRY: dict[str, dict[str, object]] = {
         "model_role": "task_head",
         "allowed_run_regimes": ["finetune_transfer", "inference_only"],
         "dataset_keys": ["glue_stsb", "glue_mrpc"],
-        "loader_template": "auto_sequence_classification",
+        "loader_template": "hf_sentence_similarity",
         "explainability": {
             "supports_gradients": True,
             "supports_attention_rollout": True,
@@ -122,7 +122,7 @@ MODEL_REGISTRY: dict[str, dict[str, object]] = {
         "model_role": "task_head",
         "allowed_run_regimes": ["finetune_transfer", "inference_only"],
         "dataset_keys": ["glue_stsb", "glue_mrpc"],
-        "loader_template": "auto_sequence_classification",
+        "loader_template": "hf_sentence_similarity",
         "explainability": {
             "supports_gradients": True,
             "supports_attention_rollout": True,
@@ -138,7 +138,7 @@ MODEL_REGISTRY: dict[str, dict[str, object]] = {
         "model_role": "task_head",
         "allowed_run_regimes": ["finetune_transfer", "inference_only"],
         "dataset_keys": ["glue_stsb"],
-        "loader_template": "auto_sequence_classification",
+        "loader_template": "hf_sentence_similarity",
         "explainability": {
             "supports_gradients": True,
             "supports_attention_rollout": False,
@@ -154,7 +154,7 @@ MODEL_REGISTRY: dict[str, dict[str, object]] = {
         "model_role": "task_head",
         "allowed_run_regimes": ["finetune_transfer", "inference_only"],
         "dataset_keys": ["wikitext2", "ag_news_fillmask"],
-        "loader_template": "auto_masked_lm",
+        "loader_template": "hf_fill_mask",
         "explainability": {
             "supports_gradients": True,
             "supports_attention_rollout": True,
@@ -170,7 +170,7 @@ MODEL_REGISTRY: dict[str, dict[str, object]] = {
         "model_role": "task_head",
         "allowed_run_regimes": ["finetune_transfer", "inference_only"],
         "dataset_keys": ["wikitext2", "ag_news_fillmask"],
-        "loader_template": "auto_masked_lm",
+        "loader_template": "hf_fill_mask",
         "explainability": {
             "supports_gradients": True,
             "supports_attention_rollout": True,
@@ -186,7 +186,7 @@ MODEL_REGISTRY: dict[str, dict[str, object]] = {
         "model_role": "task_head",
         "allowed_run_regimes": ["finetune_transfer", "inference_only"],
         "dataset_keys": ["wikitext2_lm"],
-        "loader_template": "auto_causal_lm",
+        "loader_template": "hf_causal_lm",
         "explainability": {
             "supports_gradients": True,
             "supports_attention_rollout": False,
@@ -202,7 +202,7 @@ MODEL_REGISTRY: dict[str, dict[str, object]] = {
         "model_role": "task_head",
         "allowed_run_regimes": ["finetune_transfer", "inference_only"],
         "dataset_keys": ["wikitext2_lm"],
-        "loader_template": "auto_causal_lm",
+        "loader_template": "hf_causal_lm",
         "explainability": {
             "supports_gradients": True,
             "supports_attention_rollout": False,
@@ -218,7 +218,7 @@ MODEL_REGISTRY: dict[str, dict[str, object]] = {
         "model_role": "task_head",
         "allowed_run_regimes": ["finetune_transfer", "inference_only"],
         "dataset_keys": ["cnn_dailymail"],
-        "loader_template": "auto_seq2seq_lm",
+        "loader_template": "hf_seq2seq",
         "explainability": {
             "supports_gradients": True,
             "supports_attention_rollout": True,
@@ -234,7 +234,7 @@ MODEL_REGISTRY: dict[str, dict[str, object]] = {
         "model_role": "task_head",
         "allowed_run_regimes": ["finetune_transfer", "inference_only"],
         "dataset_keys": ["cnn_dailymail"],
-        "loader_template": "auto_seq2seq_lm",
+        "loader_template": "hf_seq2seq",
         "explainability": {
             "supports_gradients": True,
             "supports_attention_rollout": True,

@@ -207,6 +207,7 @@ def load_huggingface_source(**kwargs):
         "modality": modality,
         "hf_task": hf_task,
         "schema": schema,
+        "loader_template": dataset_args.get("loader_template"),
         "dataset_args": dataset_args,
     }
 

@@ -9,7 +9,7 @@ def test_generation_registries_cover_curated_tasks_and_metadata():
     }
     assert set(generation_datasets) == {"wikitext2_lm", "cnn_dailymail"}
     assert generation_datasets["wikitext2_lm"]["pipeline_tag"] == "text-generation"
-    assert generation_datasets["wikitext2_lm"]["loader_template"] == "hf_text_generation"
+    assert generation_datasets["wikitext2_lm"]["loader_template"] == "hf_causal_lm"
     assert generation_datasets["wikitext2_lm"]["explainability"]["supports_feature_attribution"] is True
 
     assert generation_datasets["cnn_dailymail"]["pipeline_tag"] == "text2text-generation"
@@ -26,7 +26,7 @@ def test_generation_registries_cover_curated_tasks_and_metadata():
         "t5-small",
     }
     assert generation_models["distilgpt2_textgen"]["pipeline_tag"] == "text-generation"
-    assert generation_models["distilgpt2_textgen"]["loader_template"] == "auto_causal_lm"
+    assert generation_models["distilgpt2_textgen"]["loader_template"] == "hf_causal_lm"
     assert generation_models["distilgpt2_textgen"]["allowed_run_regimes"] == ["finetune_transfer", "inference_only"]
     assert generation_models["flan-t5-small_text2text"]["pipeline_tag"] == "text2text-generation"
     assert generation_models["flan-t5-small_text2text"]["family"] == "t5"
