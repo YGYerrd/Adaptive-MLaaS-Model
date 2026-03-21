@@ -19,6 +19,7 @@ def resolve_generation_columns(ds_train, *, column_mapping=None, hf_task="causal
         target_col = mapping.get("target") or _first_existing(cols, [
             "target_text", "label", "output", "completion", "response", "target",
         ])
+        mode = "source_target"
     else:
         prompt_col = mapping.get("prompt") or _first_existing(cols, [
             "prompt", "instruction", "input", "source_text", "text", "source",
@@ -27,6 +28,18 @@ def resolve_generation_columns(ds_train, *, column_mapping=None, hf_task="causal
             "completion", "response", "output", "target_text", "label", "target",
         ])
         source_col = prompt_col
+        mode = "prompt_target"
+
+        if target_col is None:
+            single_text_col = _first_existing(cols, [
+                "text", "content", "document", "body", "passage", "article",
+            ])
+            if single_text_col is None and len(cols) == 1:
+                single_text_col = next(iter(cols))
+            if single_text_col is not None:
+                source_col = single_text_col
+                target_col = single_text_col
+                mode = "single_text"
 
     if not source_col:
         raise ValueError(
@@ -39,7 +52,7 @@ def resolve_generation_columns(ds_train, *, column_mapping=None, hf_task="causal
             f"Provide dataset_args.column_mapping. Available columns: {sorted(cols)}"
         )
 
-    return {"source": source_col, "target": target_col}
+    return {"source": source_col, "target": target_col, "mode": mode}
 
 
 def _to_text_list(values):
@@ -91,32 +104,49 @@ def preprocess_hf_text_causal_lm_generation(
 
     resolved = resolve_generation_columns(ds_train, column_mapping=column_mapping, hf_task="causal_lm_generation")
     prompt_col, target_col = resolved["source"], resolved["target"]
+    generation_mode = resolved.get("mode", "prompt_target")
 
     max_len = int(max_length or meta.get("max_length", 512))
     src_max = int(source_max_length or max_len)
     tgt_max = int(target_max_length or max_len)
 
     def _encode_split(ds):
-        prompts = _to_text_list(ds[prompt_col])
-        targets = _to_text_list(ds[target_col])
-
-        p_tok = tokenizer(prompts, truncation=True, padding=False, max_length=src_max, add_special_tokens=True)
-        t_tok = tokenizer(targets, truncation=True, padding=False, max_length=tgt_max, add_special_tokens=False)
-
         pad_id = int(tokenizer.pad_token_id)
         eos_id = int(tokenizer.eos_token_id if tokenizer.eos_token_id is not None else pad_id)
 
         ids_list, mask_list, label_list = [], [], []
-        for p_ids, t_ids in zip(p_tok["input_ids"], t_tok["input_ids"]):
-            full_ids = (list(p_ids) + list(t_ids) + [eos_id])[:max_len]
-            labels = full_ids.copy()
-            if prompt_loss_only:
-                prompt_len = min(len(p_ids), len(full_ids))
-                labels[:prompt_len] = [int(ignore_index)] * prompt_len
+        if generation_mode == "single_text":
+            texts = _to_text_list(ds[prompt_col])
+            tok = tokenizer(texts, truncation=True, padding=False, max_length=max_len, add_special_tokens=True)
 
-            ids_list.append(full_ids)
-            mask_list.append([1] * len(full_ids))
-            label_list.append(labels)
+            for ids in tok["input_ids"]:
+                full_ids = list(ids)[:max_len]
+                if eos_id is not None and full_ids:
+                    if len(full_ids) < max_len and full_ids[-1] != eos_id:
+                        full_ids = full_ids + [eos_id]
+                    elif full_ids[-1] != eos_id and len(full_ids) == max_len:
+                        full_ids[-1] = eos_id
+                labels = full_ids.copy()
+                ids_list.append(full_ids)
+                mask_list.append([1] * len(full_ids))
+                label_list.append(labels)
+        else:
+            prompts = _to_text_list(ds[prompt_col])
+            targets = _to_text_list(ds[target_col])
+
+            p_tok = tokenizer(prompts, truncation=True, padding=False, max_length=src_max, add_special_tokens=True)
+            t_tok = tokenizer(targets, truncation=True, padding=False, max_length=tgt_max, add_special_tokens=False)
+
+            for p_ids, t_ids in zip(p_tok["input_ids"], t_tok["input_ids"]):
+                full_ids = (list(p_ids) + list(t_ids) + [eos_id])[:max_len]
+                labels = full_ids.copy()
+                if prompt_loss_only:
+                    prompt_len = min(len(p_ids), len(full_ids))
+                    labels[:prompt_len] = [int(ignore_index)] * prompt_len
+
+                ids_list.append(full_ids)
+                mask_list.append([1] * len(full_ids))
+                label_list.append(labels)
 
         pad_to = max(len(x) for x in ids_list) if dynamic_padding else max_len
         padded_ids, padded_mask, padded_labels = [], [], []
@@ -157,7 +187,12 @@ def preprocess_hf_text_causal_lm_generation(
         "label_granularity": "token",
         "modality": "text",
         "num_classes": int(meta.get("num_classes", 1) or 1),
-        "column_mapping": {"prompt": prompt_col, "target": target_col},
+        "column_mapping": (
+            {"text": prompt_col}
+            if generation_mode == "single_text"
+            else {"prompt": prompt_col, "target": target_col}
+        ),
+        "generation_mode": generation_mode,
         "prompt_loss_only": bool(prompt_loss_only),
         "ignore_index": int(ignore_index),
         "source_max_length": src_max,
