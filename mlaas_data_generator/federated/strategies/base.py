@@ -1,7 +1,6 @@
 #base.p
 from dataclasses import dataclass
 import numpy as np
-from ...models.builders import create_model
 from ...models.label_schema import infer_num_labels
 
 
@@ -236,6 +235,8 @@ class TaskStrategy:
                 extra[key] = ds_args[key]
 
         model_type = (self.config.get("model_type") or "").lower()
+
+        from ...models.builders import create_model
 
         common = dict(
             input_shape=tuple(self.meta["input_shape"]),
