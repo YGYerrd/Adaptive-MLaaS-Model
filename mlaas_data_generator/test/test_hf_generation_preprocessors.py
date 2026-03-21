@@ -106,3 +106,36 @@ def test_seq2seq_generation_preprocessor_source_target_mapping():
     assert np.any(y_train == -100)
     assert meta["column_mapping"]["source"] == "source_text"
     assert meta["column_mapping"]["target"] == "target_text"
+
+
+def test_causal_lm_generation_preprocessor_single_text_column():
+    _install_fake_transformers()
+    train_rows = [
+        {"text": "The quick brown fox"},
+        {"text": "Jumps over lazy dogs"},
+    ]
+    test_rows = [{"text": "Single column inference text"}]
+
+    train, test, meta = preprocess_hf(
+        (DummySplit(train_rows), None),
+        (DummySplit(test_rows), None),
+        {"hf_task": "causal_lm_generation", "modality": "text", "max_length": 9, "hf_id": "dummy"},
+        hf_model_id="dummy/model",
+        dynamic_padding=True,
+    )
+
+    x_train, y_train = train
+    x_test, y_test = test
+
+    assert set(x_train.keys()) >= {"input_ids", "attention_mask"}
+    assert x_train["input_ids"].shape == y_train.shape
+    assert x_test["input_ids"].shape == y_test.shape
+    assert meta["generation_mode"] == "single_text"
+    assert meta["column_mapping"] == {"text": "text"}
+
+    non_pad_train = x_train["attention_mask"] == 1
+    non_pad_test = x_test["attention_mask"] == 1
+    assert np.array_equal(y_train[non_pad_train], x_train["input_ids"][non_pad_train])
+    assert np.array_equal(y_test[non_pad_test], x_test["input_ids"][non_pad_test])
+    assert np.all(y_train[~non_pad_train] == -100)
+    assert np.all(y_test[~non_pad_test] == -100)
