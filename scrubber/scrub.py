@@ -135,7 +135,7 @@ def _extract_family_hints(model_id: str, library_name: str | None, tags: list[st
 
 
 def _fetch_models_for_tag(pipeline_tag: str, limit: int) -> list[Any]:
-    api = HfApi(token="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")
+    api = HfApi(token="")
     models = list(
         api.list_models(
             pipeline_tag=pipeline_tag,

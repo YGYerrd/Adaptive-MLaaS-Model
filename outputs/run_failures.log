@@ -4899,3 +4899,2058 @@ Traceback (most recent call last):
                                                      ^^^^^^^^^^^^^^^^^^^^^^^
 RuntimeError: Expected one of cpu, cuda, ipu, xpu, mkldnn, opengl, opencl, ideep, hip, ve, fpga, maia, xla, lazy, vulkan, mps, meta, hpu, mtia, privateuseone device type at start of device string: auto
 
+====================================================================================================
+timestamp: 2026-03-21T15:53:46.500876
+row_index: 11
+external_run_id: hf_textgen_000017
+case_name: distilgpt2__wikitext2_lm__finetune_transfer__v0
+run_group_id: bc47aaeb-4031-4580-b639-d34dad8dc042
+failure_stage: runtime_exception
+error_message: Could not resolve target column for task 'causal_lm_generation'. Provide dataset_args.column_mapping. Available columns: ['text']
+resolved_config:
+{
+  "db_path": "outputs\\federated.db",
+  "num_clients": 1,
+  "num_rounds": 1,
+  "local_epochs": 1,
+  "batch_size": 8,
+  "learning_rate": 2e-05,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.05,
+  "optimizer": "adamw",
+  "distribution_type": "iid",
+  "distribution_param": null,
+  "sample_size": 30000,
+  "sample_frac": 1.0,
+  "client_dropout_rate": 0.0,
+  "task_type": "classification",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "client_participation_rate": 1.0,
+  "seed": 42,
+  "distribution": "iid",
+  "external_run_id": "hf_textgen_000017",
+  "dataset": "hf",
+  "run_group_id": "bc47aaeb-4031-4580-b639-d34dad8dc042",
+  "case_name": "distilgpt2__wikitext2_lm__finetune_transfer__v0",
+  "notes": "Generated from registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 1000,
+  "max_length": 256,
+  "num_workers": 2,
+  "timeout_s": 1800,
+  "momentum": 0.0,
+  "save_weights": true,
+  "model_type": "hf_finetune",
+  "hf_task": "causal_lm_generation",
+  "modality": "text",
+  "dataset_name": "wikitext",
+  "dataset_config": "wikitext-2-raw-v1",
+  "hf_model_id": "distilgpt2",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "text",
+  "text_column": "text",
+  "task_tag": "language-modeling",
+  "run_regime": "finetune_transfer",
+  "model_role": "task_head",
+  "input_schema": "single_text",
+  "realism_score": 1,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "wikitext",
+  "hf_pipeline_tag": "text-generation",
+  "hf_url": "https://huggingface.co/distilgpt2",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"text_generation\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"dataset_pairing_source\": \"registry.dataset_keys\"}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 407, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 66, in __init__
+    train, test, meta = load_dataset(self.dataset, **self.dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 211, in preprocess_hf
+    out = preprocess_hf_text_causal_lm_generation(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_generation.py", line 92, in preprocess_hf_text_causal_lm_generation
+    resolved = resolve_generation_columns(ds_train, column_mapping=column_mapping, hf_task="causal_lm_generation")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_generation.py", line 37, in resolve_generation_columns
+    raise ValueError(
+ValueError: Could not resolve target column for task 'causal_lm_generation'. Provide dataset_args.column_mapping. Available columns: ['text']
+
+====================================================================================================
+timestamp: 2026-03-21T15:53:55.867854
+row_index: 12
+external_run_id: hf_textgen_000018
+case_name: distilgpt2__wikitext2_lm__inference_only__v0
+run_group_id: bc47aaeb-4031-4580-b639-d34dad8dc042
+failure_stage: runtime_exception
+error_message: Could not resolve target column for task 'causal_lm_generation'. Provide dataset_args.column_mapping. Available columns: ['text']
+resolved_config:
+{
+  "db_path": "outputs\\federated.db",
+  "num_clients": 1,
+  "num_rounds": 1,
+  "local_epochs": 1,
+  "batch_size": 16,
+  "learning_rate": 0.0001,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.001,
+  "optimizer": "rmsprop",
+  "distribution_type": "dirichlet",
+  "distribution_param": null,
+  "sample_size": 30000,
+  "sample_frac": 1.0,
+  "client_dropout_rate": 0.0,
+  "task_type": "classification",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "client_participation_rate": 1.0,
+  "seed": 42,
+  "distribution": "dirichlet",
+  "external_run_id": "hf_textgen_000018",
+  "dataset": "hf",
+  "run_group_id": "bc47aaeb-4031-4580-b639-d34dad8dc042",
+  "case_name": "distilgpt2__wikitext2_lm__inference_only__v0",
+  "notes": "Generated from registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 1000,
+  "max_length": 256,
+  "num_workers": 2,
+  "timeout_s": 1800,
+  "momentum": 0.9,
+  "dirichlet_alpha": 0.5,
+  "save_weights": true,
+  "model_type": "hf",
+  "hf_task": "causal_lm_generation",
+  "modality": "text",
+  "dataset_name": "wikitext",
+  "dataset_config": "wikitext-2-raw-v1",
+  "hf_model_id": "distilgpt2",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "text",
+  "text_column": "text",
+  "task_tag": "language-modeling",
+  "run_regime": "inference_only",
+  "model_role": "service",
+  "input_schema": "single_text",
+  "realism_score": 1,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "wikitext",
+  "hf_pipeline_tag": "text-generation",
+  "hf_url": "https://huggingface.co/distilgpt2",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"text_generation\", \"run_regime\": \"inference_only\", \"audit_json_used\": false, \"dataset_pairing_source\": \"registry.dataset_keys\"}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 407, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 66, in __init__
+    train, test, meta = load_dataset(self.dataset, **self.dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 211, in preprocess_hf
+    out = preprocess_hf_text_causal_lm_generation(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_generation.py", line 92, in preprocess_hf_text_causal_lm_generation
+    resolved = resolve_generation_columns(ds_train, column_mapping=column_mapping, hf_task="causal_lm_generation")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_generation.py", line 37, in resolve_generation_columns
+    raise ValueError(
+ValueError: Could not resolve target column for task 'causal_lm_generation'. Provide dataset_args.column_mapping. Available columns: ['text']
+
+====================================================================================================
+timestamp: 2026-03-21T15:54:10.647770
+row_index: 13
+external_run_id: hf_textgen_000019
+case_name: gpt2__wikitext2_lm__finetune_transfer__v0
+run_group_id: bc47aaeb-4031-4580-b639-d34dad8dc042
+failure_stage: runtime_exception
+error_message: Could not resolve target column for task 'causal_lm_generation'. Provide dataset_args.column_mapping. Available columns: ['text']
+resolved_config:
+{
+  "db_path": "outputs\\federated.db",
+  "num_clients": 1,
+  "num_rounds": 1,
+  "local_epochs": 1,
+  "batch_size": 8,
+  "learning_rate": 0.005,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.0,
+  "optimizer": "sgd",
+  "distribution_type": "iid",
+  "distribution_param": null,
+  "sample_size": 30000,
+  "sample_frac": 1.0,
+  "client_dropout_rate": 0.0,
+  "task_type": "classification",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "client_participation_rate": 1.0,
+  "seed": 42,
+  "distribution": "iid",
+  "external_run_id": "hf_textgen_000019",
+  "dataset": "hf",
+  "run_group_id": "bc47aaeb-4031-4580-b639-d34dad8dc042",
+  "case_name": "gpt2__wikitext2_lm__finetune_transfer__v0",
+  "notes": "Generated from registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 1000,
+  "max_length": 256,
+  "num_workers": 2,
+  "timeout_s": 1800,
+  "momentum": 0.9,
+  "save_weights": true,
+  "model_type": "hf_finetune",
+  "hf_task": "causal_lm_generation",
+  "modality": "text",
+  "dataset_name": "wikitext",
+  "dataset_config": "wikitext-2-raw-v1",
+  "hf_model_id": "gpt2",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "text",
+  "text_column": "text",
+  "task_tag": "language-modeling",
+  "run_regime": "finetune_transfer",
+  "model_role": "task_head",
+  "input_schema": "single_text",
+  "realism_score": 1,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "wikitext",
+  "hf_pipeline_tag": "text-generation",
+  "hf_url": "https://huggingface.co/gpt2",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"text_generation\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"dataset_pairing_source\": \"registry.dataset_keys\"}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 407, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 66, in __init__
+    train, test, meta = load_dataset(self.dataset, **self.dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 211, in preprocess_hf
+    out = preprocess_hf_text_causal_lm_generation(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_generation.py", line 92, in preprocess_hf_text_causal_lm_generation
+    resolved = resolve_generation_columns(ds_train, column_mapping=column_mapping, hf_task="causal_lm_generation")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_generation.py", line 37, in resolve_generation_columns
+    raise ValueError(
+ValueError: Could not resolve target column for task 'causal_lm_generation'. Provide dataset_args.column_mapping. Available columns: ['text']
+
+====================================================================================================
+timestamp: 2026-03-21T15:54:19.840123
+row_index: 14
+external_run_id: hf_textgen_000020
+case_name: gpt2__wikitext2_lm__inference_only__v0
+run_group_id: bc47aaeb-4031-4580-b639-d34dad8dc042
+failure_stage: runtime_exception
+error_message: Could not resolve target column for task 'causal_lm_generation'. Provide dataset_args.column_mapping. Available columns: ['text']
+resolved_config:
+{
+  "db_path": "outputs\\federated.db",
+  "num_clients": 1,
+  "num_rounds": 1,
+  "local_epochs": 1,
+  "batch_size": 4,
+  "learning_rate": 0.001,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.0,
+  "optimizer": "rmsprop",
+  "distribution_type": "iid",
+  "distribution_param": null,
+  "sample_size": 30000,
+  "sample_frac": 1.0,
+  "client_dropout_rate": 0.0,
+  "task_type": "classification",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "client_participation_rate": 1.0,
+  "seed": 42,
+  "distribution": "iid",
+  "external_run_id": "hf_textgen_000020",
+  "dataset": "hf",
+  "run_group_id": "bc47aaeb-4031-4580-b639-d34dad8dc042",
+  "case_name": "gpt2__wikitext2_lm__inference_only__v0",
+  "notes": "Generated from registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 1000,
+  "max_length": 256,
+  "num_workers": 2,
+  "timeout_s": 1800,
+  "momentum": 0.9,
+  "save_weights": true,
+  "model_type": "hf",
+  "hf_task": "causal_lm_generation",
+  "modality": "text",
+  "dataset_name": "wikitext",
+  "dataset_config": "wikitext-2-raw-v1",
+  "hf_model_id": "gpt2",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "text",
+  "text_column": "text",
+  "task_tag": "language-modeling",
+  "run_regime": "inference_only",
+  "model_role": "service",
+  "input_schema": "single_text",
+  "realism_score": 1,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "wikitext",
+  "hf_pipeline_tag": "text-generation",
+  "hf_url": "https://huggingface.co/gpt2",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"text_generation\", \"run_regime\": \"inference_only\", \"audit_json_used\": false, \"dataset_pairing_source\": \"registry.dataset_keys\"}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 407, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 66, in __init__
+    train, test, meta = load_dataset(self.dataset, **self.dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 211, in preprocess_hf
+    out = preprocess_hf_text_causal_lm_generation(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_generation.py", line 92, in preprocess_hf_text_causal_lm_generation
+    resolved = resolve_generation_columns(ds_train, column_mapping=column_mapping, hf_task="causal_lm_generation")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_generation.py", line 37, in resolve_generation_columns
+    raise ValueError(
+ValueError: Could not resolve target column for task 'causal_lm_generation'. Provide dataset_args.column_mapping. Available columns: ['text']
+
+====================================================================================================
+timestamp: 2026-03-21T15:55:17.630422
+row_index: 15
+external_run_id: hf_text2text_000021
+case_name: google_flan-t5-small__cnn_dailymail__finetune_transfer__v0
+run_group_id: bc47aaeb-4031-4580-b639-d34dad8dc042
+failure_stage: runtime_exception
+error_message: Could not resolve source/prompt column for task 'seq2seq_generation'. Provide dataset_args.column_mapping. Available columns: ['article', 'highlights', 'id']
+resolved_config:
+{
+  "db_path": "outputs\\federated.db",
+  "num_clients": 1,
+  "num_rounds": 1,
+  "local_epochs": 1,
+  "batch_size": 32,
+  "learning_rate": 0.001,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.0001,
+  "optimizer": "sgd",
+  "distribution_type": "iid",
+  "distribution_param": null,
+  "sample_size": 30000,
+  "sample_frac": 1.0,
+  "client_dropout_rate": 0.0,
+  "task_type": "classification",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "client_participation_rate": 1.0,
+  "seed": 42,
+  "distribution": "iid",
+  "external_run_id": "hf_text2text_000021",
+  "dataset": "hf",
+  "run_group_id": "bc47aaeb-4031-4580-b639-d34dad8dc042",
+  "case_name": "google_flan-t5-small__cnn_dailymail__finetune_transfer__v0",
+  "notes": "Generated from registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 1000,
+  "max_length": 256,
+  "num_workers": 2,
+  "timeout_s": 1800,
+  "momentum": 0.9,
+  "save_weights": true,
+  "model_type": "hf_finetune",
+  "hf_task": "seq2seq_generation",
+  "modality": "text",
+  "dataset_name": "cnn_dailymail",
+  "dataset_config": "3.0.0",
+  "hf_model_id": "google/flan-t5-small",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "highlights",
+  "text_column": "article",
+  "task_tag": "summarization",
+  "run_regime": "finetune_transfer",
+  "model_role": "task_head",
+  "input_schema": "single_text",
+  "realism_score": 1,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "cnn_dailymail",
+  "hf_pipeline_tag": "text2text-generation",
+  "hf_author": "google",
+  "hf_url": "https://huggingface.co/google/flan-t5-small",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"text2text_generation\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"dataset_pairing_source\": \"registry.dataset_keys\"}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 407, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 66, in __init__
+    train, test, meta = load_dataset(self.dataset, **self.dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 227, in preprocess_hf
+    out = preprocess_hf_text_seq2seq_generation(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_generation.py", line 192, in preprocess_hf_text_seq2seq_generation
+    resolved = resolve_generation_columns(ds_train, column_mapping=column_mapping, hf_task="seq2seq_generation")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_generation.py", line 32, in resolve_generation_columns
+    raise ValueError(
+ValueError: Could not resolve source/prompt column for task 'seq2seq_generation'. Provide dataset_args.column_mapping. Available columns: ['article', 'highlights', 'id']
+
+====================================================================================================
+timestamp: 2026-03-21T15:55:27.356606
+row_index: 16
+external_run_id: hf_text2text_000022
+case_name: google_flan-t5-small__cnn_dailymail__inference_only__v0
+run_group_id: bc47aaeb-4031-4580-b639-d34dad8dc042
+failure_stage: runtime_exception
+error_message: Could not resolve source/prompt column for task 'seq2seq_generation'. Provide dataset_args.column_mapping. Available columns: ['article', 'highlights', 'id']
+resolved_config:
+{
+  "db_path": "outputs\\federated.db",
+  "num_clients": 1,
+  "num_rounds": 1,
+  "local_epochs": 1,
+  "batch_size": 32,
+  "learning_rate": 2e-05,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.05,
+  "optimizer": "adamw",
+  "distribution_type": "dirichlet",
+  "distribution_param": null,
+  "sample_size": 30000,
+  "sample_frac": 1.0,
+  "client_dropout_rate": 0.0,
+  "task_type": "classification",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "client_participation_rate": 1.0,
+  "seed": 42,
+  "distribution": "dirichlet",
+  "external_run_id": "hf_text2text_000022",
+  "dataset": "hf",
+  "run_group_id": "bc47aaeb-4031-4580-b639-d34dad8dc042",
+  "case_name": "google_flan-t5-small__cnn_dailymail__inference_only__v0",
+  "notes": "Generated from registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 1000,
+  "max_length": 256,
+  "num_workers": 2,
+  "timeout_s": 1800,
+  "momentum": 0.0,
+  "dirichlet_alpha": 0.3,
+  "save_weights": true,
+  "model_type": "hf",
+  "hf_task": "seq2seq_generation",
+  "modality": "text",
+  "dataset_name": "cnn_dailymail",
+  "dataset_config": "3.0.0",
+  "hf_model_id": "google/flan-t5-small",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "highlights",
+  "text_column": "article",
+  "task_tag": "summarization",
+  "run_regime": "inference_only",
+  "model_role": "service",
+  "input_schema": "single_text",
+  "realism_score": 1,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "cnn_dailymail",
+  "hf_pipeline_tag": "text2text-generation",
+  "hf_author": "google",
+  "hf_url": "https://huggingface.co/google/flan-t5-small",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"text2text_generation\", \"run_regime\": \"inference_only\", \"audit_json_used\": false, \"dataset_pairing_source\": \"registry.dataset_keys\"}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 407, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 66, in __init__
+    train, test, meta = load_dataset(self.dataset, **self.dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 227, in preprocess_hf
+    out = preprocess_hf_text_seq2seq_generation(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_generation.py", line 192, in preprocess_hf_text_seq2seq_generation
+    resolved = resolve_generation_columns(ds_train, column_mapping=column_mapping, hf_task="seq2seq_generation")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_generation.py", line 32, in resolve_generation_columns
+    raise ValueError(
+ValueError: Could not resolve source/prompt column for task 'seq2seq_generation'. Provide dataset_args.column_mapping. Available columns: ['article', 'highlights', 'id']
+
+====================================================================================================
+timestamp: 2026-03-21T15:55:40.753122
+row_index: 17
+external_run_id: hf_text2text_000023
+case_name: t5-small__cnn_dailymail__finetune_transfer__v0
+run_group_id: bc47aaeb-4031-4580-b639-d34dad8dc042
+failure_stage: runtime_exception
+error_message: Could not resolve source/prompt column for task 'seq2seq_generation'. Provide dataset_args.column_mapping. Available columns: ['article', 'highlights', 'id']
+resolved_config:
+{
+  "db_path": "outputs\\federated.db",
+  "num_clients": 1,
+  "num_rounds": 1,
+  "local_epochs": 1,
+  "batch_size": 32,
+  "learning_rate": 0.0001,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.0,
+  "optimizer": "rmsprop",
+  "distribution_type": "dirichlet",
+  "distribution_param": null,
+  "sample_size": 30000,
+  "sample_frac": 1.0,
+  "client_dropout_rate": 0.0,
+  "task_type": "classification",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "client_participation_rate": 1.0,
+  "seed": 42,
+  "distribution": "dirichlet",
+  "external_run_id": "hf_text2text_000023",
+  "dataset": "hf",
+  "run_group_id": "bc47aaeb-4031-4580-b639-d34dad8dc042",
+  "case_name": "t5-small__cnn_dailymail__finetune_transfer__v0",
+  "notes": "Generated from registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 1000,
+  "max_length": 256,
+  "num_workers": 2,
+  "timeout_s": 1800,
+  "momentum": 0.0,
+  "dirichlet_alpha": 0.1,
+  "save_weights": true,
+  "model_type": "hf_finetune",
+  "hf_task": "seq2seq_generation",
+  "modality": "text",
+  "dataset_name": "cnn_dailymail",
+  "dataset_config": "3.0.0",
+  "hf_model_id": "t5-small",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "highlights",
+  "text_column": "article",
+  "task_tag": "summarization",
+  "run_regime": "finetune_transfer",
+  "model_role": "task_head",
+  "input_schema": "single_text",
+  "realism_score": 1,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "cnn_dailymail",
+  "hf_pipeline_tag": "text2text-generation",
+  "hf_url": "https://huggingface.co/t5-small",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"text2text_generation\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"dataset_pairing_source\": \"registry.dataset_keys\"}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 407, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 66, in __init__
+    train, test, meta = load_dataset(self.dataset, **self.dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 227, in preprocess_hf
+    out = preprocess_hf_text_seq2seq_generation(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_generation.py", line 192, in preprocess_hf_text_seq2seq_generation
+    resolved = resolve_generation_columns(ds_train, column_mapping=column_mapping, hf_task="seq2seq_generation")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_generation.py", line 32, in resolve_generation_columns
+    raise ValueError(
+ValueError: Could not resolve source/prompt column for task 'seq2seq_generation'. Provide dataset_args.column_mapping. Available columns: ['article', 'highlights', 'id']
+
+====================================================================================================
+timestamp: 2026-03-21T15:55:50.799728
+row_index: 18
+external_run_id: hf_text2text_000024
+case_name: t5-small__cnn_dailymail__inference_only__v0
+run_group_id: bc47aaeb-4031-4580-b639-d34dad8dc042
+failure_stage: runtime_exception
+error_message: Could not resolve source/prompt column for task 'seq2seq_generation'. Provide dataset_args.column_mapping. Available columns: ['article', 'highlights', 'id']
+resolved_config:
+{
+  "db_path": "outputs\\federated.db",
+  "num_clients": 1,
+  "num_rounds": 1,
+  "local_epochs": 1,
+  "batch_size": 8,
+  "learning_rate": 1e-05,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.0,
+  "optimizer": "adamw",
+  "distribution_type": "dirichlet",
+  "distribution_param": null,
+  "sample_size": 30000,
+  "sample_frac": 1.0,
+  "client_dropout_rate": 0.0,
+  "task_type": "classification",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "client_participation_rate": 1.0,
+  "seed": 42,
+  "distribution": "dirichlet",
+  "external_run_id": "hf_text2text_000024",
+  "dataset": "hf",
+  "run_group_id": "bc47aaeb-4031-4580-b639-d34dad8dc042",
+  "case_name": "t5-small__cnn_dailymail__inference_only__v0",
+  "notes": "Generated from registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 1000,
+  "max_length": 256,
+  "num_workers": 2,
+  "timeout_s": 1800,
+  "momentum": 0.0,
+  "dirichlet_alpha": 0.1,
+  "save_weights": true,
+  "model_type": "hf",
+  "hf_task": "seq2seq_generation",
+  "modality": "text",
+  "dataset_name": "cnn_dailymail",
+  "dataset_config": "3.0.0",
+  "hf_model_id": "t5-small",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "highlights",
+  "text_column": "article",
+  "task_tag": "summarization",
+  "run_regime": "inference_only",
+  "model_role": "service",
+  "input_schema": "single_text",
+  "realism_score": 1,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "cnn_dailymail",
+  "hf_pipeline_tag": "text2text-generation",
+  "hf_url": "https://huggingface.co/t5-small",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"text2text_generation\", \"run_regime\": \"inference_only\", \"audit_json_used\": false, \"dataset_pairing_source\": \"registry.dataset_keys\"}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 407, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 66, in __init__
+    train, test, meta = load_dataset(self.dataset, **self.dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 227, in preprocess_hf
+    out = preprocess_hf_text_seq2seq_generation(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_generation.py", line 192, in preprocess_hf_text_seq2seq_generation
+    resolved = resolve_generation_columns(ds_train, column_mapping=column_mapping, hf_task="seq2seq_generation")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_generation.py", line 32, in resolve_generation_columns
+    raise ValueError(
+ValueError: Could not resolve source/prompt column for task 'seq2seq_generation'. Provide dataset_args.column_mapping. Available columns: ['article', 'highlights', 'id']
+
+====================================================================================================
+timestamp: 2026-03-21T15:56:14.621162
+row_index: 19
+external_run_id: hf_imgcls_000025
+case_name: google_vit-base-patch16-224__beans__finetune_transfer__v0
+run_group_id: bc47aaeb-4031-4580-b639-d34dad8dc042
+failure_stage: runtime_exception
+error_message: Unsupported HF text task: image_classification
+resolved_config:
+{
+  "db_path": "outputs\\federated.db",
+  "num_clients": 1,
+  "num_rounds": 1,
+  "local_epochs": 1,
+  "batch_size": 16,
+  "learning_rate": 0.0001,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.001,
+  "optimizer": "rmsprop",
+  "distribution_type": "iid",
+  "distribution_param": null,
+  "sample_size": 30000,
+  "sample_frac": 1.0,
+  "client_dropout_rate": 0.0,
+  "task_type": "classification",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "client_participation_rate": 1.0,
+  "seed": 42,
+  "distribution": "iid",
+  "external_run_id": "hf_imgcls_000025",
+  "dataset": "hf",
+  "run_group_id": "bc47aaeb-4031-4580-b639-d34dad8dc042",
+  "case_name": "google_vit-base-patch16-224__beans__finetune_transfer__v0",
+  "notes": "Generated from registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 800,
+  "num_workers": 2,
+  "timeout_s": 1800,
+  "momentum": 0.9,
+  "save_weights": true,
+  "model_type": "hf_finetune",
+  "hf_task": "image_classification",
+  "modality": "text",
+  "dataset_name": "beans",
+  "hf_model_id": "google/vit-base-patch16-224",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "labels",
+  "text_column": "text",
+  "image_column": "image",
+  "run_regime": "finetune_transfer",
+  "model_role": "task_head",
+  "input_schema": "single_image",
+  "realism_score": 1,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "beans",
+  "hf_pipeline_tag": "image-classification",
+  "hf_author": "google",
+  "hf_url": "https://huggingface.co/google/vit-base-patch16-224",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"image_classification\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"dataset_pairing_source\": \"registry.dataset_keys\"}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 407, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 66, in __init__
+    train, test, meta = load_dataset(self.dataset, **self.dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 241, in preprocess_hf
+    raise ValueError(f"Unsupported HF text task: {hf_task}")
+ValueError: Unsupported HF text task: image_classification
+
+====================================================================================================
+timestamp: 2026-03-21T15:56:23.506182
+row_index: 20
+external_run_id: hf_imgcls_000026
+case_name: google_vit-base-patch16-224__beans__inference_only__v0
+run_group_id: bc47aaeb-4031-4580-b639-d34dad8dc042
+failure_stage: runtime_exception
+error_message: Unsupported HF text task: image_classification
+resolved_config:
+{
+  "db_path": "outputs\\federated.db",
+  "num_clients": 1,
+  "num_rounds": 1,
+  "local_epochs": 1,
+  "batch_size": 4,
+  "learning_rate": 0.0001,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.05,
+  "optimizer": "adamw",
+  "distribution_type": "dirichlet",
+  "distribution_param": null,
+  "sample_size": 30000,
+  "sample_frac": 1.0,
+  "client_dropout_rate": 0.0,
+  "task_type": "classification",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "client_participation_rate": 1.0,
+  "seed": 42,
+  "distribution": "dirichlet",
+  "external_run_id": "hf_imgcls_000026",
+  "dataset": "hf",
+  "run_group_id": "bc47aaeb-4031-4580-b639-d34dad8dc042",
+  "case_name": "google_vit-base-patch16-224__beans__inference_only__v0",
+  "notes": "Generated from registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 800,
+  "num_workers": 2,
+  "timeout_s": 1800,
+  "momentum": 0.0,
+  "dirichlet_alpha": 0.1,
+  "save_weights": true,
+  "model_type": "hf",
+  "hf_task": "image_classification",
+  "modality": "text",
+  "dataset_name": "beans",
+  "hf_model_id": "google/vit-base-patch16-224",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "labels",
+  "text_column": "text",
+  "image_column": "image",
+  "run_regime": "inference_only",
+  "model_role": "service",
+  "input_schema": "single_image",
+  "realism_score": 1,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "beans",
+  "hf_pipeline_tag": "image-classification",
+  "hf_author": "google",
+  "hf_url": "https://huggingface.co/google/vit-base-patch16-224",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"image_classification\", \"run_regime\": \"inference_only\", \"audit_json_used\": false, \"dataset_pairing_source\": \"registry.dataset_keys\"}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 407, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 66, in __init__
+    train, test, meta = load_dataset(self.dataset, **self.dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 241, in preprocess_hf
+    raise ValueError(f"Unsupported HF text task: {hf_task}")
+ValueError: Unsupported HF text task: image_classification
+
+====================================================================================================
+timestamp: 2026-03-21T15:56:31.059052
+row_index: 21
+external_run_id: hf_imgcls_000027
+case_name: apple_mobilevit-small__beans__finetune_transfer__v0
+run_group_id: bc47aaeb-4031-4580-b639-d34dad8dc042
+failure_stage: runtime_exception
+error_message: Unsupported HF text task: image_classification
+resolved_config:
+{
+  "db_path": "outputs\\federated.db",
+  "num_clients": 1,
+  "num_rounds": 1,
+  "local_epochs": 1,
+  "batch_size": 4,
+  "learning_rate": 0.005,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.0,
+  "optimizer": "sgd",
+  "distribution_type": "dirichlet",
+  "distribution_param": null,
+  "sample_size": 30000,
+  "sample_frac": 1.0,
+  "client_dropout_rate": 0.0,
+  "task_type": "classification",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "client_participation_rate": 1.0,
+  "seed": 42,
+  "distribution": "dirichlet",
+  "external_run_id": "hf_imgcls_000027",
+  "dataset": "hf",
+  "run_group_id": "bc47aaeb-4031-4580-b639-d34dad8dc042",
+  "case_name": "apple_mobilevit-small__beans__finetune_transfer__v0",
+  "notes": "Generated from registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 800,
+  "num_workers": 2,
+  "timeout_s": 1800,
+  "momentum": 0.0,
+  "dirichlet_alpha": 0.1,
+  "save_weights": true,
+  "model_type": "hf_finetune",
+  "hf_task": "image_classification",
+  "modality": "text",
+  "dataset_name": "beans",
+  "hf_model_id": "apple/mobilevit-small",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "labels",
+  "text_column": "text",
+  "image_column": "image",
+  "run_regime": "finetune_transfer",
+  "model_role": "task_head",
+  "input_schema": "single_image",
+  "realism_score": 1,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "beans",
+  "hf_pipeline_tag": "image-classification",
+  "hf_author": "apple",
+  "hf_url": "https://huggingface.co/apple/mobilevit-small",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"image_classification\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"dataset_pairing_source\": \"registry.dataset_keys\"}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 407, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 66, in __init__
+    train, test, meta = load_dataset(self.dataset, **self.dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 241, in preprocess_hf
+    raise ValueError(f"Unsupported HF text task: {hf_task}")
+ValueError: Unsupported HF text task: image_classification
+
+====================================================================================================
+timestamp: 2026-03-21T15:56:39.847107
+row_index: 22
+external_run_id: hf_imgcls_000028
+case_name: apple_mobilevit-small__beans__inference_only__v0
+run_group_id: bc47aaeb-4031-4580-b639-d34dad8dc042
+failure_stage: runtime_exception
+error_message: Unsupported HF text task: image_classification
+resolved_config:
+{
+  "db_path": "outputs\\federated.db",
+  "num_clients": 1,
+  "num_rounds": 1,
+  "local_epochs": 1,
+  "batch_size": 8,
+  "learning_rate": 0.01,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.0,
+  "optimizer": "sgd",
+  "distribution_type": "dirichlet",
+  "distribution_param": null,
+  "sample_size": 30000,
+  "sample_frac": 1.0,
+  "client_dropout_rate": 0.0,
+  "task_type": "classification",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "client_participation_rate": 1.0,
+  "seed": 42,
+  "distribution": "dirichlet",
+  "external_run_id": "hf_imgcls_000028",
+  "dataset": "hf",
+  "run_group_id": "bc47aaeb-4031-4580-b639-d34dad8dc042",
+  "case_name": "apple_mobilevit-small__beans__inference_only__v0",
+  "notes": "Generated from registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 800,
+  "num_workers": 2,
+  "timeout_s": 1800,
+  "momentum": 0.9,
+  "dirichlet_alpha": 0.1,
+  "save_weights": true,
+  "model_type": "hf",
+  "hf_task": "image_classification",
+  "modality": "text",
+  "dataset_name": "beans",
+  "hf_model_id": "apple/mobilevit-small",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "labels",
+  "text_column": "text",
+  "image_column": "image",
+  "run_regime": "inference_only",
+  "model_role": "service",
+  "input_schema": "single_image",
+  "realism_score": 1,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "beans",
+  "hf_pipeline_tag": "image-classification",
+  "hf_author": "apple",
+  "hf_url": "https://huggingface.co/apple/mobilevit-small",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"image_classification\", \"run_regime\": \"inference_only\", \"audit_json_used\": false, \"dataset_pairing_source\": \"registry.dataset_keys\"}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 407, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 66, in __init__
+    train, test, meta = load_dataset(self.dataset, **self.dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 241, in preprocess_hf
+    raise ValueError(f"Unsupported HF text task: {hf_task}")
+ValueError: Unsupported HF text task: image_classification
+
+====================================================================================================
+timestamp: 2026-03-21T16:13:40.441400
+row_index: 23
+external_run_id: hf_objdet_000029
+case_name: facebook_detr-resnet-50__coco_detection__finetune_transfer__v0
+run_group_id: bc47aaeb-4031-4580-b639-d34dad8dc042
+failure_stage: runtime_exception
+error_message: Unsupported HF text task: image_detection
+resolved_config:
+{
+  "db_path": "outputs\\federated.db",
+  "num_clients": 1,
+  "num_rounds": 1,
+  "local_epochs": 1,
+  "batch_size": 16,
+  "learning_rate": 0.005,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.0,
+  "optimizer": "sgd",
+  "distribution_type": "iid",
+  "distribution_param": null,
+  "sample_size": 30000,
+  "sample_frac": 1.0,
+  "client_dropout_rate": 0.0,
+  "task_type": "detection",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "client_participation_rate": 1.0,
+  "seed": 42,
+  "distribution": "iid",
+  "external_run_id": "hf_objdet_000029",
+  "dataset": "hf",
+  "run_group_id": "bc47aaeb-4031-4580-b639-d34dad8dc042",
+  "case_name": "facebook_detr-resnet-50__coco_detection__finetune_transfer__v0",
+  "notes": "Generated from registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 1500,
+  "num_workers": 2,
+  "timeout_s": 1800,
+  "momentum": 0.0,
+  "save_weights": true,
+  "model_type": "hf_finetune",
+  "hf_task": "image_detection",
+  "modality": "text",
+  "dataset_name": "detection-datasets/coco",
+  "hf_model_id": "facebook/detr-resnet-50",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "objects",
+  "text_column": "text",
+  "image_column": "image",
+  "run_regime": "finetune_transfer",
+  "model_role": "task_head",
+  "input_schema": "image_with_boxes",
+  "realism_score": 1,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "detection-datasets/coco",
+  "hf_pipeline_tag": "object-detection",
+  "hf_author": "facebook",
+  "hf_url": "https://huggingface.co/facebook/detr-resnet-50",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"object_detection\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"dataset_pairing_source\": \"registry.dataset_keys\"}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 407, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 66, in __init__
+    train, test, meta = load_dataset(self.dataset, **self.dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 241, in preprocess_hf
+    raise ValueError(f"Unsupported HF text task: {hf_task}")
+ValueError: Unsupported HF text task: image_detection
+
+====================================================================================================
+timestamp: 2026-03-21T16:13:56.166237
+row_index: 24
+external_run_id: hf_objdet_000030
+case_name: facebook_detr-resnet-50__coco_detection__inference_only__v0
+run_group_id: bc47aaeb-4031-4580-b639-d34dad8dc042
+failure_stage: runtime_exception
+error_message: Unsupported HF text task: image_detection
+resolved_config:
+{
+  "db_path": "outputs\\federated.db",
+  "num_clients": 1,
+  "num_rounds": 1,
+  "local_epochs": 1,
+  "batch_size": 8,
+  "learning_rate": 1e-05,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.0,
+  "optimizer": "adamw",
+  "distribution_type": "iid",
+  "distribution_param": null,
+  "sample_size": 30000,
+  "sample_frac": 1.0,
+  "client_dropout_rate": 0.0,
+  "task_type": "detection",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "client_participation_rate": 1.0,
+  "seed": 42,
+  "distribution": "iid",
+  "external_run_id": "hf_objdet_000030",
+  "dataset": "hf",
+  "run_group_id": "bc47aaeb-4031-4580-b639-d34dad8dc042",
+  "case_name": "facebook_detr-resnet-50__coco_detection__inference_only__v0",
+  "notes": "Generated from registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 1500,
+  "num_workers": 2,
+  "timeout_s": 1800,
+  "momentum": 0.0,
+  "save_weights": true,
+  "model_type": "hf",
+  "hf_task": "image_detection",
+  "modality": "text",
+  "dataset_name": "detection-datasets/coco",
+  "hf_model_id": "facebook/detr-resnet-50",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "objects",
+  "text_column": "text",
+  "image_column": "image",
+  "run_regime": "inference_only",
+  "model_role": "service",
+  "input_schema": "image_with_boxes",
+  "realism_score": 1,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "detection-datasets/coco",
+  "hf_pipeline_tag": "object-detection",
+  "hf_author": "facebook",
+  "hf_url": "https://huggingface.co/facebook/detr-resnet-50",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"object_detection\", \"run_regime\": \"inference_only\", \"audit_json_used\": false, \"dataset_pairing_source\": \"registry.dataset_keys\"}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 407, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 66, in __init__
+    train, test, meta = load_dataset(self.dataset, **self.dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 241, in preprocess_hf
+    raise ValueError(f"Unsupported HF text task: {hf_task}")
+ValueError: Unsupported HF text task: image_detection
+
+====================================================================================================
+timestamp: 2026-03-21T16:14:11.066688
+row_index: 25
+external_run_id: hf_objdet_000031
+case_name: hustvl_yolos-small__coco_detection__finetune_transfer__v0
+run_group_id: bc47aaeb-4031-4580-b639-d34dad8dc042
+failure_stage: runtime_exception
+error_message: Unsupported HF text task: image_detection
+resolved_config:
+{
+  "db_path": "outputs\\federated.db",
+  "num_clients": 1,
+  "num_rounds": 1,
+  "local_epochs": 1,
+  "batch_size": 4,
+  "learning_rate": 0.001,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.001,
+  "optimizer": "rmsprop",
+  "distribution_type": "dirichlet",
+  "distribution_param": null,
+  "sample_size": 30000,
+  "sample_frac": 1.0,
+  "client_dropout_rate": 0.0,
+  "task_type": "detection",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "client_participation_rate": 1.0,
+  "seed": 42,
+  "distribution": "dirichlet",
+  "external_run_id": "hf_objdet_000031",
+  "dataset": "hf",
+  "run_group_id": "bc47aaeb-4031-4580-b639-d34dad8dc042",
+  "case_name": "hustvl_yolos-small__coco_detection__finetune_transfer__v0",
+  "notes": "Generated from registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 1500,
+  "num_workers": 2,
+  "timeout_s": 1800,
+  "momentum": 0.9,
+  "dirichlet_alpha": 0.3,
+  "save_weights": true,
+  "model_type": "hf_finetune",
+  "hf_task": "image_detection",
+  "modality": "text",
+  "dataset_name": "detection-datasets/coco",
+  "hf_model_id": "hustvl/yolos-small",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "objects",
+  "text_column": "text",
+  "image_column": "image",
+  "run_regime": "finetune_transfer",
+  "model_role": "task_head",
+  "input_schema": "image_with_boxes",
+  "realism_score": 1,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "detection-datasets/coco",
+  "hf_pipeline_tag": "object-detection",
+  "hf_author": "hustvl",
+  "hf_url": "https://huggingface.co/hustvl/yolos-small",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"object_detection\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"dataset_pairing_source\": \"registry.dataset_keys\"}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 407, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 66, in __init__
+    train, test, meta = load_dataset(self.dataset, **self.dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 241, in preprocess_hf
+    raise ValueError(f"Unsupported HF text task: {hf_task}")
+ValueError: Unsupported HF text task: image_detection
+
+====================================================================================================
+timestamp: 2026-03-21T16:14:25.218375
+row_index: 26
+external_run_id: hf_objdet_000032
+case_name: hustvl_yolos-small__coco_detection__inference_only__v0
+run_group_id: bc47aaeb-4031-4580-b639-d34dad8dc042
+failure_stage: runtime_exception
+error_message: Unsupported HF text task: image_detection
+resolved_config:
+{
+  "db_path": "outputs\\federated.db",
+  "num_clients": 1,
+  "num_rounds": 1,
+  "local_epochs": 1,
+  "batch_size": 4,
+  "learning_rate": 0.0005,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.0001,
+  "optimizer": "rmsprop",
+  "distribution_type": "iid",
+  "distribution_param": null,
+  "sample_size": 30000,
+  "sample_frac": 1.0,
+  "client_dropout_rate": 0.0,
+  "task_type": "detection",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "client_participation_rate": 1.0,
+  "seed": 42,
+  "distribution": "iid",
+  "external_run_id": "hf_objdet_000032",
+  "dataset": "hf",
+  "run_group_id": "bc47aaeb-4031-4580-b639-d34dad8dc042",
+  "case_name": "hustvl_yolos-small__coco_detection__inference_only__v0",
+  "notes": "Generated from registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 1500,
+  "num_workers": 2,
+  "timeout_s": 1800,
+  "momentum": 0.0,
+  "save_weights": true,
+  "model_type": "hf",
+  "hf_task": "image_detection",
+  "modality": "text",
+  "dataset_name": "detection-datasets/coco",
+  "hf_model_id": "hustvl/yolos-small",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "objects",
+  "text_column": "text",
+  "image_column": "image",
+  "run_regime": "inference_only",
+  "model_role": "service",
+  "input_schema": "image_with_boxes",
+  "realism_score": 1,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "detection-datasets/coco",
+  "hf_pipeline_tag": "object-detection",
+  "hf_author": "hustvl",
+  "hf_url": "https://huggingface.co/hustvl/yolos-small",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"object_detection\", \"run_regime\": \"inference_only\", \"audit_json_used\": false, \"dataset_pairing_source\": \"registry.dataset_keys\"}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 407, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 66, in __init__
+    train, test, meta = load_dataset(self.dataset, **self.dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 241, in preprocess_hf
+    raise ValueError(f"Unsupported HF text task: {hf_task}")
+ValueError: Unsupported HF text task: image_detection
+
+====================================================================================================
+timestamp: 2026-03-21T16:17:43.364767
+row_index: 27
+external_run_id: hf_imgseg_000033
+case_name: nvidia_segformer-b0-finetuned-ade-512-512__scene_parse_150__finetune_transfer__v0
+run_group_id: bc47aaeb-4031-4580-b639-d34dad8dc042
+failure_stage: runtime_exception
+error_message: Unsupported HF text task: image_segmentation
+resolved_config:
+{
+  "db_path": "outputs\\federated.db",
+  "num_clients": 1,
+  "num_rounds": 1,
+  "local_epochs": 1,
+  "batch_size": 8,
+  "learning_rate": 5e-05,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.01,
+  "optimizer": "adamw",
+  "distribution_type": "iid",
+  "distribution_param": null,
+  "sample_size": 30000,
+  "sample_frac": 1.0,
+  "client_dropout_rate": 0.0,
+  "task_type": "segmentation",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "client_participation_rate": 1.0,
+  "seed": 42,
+  "distribution": "iid",
+  "external_run_id": "hf_imgseg_000033",
+  "dataset": "hf",
+  "run_group_id": "bc47aaeb-4031-4580-b639-d34dad8dc042",
+  "case_name": "nvidia_segformer-b0-finetuned-ade-512-512__scene_parse_150__finetune_transfer__v0",
+  "notes": "Generated from registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 1200,
+  "num_workers": 2,
+  "timeout_s": 1800,
+  "momentum": 0.0,
+  "save_weights": true,
+  "model_type": "hf_finetune",
+  "hf_task": "image_segmentation",
+  "modality": "text",
+  "dataset_name": "zhoubolei/scene_parse_150",
+  "hf_model_id": "nvidia/segformer-b0-finetuned-ade-512-512",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "annotation",
+  "text_column": "text",
+  "image_column": "image",
+  "run_regime": "finetune_transfer",
+  "model_role": "task_head",
+  "input_schema": "image_mask_pair",
+  "realism_score": 1,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "zhoubolei/scene_parse_150",
+  "hf_pipeline_tag": "image-segmentation",
+  "hf_author": "nvidia",
+  "hf_url": "https://huggingface.co/nvidia/segformer-b0-finetuned-ade-512-512",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"image_segmentation\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"dataset_pairing_source\": \"registry.dataset_keys\"}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 407, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 66, in __init__
+    train, test, meta = load_dataset(self.dataset, **self.dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 241, in preprocess_hf
+    raise ValueError(f"Unsupported HF text task: {hf_task}")
+ValueError: Unsupported HF text task: image_segmentation
+
+====================================================================================================
+timestamp: 2026-03-21T16:17:50.483164
+row_index: 28
+external_run_id: hf_imgseg_000034
+case_name: nvidia_segformer-b0-finetuned-ade-512-512__scene_parse_150__inference_only__v0
+run_group_id: bc47aaeb-4031-4580-b639-d34dad8dc042
+failure_stage: runtime_exception
+error_message: Unsupported HF text task: image_segmentation
+resolved_config:
+{
+  "db_path": "outputs\\federated.db",
+  "num_clients": 1,
+  "num_rounds": 1,
+  "local_epochs": 1,
+  "batch_size": 4,
+  "learning_rate": 1e-05,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.05,
+  "optimizer": "adamw",
+  "distribution_type": "dirichlet",
+  "distribution_param": null,
+  "sample_size": 30000,
+  "sample_frac": 1.0,
+  "client_dropout_rate": 0.0,
+  "task_type": "segmentation",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "client_participation_rate": 1.0,
+  "seed": 42,
+  "distribution": "dirichlet",
+  "external_run_id": "hf_imgseg_000034",
+  "dataset": "hf",
+  "run_group_id": "bc47aaeb-4031-4580-b639-d34dad8dc042",
+  "case_name": "nvidia_segformer-b0-finetuned-ade-512-512__scene_parse_150__inference_only__v0",
+  "notes": "Generated from registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 1200,
+  "num_workers": 2,
+  "timeout_s": 1800,
+  "momentum": 0.0,
+  "dirichlet_alpha": 0.3,
+  "save_weights": true,
+  "model_type": "hf",
+  "hf_task": "image_segmentation",
+  "modality": "text",
+  "dataset_name": "zhoubolei/scene_parse_150",
+  "hf_model_id": "nvidia/segformer-b0-finetuned-ade-512-512",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "annotation",
+  "text_column": "text",
+  "image_column": "image",
+  "run_regime": "inference_only",
+  "model_role": "service",
+  "input_schema": "image_mask_pair",
+  "realism_score": 1,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "zhoubolei/scene_parse_150",
+  "hf_pipeline_tag": "image-segmentation",
+  "hf_author": "nvidia",
+  "hf_url": "https://huggingface.co/nvidia/segformer-b0-finetuned-ade-512-512",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"image_segmentation\", \"run_regime\": \"inference_only\", \"audit_json_used\": false, \"dataset_pairing_source\": \"registry.dataset_keys\"}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 407, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 66, in __init__
+    train, test, meta = load_dataset(self.dataset, **self.dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 241, in preprocess_hf
+    raise ValueError(f"Unsupported HF text task: {hf_task}")
+ValueError: Unsupported HF text task: image_segmentation
+
+====================================================================================================
+timestamp: 2026-03-21T16:17:57.572865
+row_index: 29
+external_run_id: hf_imgseg_000035
+case_name: nvidia_segformer-b2-finetuned-ade-512-512__scene_parse_150__inference_only__v0
+run_group_id: bc47aaeb-4031-4580-b639-d34dad8dc042
+failure_stage: runtime_exception
+error_message: Unsupported HF text task: image_segmentation
+resolved_config:
+{
+  "db_path": "outputs\\federated.db",
+  "num_clients": 1,
+  "num_rounds": 1,
+  "local_epochs": 1,
+  "batch_size": 4,
+  "learning_rate": 0.0001,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.05,
+  "optimizer": "adamw",
+  "distribution_type": "iid",
+  "distribution_param": null,
+  "sample_size": 30000,
+  "sample_frac": 1.0,
+  "client_dropout_rate": 0.0,
+  "task_type": "segmentation",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "client_participation_rate": 1.0,
+  "seed": 42,
+  "distribution": "iid",
+  "external_run_id": "hf_imgseg_000035",
+  "dataset": "hf",
+  "run_group_id": "bc47aaeb-4031-4580-b639-d34dad8dc042",
+  "case_name": "nvidia_segformer-b2-finetuned-ade-512-512__scene_parse_150__inference_only__v0",
+  "notes": "Generated from registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 1200,
+  "num_workers": 2,
+  "timeout_s": 1800,
+  "momentum": 0.0,
+  "save_weights": true,
+  "model_type": "hf",
+  "hf_task": "image_segmentation",
+  "modality": "text",
+  "dataset_name": "zhoubolei/scene_parse_150",
+  "hf_model_id": "nvidia/segformer-b2-finetuned-ade-512-512",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "annotation",
+  "text_column": "text",
+  "image_column": "image",
+  "run_regime": "inference_only",
+  "model_role": "service",
+  "input_schema": "image_mask_pair",
+  "realism_score": 1,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "zhoubolei/scene_parse_150",
+  "hf_pipeline_tag": "image-segmentation",
+  "hf_author": "nvidia",
+  "hf_url": "https://huggingface.co/nvidia/segformer-b2-finetuned-ade-512-512",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"image_segmentation\", \"run_regime\": \"inference_only\", \"audit_json_used\": false, \"dataset_pairing_source\": \"registry.dataset_keys\"}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 407, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 66, in __init__
+    train, test, meta = load_dataset(self.dataset, **self.dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 241, in preprocess_hf
+    raise ValueError(f"Unsupported HF text task: {hf_task}")
+ValueError: Unsupported HF text task: image_segmentation
+
+====================================================================================================
+timestamp: 2026-03-21T16:19:03.445886
+row_index: 30
+external_run_id: hf_imgcap_000036
+case_name: Salesforce_blip-image-captioning-base__flickr8k_captioning__inference_only__v0
+run_group_id: bc47aaeb-4031-4580-b639-d34dad8dc042
+failure_stage: runtime_exception
+error_message: Unsupported HF text task: image_captioning
+resolved_config:
+{
+  "db_path": "outputs\\federated.db",
+  "num_clients": 1,
+  "num_rounds": 1,
+  "local_epochs": 1,
+  "batch_size": 8,
+  "learning_rate": 0.0001,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.0001,
+  "optimizer": "rmsprop",
+  "distribution_type": "dirichlet",
+  "distribution_param": null,
+  "sample_size": 30000,
+  "sample_frac": 1.0,
+  "client_dropout_rate": 0.0,
+  "task_type": "generation",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "client_participation_rate": 1.0,
+  "seed": 42,
+  "distribution": "dirichlet",
+  "external_run_id": "hf_imgcap_000036",
+  "dataset": "hf",
+  "run_group_id": "bc47aaeb-4031-4580-b639-d34dad8dc042",
+  "case_name": "Salesforce_blip-image-captioning-base__flickr8k_captioning__inference_only__v0",
+  "notes": "Generated from registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 4000,
+  "max_length": 64,
+  "num_workers": 2,
+  "timeout_s": 1800,
+  "momentum": 0.0,
+  "dirichlet_alpha": 0.3,
+  "save_weights": true,
+  "model_type": "hf",
+  "hf_task": "image_captioning",
+  "modality": "text",
+  "dataset_name": "jxie/flickr8k",
+  "hf_model_id": "Salesforce/blip-image-captioning-base",
+  "train_split": "train",
+  "test_split": "test",
+  "label_column": "caption",
+  "text_column": "caption",
+  "image_column": "image",
+  "task_tag": "captioning",
+  "run_regime": "inference_only",
+  "model_role": "service",
+  "input_schema": "image_text_pair",
+  "realism_score": 1,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "jxie/flickr8k",
+  "hf_pipeline_tag": "image-to-text",
+  "hf_author": "Salesforce",
+  "hf_url": "https://huggingface.co/Salesforce/blip-image-captioning-base",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"image_captioning\", \"run_regime\": \"inference_only\", \"audit_json_used\": false, \"dataset_pairing_source\": \"registry.dataset_keys\"}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 407, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 66, in __init__
+    train, test, meta = load_dataset(self.dataset, **self.dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 241, in preprocess_hf
+    raise ValueError(f"Unsupported HF text task: {hf_task}")
+ValueError: Unsupported HF text task: image_captioning
+
+====================================================================================================
+timestamp: 2026-03-21T16:19:18.622361
+row_index: 31
+external_run_id: hf_imgtxtret_000037
+case_name: openai_clip-vit-base-patch32__flickr8k_retrieval__inference_only__v0
+run_group_id: bc47aaeb-4031-4580-b639-d34dad8dc042
+failure_stage: runtime_exception
+error_message: Unsupported HF text task: text_image_retrieval
+resolved_config:
+{
+  "db_path": "outputs\\federated.db",
+  "num_clients": 1,
+  "num_rounds": 1,
+  "local_epochs": 1,
+  "batch_size": 8,
+  "learning_rate": 0.0001,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.001,
+  "optimizer": "rmsprop",
+  "distribution_type": "iid",
+  "distribution_param": null,
+  "sample_size": 30000,
+  "sample_frac": 1.0,
+  "client_dropout_rate": 0.0,
+  "task_type": "retrieval",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "client_participation_rate": 1.0,
+  "seed": 42,
+  "distribution": "iid",
+  "external_run_id": "hf_imgtxtret_000037",
+  "dataset": "hf",
+  "run_group_id": "bc47aaeb-4031-4580-b639-d34dad8dc042",
+  "case_name": "openai_clip-vit-base-patch32__flickr8k_retrieval__inference_only__v0",
+  "notes": "Generated from registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 4000,
+  "max_length": 64,
+  "num_workers": 2,
+  "timeout_s": 1800,
+  "momentum": 0.0,
+  "save_weights": true,
+  "model_type": "hf",
+  "hf_task": "text_image_retrieval",
+  "modality": "text",
+  "dataset_name": "jxie/flickr8k",
+  "hf_model_id": "openai/clip-vit-base-patch32",
+  "train_split": "train",
+  "test_split": "test",
+  "label_column": "caption",
+  "text_column": "caption",
+  "image_column": "image",
+  "task_tag": "retrieval",
+  "run_regime": "inference_only",
+  "model_role": "service",
+  "input_schema": "image_text_pair",
+  "realism_score": 1,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "jxie/flickr8k",
+  "hf_pipeline_tag": "zero-shot-image-classification",
+  "hf_author": "openai",
+  "hf_url": "https://huggingface.co/openai/clip-vit-base-patch32",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"text_image_retrieval\", \"run_regime\": \"inference_only\", \"audit_json_used\": false, \"dataset_pairing_source\": \"registry.dataset_keys\"}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 407, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 66, in __init__
+    train, test, meta = load_dataset(self.dataset, **self.dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 241, in preprocess_hf
+    raise ValueError(f"Unsupported HF text task: {hf_task}")
+ValueError: Unsupported HF text task: text_image_retrieval
+
+====================================================================================================
+timestamp: 2026-03-21T16:19:32.056082
+row_index: 32
+external_run_id: hf_imgtxtret_000038
+case_name: openai_clip-vit-large-patch14__flickr8k_retrieval__inference_only__v0
+run_group_id: bc47aaeb-4031-4580-b639-d34dad8dc042
+failure_stage: runtime_exception
+error_message: Unsupported HF text task: text_image_retrieval
+resolved_config:
+{
+  "db_path": "outputs\\federated.db",
+  "num_clients": 1,
+  "num_rounds": 1,
+  "local_epochs": 1,
+  "batch_size": 8,
+  "learning_rate": 0.005,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.0005,
+  "optimizer": "sgd",
+  "distribution_type": "dirichlet",
+  "distribution_param": null,
+  "sample_size": 30000,
+  "sample_frac": 1.0,
+  "client_dropout_rate": 0.0,
+  "task_type": "retrieval",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "client_participation_rate": 1.0,
+  "seed": 42,
+  "distribution": "dirichlet",
+  "external_run_id": "hf_imgtxtret_000038",
+  "dataset": "hf",
+  "run_group_id": "bc47aaeb-4031-4580-b639-d34dad8dc042",
+  "case_name": "openai_clip-vit-large-patch14__flickr8k_retrieval__inference_only__v0",
+  "notes": "Generated from registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 4000,
+  "max_length": 64,
+  "num_workers": 2,
+  "timeout_s": 1800,
+  "momentum": 0.0,
+  "dirichlet_alpha": 0.3,
+  "save_weights": true,
+  "model_type": "hf",
+  "hf_task": "text_image_retrieval",
+  "modality": "text",
+  "dataset_name": "jxie/flickr8k",
+  "hf_model_id": "openai/clip-vit-large-patch14",
+  "train_split": "train",
+  "test_split": "test",
+  "label_column": "caption",
+  "text_column": "caption",
+  "image_column": "image",
+  "task_tag": "retrieval",
+  "run_regime": "inference_only",
+  "model_role": "service",
+  "input_schema": "image_text_pair",
+  "realism_score": 1,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "jxie/flickr8k",
+  "hf_pipeline_tag": "zero-shot-image-classification",
+  "hf_author": "openai",
+  "hf_url": "https://huggingface.co/openai/clip-vit-large-patch14",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"text_image_retrieval\", \"run_regime\": \"inference_only\", \"audit_json_used\": false, \"dataset_pairing_source\": \"registry.dataset_keys\"}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 407, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 66, in __init__
+    train, test, meta = load_dataset(self.dataset, **self.dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 241, in preprocess_hf
+    raise ValueError(f"Unsupported HF text task: {hf_task}")
+ValueError: Unsupported HF text task: text_image_retrieval
+

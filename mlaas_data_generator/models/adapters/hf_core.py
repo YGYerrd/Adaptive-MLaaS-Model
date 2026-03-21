@@ -376,6 +376,7 @@ class HFCore:
             n_eval = len(next(iter(xs.values())))
         else:
             n_eval = len(xs)
+        total_batches = int(np.ceil(float(n_eval) / float(max(1, self.batch_size)))) if n_eval else 0
 
         t_start = time.time()
 
@@ -383,6 +384,7 @@ class HFCore:
         total_batches = int((n_eval + max(1, self.batch_size) - 1) / max(1, self.batch_size))
         progress_log_interval = int(progress_log_interval) if progress_log_interval is not None else 0
         max_eval_time_s = float(max_eval_time_s) if max_eval_time_s is not None else None
+        progress_log_every = max(1, min(25, total_batches // 4 if total_batches > 4 else total_batches or 1))
 
         print(
             f"[HFCore.eval] dataloader creation starts | inference_only={bool(inference_only)} "
@@ -438,41 +440,48 @@ class HFCore:
                     if not first_batch_logged:
                         print("[HFCore.eval] first batch forward ends")
                     preds_all.append(pred_t.detach().cpu().numpy())
+                    
+                    if not bool(inference_only):
+                        stat = self.task_spec.batch_metric_statistics(torch, logits, labels_t, extra)
+                        if stat:
+                            for k, v in stat.items():
+                                stats_accum[k] = float(stats_accum.get(k, 0.0)) + float(v)
 
-                    stat = self.task_spec.batch_metric_statistics(torch, logits, labels_t, extra)
-                    if stat:
-                        for k, v in stat.items():
-                            stats_accum[k] = float(stats_accum.get(k, 0.0)) + float(v)
+                        stat_out = self.task_spec.batch_metric_statistics_from_outputs(torch, outputs, labels_t, extra)
+                        if stat_out:
+                            for k, v in stat_out.items():
+                                stats_accum[k] = float(stats_accum.get(k, 0.0)) + float(v)
 
-                    stat_out = self.task_spec.batch_metric_statistics_from_outputs(torch, outputs, labels_t, extra)
-                    if stat_out:
-                        for k, v in stat_out.items():
-                            stats_accum[k] = float(stats_accum.get(k, 0.0)) + float(v)
+                        loss = self.task_spec.extract_loss(torch, outputs, logits, labels_t, extra)
+                        if loss is not None and labels_t is not None:
+                            labels_all.append(labels_t.detach().cpu().numpy())
+                            labels_recorded = True
+                            total_tokens += _count_supervised_tokens(labels_t, self.label_pad_value)
 
-                    loss = self.task_spec.extract_loss(torch, outputs, logits, labels_t, extra)
-                    if loss is not None and labels_t is not None:
-                        labels_all.append(labels_t.detach().cpu().numpy())
-                        labels_recorded = True
-                        total_tokens += _count_supervised_tokens(labels_t, self.label_pad_value)
+                            if labels_t.ndim >= 2:
+                                w = _count_supervised_tokens(labels_t, self.label_pad_value)
+                            elif isinstance(xb, dict):
+                                w = len(next(iter(xb.values())))
+                            else:
+                                w = len(xb)
 
-                        if labels_t.ndim >= 2:
-                            w = _count_supervised_tokens(labels_t, self.label_pad_value)
-                        elif isinstance(xb, dict):
-                            w = len(next(iter(xb.values())))
-                        else:
-                            w = len(xb)
-
-                        total_loss += float(loss.detach().cpu().item()) * float(max(1, w))
-                        total_loss_weight += int(max(1, w))
+                            total_loss += float(loss.detach().cpu().item()) * float(max(1, w))
+                            total_loss_weight += int(max(1, w))
 
                 if labels_t is not None and bool(inference_only) and yb is not None and not labels_recorded:
                     labels_all.append(labels_t.detach().cpu().numpy())
 
                 latencies_ms.append((time.time() - t0) * 1000.0)
-                if progress_log_interval > 0 and (batch_idx % progress_log_interval == 0 or batch_idx == total_batches):
+                if total_batches and (
+                    batch_idx == 1
+                    or batch_idx == total_batches
+                    or batch_idx % progress_log_every == 0
+                ):
                     print(
-                        f"[HFCore.eval] progress | batch={batch_idx}/{total_batches} "
-                        f"| elapsed_s={time.time() - t_start:.2f}"
+                        "[HFCore.eval] progress | "
+                        f"batch={batch_idx}/{total_batches} | "
+                        f"samples_done={min(batch_idx * self.batch_size, n_eval)}/{n_eval} | "
+                        f"last_batch_ms={latencies_ms[-1]:.2f}"
                     )
                 first_batch_logged = True
 
@@ -549,3 +558,4 @@ class HFCore:
             qos.update({f"generation_{k}": v for k, v in self.generation_config.items()})
 
         return loss_mean, primary, secondary, qos
+    
