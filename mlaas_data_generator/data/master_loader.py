@@ -17,6 +17,12 @@ PREPROCESSOR_REGISTRY = {
     "image_float01": preprocess_image_float01,
     "hf": preprocess_hf,
     "hf_text": preprocess_hf,
+    "hf_text_classification": preprocess_hf,
+    "hf_token_classification": preprocess_hf,
+    "hf_sentence_pair_classification": preprocess_hf,
+    "hf_masked_lm": preprocess_hf,
+    "hf_causal_lm": preprocess_hf,
+    "hf_seq2seq": preprocess_hf,
 }
 
 

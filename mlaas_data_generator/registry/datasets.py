@@ -11,7 +11,7 @@ DATASET_REGISTRY: dict[str, dict[str, object]] = {
         "text_column": "sentence",
         "label_column": "label",
         "input_schema": "single_text",
-        "loader_template": "hf_text_sequence",
+        "loader_template": "hf_text_classification",
         "max_samples": 600,
         "max_length": 128,
         "explainability": {
@@ -30,7 +30,7 @@ DATASET_REGISTRY: dict[str, dict[str, object]] = {
         "text_column": "text",
         "label_column": "label",
         "input_schema": "single_text",
-        "loader_template": "hf_text_sequence",
+        "loader_template": "hf_text_classification",
         "max_samples": 800,
         "max_length": 128,
         "explainability": {
@@ -49,7 +49,7 @@ DATASET_REGISTRY: dict[str, dict[str, object]] = {
         "text_column": "text",
         "label_column": "label",
         "input_schema": "single_text",
-        "loader_template": "hf_text_sequence",
+        "loader_template": "hf_text_classification",
         "max_samples": 1200,
         "max_length": 256,
         "explainability": {
@@ -68,7 +68,7 @@ DATASET_REGISTRY: dict[str, dict[str, object]] = {
         "text_column": "tokens",
         "label_column": "ner_tags",
         "input_schema": "token_sequence",
-        "loader_template": "hf_text_token",
+        "loader_template": "hf_token_classification",
         "max_samples": 800,
         "max_length": 128,
         "explainability": {
@@ -87,7 +87,7 @@ DATASET_REGISTRY: dict[str, dict[str, object]] = {
         "text_column": "tokens",
         "label_column": "ner_tags",
         "input_schema": "token_sequence",
-        "loader_template": "hf_text_token",
+        "loader_template": "hf_token_classification",
         "max_samples": 600,
         "max_length": 128,
         "explainability": {
@@ -106,7 +106,7 @@ DATASET_REGISTRY: dict[str, dict[str, object]] = {
         "text_column": ["sentence1", "sentence2"],
         "label_column": "label",
         "input_schema": "text_pair",
-        "loader_template": "hf_text_similarity",
+        "loader_template": "hf_sentence_pair_classification",
         "task_type": "regression",
         "max_samples": 800,
         "max_length": 128,
@@ -126,7 +126,7 @@ DATASET_REGISTRY: dict[str, dict[str, object]] = {
         "text_column": ["sentence1", "sentence2"],
         "label_column": "label",
         "input_schema": "text_pair",
-        "loader_template": "hf_text_similarity",
+        "loader_template": "hf_sentence_pair_classification",
         "max_samples": 800,
         "max_length": 128,
         "explainability": {
@@ -145,7 +145,7 @@ DATASET_REGISTRY: dict[str, dict[str, object]] = {
         "text_column": "text",
         "label_column": "text",
         "input_schema": "single_text",
-        "loader_template": "hf_text_fill_mask",
+        "loader_template": "hf_masked_lm",
         "max_samples": 1200,
         "max_length": 128,
         "explainability": {
@@ -164,7 +164,7 @@ DATASET_REGISTRY: dict[str, dict[str, object]] = {
         "text_column": "text",
         "label_column": "text",
         "input_schema": "single_text",
-        "loader_template": "hf_text_fill_mask",
+        "loader_template": "hf_masked_lm",
         "max_samples": 1000,
         "max_length": 128,
         "explainability": {
@@ -183,7 +183,7 @@ DATASET_REGISTRY: dict[str, dict[str, object]] = {
         "text_column": "text",
         "label_column": "text",
         "input_schema": "single_text",
-        "loader_template": "hf_text_generation",
+        "loader_template": "hf_causal_lm",
         "task_tag": "language-modeling",
         "max_samples": 1000,
         "max_length": 256,
@@ -203,7 +203,7 @@ DATASET_REGISTRY: dict[str, dict[str, object]] = {
         "text_column": "article",
         "label_column": "highlights",
         "input_schema": "single_text",
-        "loader_template": "hf_text_generation",
+        "loader_template": "hf_seq2seq",
         "task_tag": "summarization",
         "max_samples": 1000,
         "max_length": 256,
