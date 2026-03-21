@@ -221,6 +221,90 @@ class HFCore:
             "nested_object_keys": nested_object_keys,
         }
 
+    def _debug_shape(self, value):
+        if value is None:
+            return None
+        shape = getattr(value, "shape", None)
+        if shape is not None:
+            try:
+                return tuple(int(dim) for dim in shape)
+            except Exception:
+                return shape
+        try:
+            arr = np.asarray(value, dtype=object)
+            return tuple(int(dim) for dim in arr.shape)
+        except Exception:
+            return None
+
+    def _debug_preview(self, value, max_items=12):
+        if value is None:
+            return None
+
+        if hasattr(value, "detach"):
+            value = value.detach().cpu().tolist()
+        elif hasattr(value, "tolist"):
+            value = value.tolist()
+
+        sample = value
+        while isinstance(sample, (list, tuple)) and sample:
+            sample = sample[0]
+
+        if isinstance(sample, (list, tuple)):
+            return list(sample[:max_items])
+        return sample
+
+    def debug_first_processed_batch(self, xs, ys, inference_only=False):
+        torch = self.torch
+        batch_iter = self._batch_iter(xs, ys)
+        xb, yb = next(batch_iter)
+        enc, labels_t, _ = self.task_spec.encode_batch(
+            self.tokenizer,
+            xb,
+            yb,
+            self.max_length,
+            torch,
+            self.device,
+            ignore_index=self.label_pad_value,
+            inference_only=bool(inference_only),
+        )
+
+        input_ids = enc.get("input_ids") if isinstance(enc, dict) else None
+        attention_mask = enc.get("attention_mask") if isinstance(enc, dict) else None
+
+        finite_ok = True
+        finite_details = {}
+        if isinstance(enc, dict):
+            for key, tensor in enc.items():
+                if hasattr(tensor, "dtype") and hasattr(torch, "is_floating_point") and torch.is_floating_point(tensor):
+                    finite_value = bool(torch.isfinite(tensor).all().detach().cpu().item())
+                    finite_details[key] = finite_value
+                    finite_ok = finite_ok and finite_value
+        if labels_t is not None and hasattr(labels_t, "dtype") and torch.is_floating_point(labels_t):
+            labels_finite = bool(torch.isfinite(labels_t).all().detach().cpu().item())
+            finite_details["labels"] = labels_finite
+            finite_ok = finite_ok and labels_finite
+
+        nested_object_keys = []
+        if isinstance(xb, dict):
+            for key, value in xb.items():
+                arr = np.asarray(value, dtype=object)
+                if arr.dtype == object:
+                    nested_object_keys.append(str(key))
+
+        token_source = xb.get("tokens") if isinstance(xb, dict) and "tokens" in xb else input_ids
+        tag_source = xb.get("ner_tags") if isinstance(xb, dict) and "ner_tags" in xb else (yb if yb is not None else labels_t)
+
+        return {
+            "input_ids_shape": self._debug_shape(input_ids),
+            "attention_mask_shape": self._debug_shape(attention_mask),
+            "labels_shape": self._debug_shape(labels_t),
+            "token_example": self._debug_preview(token_source),
+            "ner_tags_example": self._debug_preview(tag_source),
+            "finite_ok": bool(finite_ok),
+            "finite_details": finite_details,
+            "nested_object_keys": nested_object_keys,
+        }
+
     def count_params(self):
         if self.model is None:
             return 0
@@ -496,6 +580,7 @@ class HFCore:
         m_stats = self.task_spec.metrics_from_statistics(stats_accum) if stats_accum else None
         if isinstance(m_stats, dict) and m_stats:
             print("[HFCore.eval] metric computation starts")
+            print("[HFCore.eval] metric computation starts")
             primary = float(m_stats.get("primary", np.nan))
             secondary = float(m_stats.get("secondary", np.nan))
             named_metrics = m_stats.get("named_metrics") if isinstance(m_stats, dict) else None
@@ -503,6 +588,7 @@ class HFCore:
             primary = np.nan
             secondary = np.nan
         else:
+            print("[HFCore.eval] metric computation starts")
             print("[HFCore.eval] metric computation starts")
             metrics_extra = dict(last_extra or {})
             metrics_extra["task_tag"] = self.task_tag
