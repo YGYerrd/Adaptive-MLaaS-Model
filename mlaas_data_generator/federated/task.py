@@ -225,6 +225,18 @@ class HFInferenceClassificationStrategy(TaskStrategy):
             if adapter is None:
                 adapter = self.build_model()
 
+            batch_debug = adapter.core.debug_first_processed_batch(x, y, inference_only=False)
+            print(
+                "[evaluate_client] first processed batch | "
+                f"input_ids_shape={batch_debug.get('input_ids_shape')} | "
+                f"attention_mask_shape={batch_debug.get('attention_mask_shape')} | "
+                f"labels_shape={batch_debug.get('labels_shape')} | "
+                f"finite_ok={batch_debug.get('finite_ok')} | "
+                f"nested_object_keys={batch_debug.get('nested_object_keys')}"
+            )
+            print(f"[evaluate_client] token example: {batch_debug.get('token_example')}")
+            print(f"[evaluate_client] ner_tags example: {batch_debug.get('ner_tags_example')}")
+
             loss, acc, f1, qos = adapter.evaluate(x, y)
 
             duration = time.time() - start
