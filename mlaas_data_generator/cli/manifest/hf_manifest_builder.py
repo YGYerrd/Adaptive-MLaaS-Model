@@ -29,11 +29,6 @@ TASK_SPECS: dict[str, TaskSpec] = {
     "text2text_generation": TaskSpec("text2text-generation", "seq2seq_generation", "classification", "text2text", "summarization"),
 }
 
-SUPPORTED_DATASETS: dict[str, list[dict[str, Any]]] = {
-    spec.pipeline_tag: [dict(dataset) for dataset in DATASET_REGISTRY.get(task_key, [])]
-    for task_key, spec in TASK_SPECS.items()
-}
-
 MANIFEST_COLUMNS = [
     "external_run_id",
     "dataset",
@@ -139,7 +134,7 @@ def _load_audit_metadata(json_path: str | None) -> dict[str, Any]:
         for model in task.get("models", []) or []:
             if not isinstance(model, dict):
                 continue
-            model_id = str(model.get("model_id") or model.get("id") or "").strip()
+            model_id = str(model.get("hf_model_id") or model.get("model_id") or model.get("id") or "").strip()
             if model_id:
                 model_audit[model_id] = {
                     "downloads": model.get("downloads"),
@@ -169,7 +164,7 @@ def _row_from_registry(
     run_regime: str,
     audit_meta: dict[str, Any],
 ) -> dict[str, Any]:
-    model_id = str(model.get("model_id") or model.get("id") or "").strip()
+    model_id = str(model.get("hf_model_id") or model.get("model_id") or model.get("id") or "").strip()
     audit_models = audit_meta.get("models", {}) if isinstance(audit_meta, dict) else {}
     model_audit = audit_models.get(model_id, {}) if isinstance(audit_models, dict) else {}
     author = model.get("author") or model_audit.get("author")
@@ -189,7 +184,7 @@ def _row_from_registry(
         "dataset": "hf",
         "run_group_id": run_group_id,
         "case_name": (
-            f"{model_id.replace('/', '_')}__{dataset_spec.get('dataset_name')}"
+            f"{model_id.replace('/', '_')}__{dataset_spec.get('registry_id', dataset_spec.get('dataset_name'))}"
             f"__{run_regime}__v{dataset_spec.get('_variant_index', 0)}"
         ),
         "notes": "Generated from registry-defined HF model and dataset compatibility",
@@ -217,7 +212,7 @@ def _row_from_registry(
         "aggregation": "fedavg",
         "device": "auto",
         "save_weights": knobs["save_weights"],
-        "model_type": model.get("model_type") or model_defaults["model_type"],
+        "model_type": model_defaults["model_type"] if run_regime == "inference_only" else (model.get("model_type") or model_defaults["model_type"]),
         "hf_task": task_spec.hf_task,
         "task_type": dataset_spec.get("task_type", task_spec.task_type),
         "modality": dataset_spec.get("modality", "text"),
@@ -231,7 +226,7 @@ def _row_from_registry(
         "image_column": dataset_spec.get("image_column"),
         "task_tag": dataset_spec.get("task_tag", task_spec.task_tag),
         "run_regime": run_regime,
-        "model_role": model.get("model_role") or model_defaults["model_role"],
+        "model_role": model_defaults["model_role"] if run_regime == "inference_only" else (model.get("model_role") or model_defaults["model_role"]),
         "input_schema": dataset_spec.get("input_schema", "single_text"),
         "fit_decision": None,
         "fit_reason": None,
@@ -269,8 +264,16 @@ def build_hf_manifest(
         if task_spec is None:
             continue
 
-        models = [dict(model) for model in MODEL_REGISTRY.get(task_key, [])][: max(0, models_per_task)]
-        datasets = [dict(dataset) for dataset in DATASET_REGISTRY.get(task_key, [])]
+        models = [
+            {"registry_id": registry_id, **dict(model)}
+            for registry_id, model in MODEL_REGISTRY.items()
+            if model.get("task_key") == task_key
+        ][: max(0, models_per_task)]
+        datasets = [
+            {"registry_id": registry_id, **dict(dataset)}
+            for registry_id, dataset in DATASET_REGISTRY.items()
+            if dataset.get("task_key") == task_key
+        ]
         if not models or not datasets:
             continue
 
@@ -278,14 +281,17 @@ def build_hf_manifest(
             compatible_dataset_keys = model.get("dataset_keys")
             compatible_datasets = [
                 dataset for dataset in datasets
-                if not compatible_dataset_keys or dataset.get("key") in compatible_dataset_keys
+                if not compatible_dataset_keys or dataset.get("registry_id") in compatible_dataset_keys
             ]
             compatible_datasets = compatible_datasets[: max(0, datasets_per_model)]
 
+            allowed_run_regimes = model.get("allowed_run_regimes") or selected_run_regimes
             for dataset in compatible_datasets:
                 for run_regime in selected_run_regimes:
+                    if run_regime not in allowed_run_regimes:
+                        continue
                     for variant_index in range(max(1, variants_per_pair)):
-                        variant_rng = random.Random(f"{seed}:{task_key}:{model.get('model_id')}:{dataset.get('key')}:{run_regime}:{variant_index}")
+                        variant_rng = random.Random(f"{seed}:{task_key}:{model.get('hf_model_id')}:{dataset.get('registry_id')}:{run_regime}:{variant_index}")
                         dataset_variant = dict(dataset)
                         dataset_variant["_variant_index"] = variant_index
                         rows.append(
