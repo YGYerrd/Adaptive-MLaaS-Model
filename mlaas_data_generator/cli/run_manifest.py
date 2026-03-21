@@ -4,6 +4,8 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from datetime import datetime
+import traceback
 
 import pandas as pd
 
@@ -95,6 +97,46 @@ class RowValidation:
     ok: bool
     error: str = ""
 
+
+def _write_failure_log(
+    log_path,
+    *,
+    row_index,
+    external_run_id,
+    case_name,
+    run_group_id,
+    failure_stage,
+    error_message,
+    resolved,
+    exc=None,
+):
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    lines = [
+        "=" * 100,
+        f"timestamp: {datetime.now().isoformat()}",
+        f"row_index: {row_index}",
+        f"external_run_id: {external_run_id}",
+        f"case_name: {case_name}",
+        f"run_group_id: {run_group_id}",
+        f"failure_stage: {failure_stage}",
+        f"error_message: {error_message}",
+        "resolved_config:",
+        json.dumps(resolved, indent=2, default=str),
+    ]
+
+    if exc is not None:
+        lines.extend(
+            [
+                "traceback:",
+                "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)).strip(),
+            ]
+        )
+
+    lines.append("")
+
+    with log_path.open("a", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
 
 def _is_blank(value: Any) -> bool:
     if value is None:
@@ -228,17 +270,6 @@ def _resolve_row(row: pd.Series, manifest_defaults: dict[str, Any]) -> dict[str,
     if "client_participation_rate" in resolved:
         resolved["sample_frac"] = resolved["client_participation_rate"]
 
-    dataset = str(resolved.get("dataset") or "").strip().lower()
-    model_type = str(resolved.get("model_type") or "").strip().lower()
-    hf_task = str(resolved.get("hf_task") or "").strip().lower().replace("-", "_")
-
-    if dataset == "hf" and model_type in {"hf", "hf_text", "transformers"} and hf_task in {
-        "token_classification",
-        "fill_mask",
-        "sentence_similarity",
-    }:
-        resolved["model_type"] = "hf_finetune"
-
     return resolved
 
 
@@ -303,6 +334,7 @@ def run_manifest(file: str, sheet: str = "runs", dry_run: bool = False) -> Path:
 
     run_group_id = str(uuid.uuid4())
     results: list[dict[str, Any]] = []
+    failure_log_path = Path("outputs") / "run_failures.log"
 
     for i, (idx, row) in enumerate(enabled_df.iterrows(), start=1):
         resolved = _resolve_row(row, manifest_defaults)
@@ -334,6 +366,18 @@ def run_manifest(file: str, sheet: str = "runs", dry_run: bool = False) -> Path:
                     "resolved_config_json": json.dumps(resolved, default=str),
                 }
             )
+
+            _write_failure_log(
+                failure_log_path,
+                row_index=int(idx),
+                external_run_id=external_run_id,
+                case_name=resolved.get("case_name"),
+                run_group_id=resolved.get("run_group_id"),
+                failure_stage="validation_failed",
+                error_message=validation.error,
+                resolved=resolved,
+            )
+
             print(f"Skipping row {idx}: {validation.error}")
             continue
 
@@ -390,8 +434,22 @@ def run_manifest(file: str, sheet: str = "runs", dry_run: bool = False) -> Path:
                     "resolved_config_json": json.dumps(resolved, default=str),
                 }
             )
+
+            _write_failure_log(
+                failure_log_path,
+                row_index=int(idx),
+                external_run_id=external_run_id,
+                case_name=resolved.get("case_name"),
+                run_group_id=resolved.get("run_group_id"),
+                failure_stage="runtime_exception",
+                error_message=str(exc),
+                resolved=resolved,
+                exc=exc,
+            )
+
             print(f"Run failed for row {idx}: {exc}")
 
+            
     output_path = Path("outputs") / "run_manifest_results.csv"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(results).to_csv(output_path, index=False)

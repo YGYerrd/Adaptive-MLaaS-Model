@@ -8,6 +8,7 @@ from typing import Any
 from huggingface_hub import HfApi
 
 
+
 @dataclass(frozen=True)
 class TaskSpec:
     pipeline_tag: str
@@ -93,21 +94,58 @@ def _extract_dataset_tags(tags: list[str]) -> list[str]:
     )
 
 
-def _has_dataset_tag(model: Any) -> bool:
-    tags = getattr(model, "tags", None) or []
-    return any(str(tag).lower().startswith("dataset:") for tag in tags)
+def _extract_family_hints(model_id: str, library_name: str | None, tags: list[str]) -> list[str]:
+    hints: set[str] = set()
+
+    normalized_model_id = (model_id or "").lower()
+    normalized_library = (library_name or "").lower()
+    normalized_tags = [str(tag).lower() for tag in (tags or []) if isinstance(tag, str)]
+
+    segments = [segment for segment in normalized_model_id.replace("_", "-").split("/") if segment]
+    if segments:
+        hints.add(segments[0])
+        leaf = segments[-1]
+        hints.add(leaf.split("-")[0])
+
+    if normalized_library:
+        hints.add(normalized_library)
+
+    known_families = (
+        "bert",
+        "roberta",
+        "distilbert",
+        "deberta",
+        "gpt",
+        "llama",
+        "mistral",
+        "mixtral",
+        "t5",
+        "flan",
+        "bart",
+        "vit",
+        "clip",
+        "whisper",
+        "yolo",
+    )
+    for family in known_families:
+        if family in normalized_model_id or any(family in tag for tag in normalized_tags):
+            hints.add(family)
+
+    return sorted(hint for hint in hints if hint)
 
 
 def _fetch_models_for_tag(pipeline_tag: str, limit: int) -> list[Any]:
-    api = HfApi()
-    return list(
+    api = HfApi(token="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")
+    models = list(
         api.list_models(
             pipeline_tag=pipeline_tag,
             sort="downloads",
-            limit=limit,
-            full=True,
+            limit=min(limit, 20),
+            full=False,
         )
-    )
+    )    
+    print(f"[DEBUG] pipeline_tag={pipeline_tag} returned {len(models)} models")
+    return models
 
 
 def _fetch_filtered_model_info(model_id: str) -> dict[str, Any]:
@@ -117,18 +155,22 @@ def _fetch_filtered_model_info(model_id: str) -> dict[str, Any]:
 
     tags = raw.get("tags") or []
     resolved_model_id = raw.get("id") or raw.get("modelId") or model_id
+    library_name = raw.get("library_name")
+
 
     return {
-        "model_id": raw.get("id") or raw.get("modelId") or model_id,
+        "model_id": resolved_model_id,
         "url": f"https://huggingface.co/{resolved_model_id}",
         "author": raw.get("author"),
         "downloads": raw.get("downloads"),
         "likes": raw.get("likes"),
         "pipeline_tag": raw.get("pipeline_tag"),
-        "dataset_tags": _extract_dataset_tags(tags),
-        "trending_score": raw.get("trending_score"),
-        "library": raw.get("library_name"),
+        "library": library_name,
         "safetensors": raw.get("safetensors"),
+        "family_hints": _extract_family_hints(resolved_model_id, library_name, tags),
+        "audit_dataset_tags": _extract_dataset_tags(tags),
+        "audit_raw_tags": sorted(str(tag) for tag in tags if isinstance(tag, str)),
+        "trending_score": raw.get("trending_score"),
     }
 
 
@@ -140,9 +182,6 @@ def build_hf_metadata_snapshot(
 ) -> dict[str, Any]:
     task_snapshots: list[dict[str, Any]] = []
 
-    scanned_total = 0
-    kept_total = 0
-
     for task_key, task_spec in TASK_SPECS.items():
         print(f"[INFO] Scanning task={task_key} pipeline_tag={task_spec.pipeline_tag}")
 
@@ -153,8 +192,10 @@ def build_hf_metadata_snapshot(
             all_models = []
             fetch_error = str(exc)
 
+        if fetch_error:
+            print(f"[WARN] Fetch failed for task={task_key}: {fetch_error}")
+
         scanned = 0
-        kept = 0
 
         filtered_models = []
 
@@ -164,35 +205,29 @@ def build_hf_metadata_snapshot(
             if _model_downloads(model) < min_downloads:
                 continue
 
-            if not _has_dataset_tag(model):
-                continue
-
             filtered_models.append(model)
-            kept += 1
 
         selected_models = filtered_models[:models_per_task]
 
         print("\n=== TASK SUMMARY ===")
         print(f"Task: {task_key}")
         print(f"Scanned: {scanned}")
-        print(f"Kept: {kept}")
-        print(f"Kept %: {kept / scanned:.2%}" if scanned else "0")
+        print(f"Kept: {len(filtered_models)}")
+        print(f"Kept %: {len(filtered_models) / scanned:.2%}" if scanned else "0")
 
         model_rows: list[dict[str, Any]] = []
         for model in selected_models:
             model_id = getattr(model, "id", None)
             if not model_id:
                 continue
-
             try:
                 filtered_meta = _fetch_filtered_model_info(model_id)
-                raw_fetch_error = None
             except Exception as exc:
                 filtered_meta = {
                     "model_id": model_id,
                     "error": str(exc),
                 }
-                raw_fetch_error = str(exc)
+
 
             model_rows.append(filtered_meta)
 
@@ -204,8 +239,12 @@ def build_hf_metadata_snapshot(
                 "modality": task_spec.modality,
                 "task_tag": task_spec.task_tag,
                 "fetched_count": len(all_models),
-                "dataset_tagged_count": len(filtered_models),
+                "eligible_count": len(filtered_models),
                 "selected_count": len(model_rows),
+                "selection_policy": {
+                    "min_downloads": min_downloads,
+                    "dataset_tags_used_for_selection": False,
+                },
                 "fetch_error": fetch_error,
                 "models": model_rows,
             }
@@ -218,7 +257,6 @@ def build_hf_metadata_snapshot(
             "models_per_task": models_per_task,
             "fetch_limit_per_task": fetch_limit_per_task,
             "min_downloads": min_downloads,
-            "require_dataset_tag": True,
         },
         "tasks": task_snapshots,
     }
@@ -234,7 +272,7 @@ def save_hf_metadata_snapshot(snapshot: dict[str, Any], output_path: Path) -> No
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Scrub Hugging Face model metadata and only keep models with dataset tags"
+        description="Scrub Hugging Face model metadata for downstream curation and audit"
     )
     parser.add_argument("--output", default="outputs/hf_model_metadata.json", help="Output JSON path")
     parser.add_argument("--models-per-task", type=int, default=100)

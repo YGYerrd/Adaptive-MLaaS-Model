@@ -27,6 +27,24 @@ TASK_SPECS: dict[str, TaskSpec] = {
     "fill_mask": TaskSpec("fill-mask", "fill_mask", "classification", "fillmask"),
     "text_generation": TaskSpec("text-generation", "causal_lm_generation", "classification", "textgen", "language-modeling"),
     "text2text_generation": TaskSpec("text2text-generation", "seq2seq_generation", "classification", "text2text", "summarization"),
+    "image_classification": TaskSpec("image-classification", "image_classification", "classification", "imgcls"),
+    "object_detection": TaskSpec("object-detection", "image_detection", "detection", "objdet"),
+    "image_segmentation": TaskSpec("image-segmentation", "image_segmentation", "segmentation", "imgseg"),
+    "image_captioning": TaskSpec("image-to-text", "image_captioning", "generation", "imgcap", "captioning"),
+    "text_image_retrieval": TaskSpec(
+        "zero-shot-image-classification",
+        "text_image_retrieval",
+        "retrieval",
+        "imgtxtret",
+        "retrieval",
+    ),
+    "visual_question_answering": TaskSpec(
+        "visual-question-answering",
+        "visual_question_answering",
+        "vqa",
+        "vqa",
+        "vqa",
+    ),
 }
 
 MANIFEST_COLUMNS = [
@@ -48,7 +66,6 @@ MANIFEST_COLUMNS = [
     "optimizer",
     "seed",
     "distribution",
-    "num_shards",
     "max_samples",
     "max_length",
     "num_workers",
@@ -90,22 +107,37 @@ MANIFEST_COLUMNS = [
 
 
 def _sample_training_knobs(rng: random.Random, *, seed: int) -> dict[str, Any]:
-    distribution = rng.choice(["iid", "dirichlet", "shards"])
-    num_shards = rng.choice([5, 10, 20]) if distribution == "shards" else None
+    distribution = rng.choice(["iid", "dirichlet"])
     dirichlet_alpha = rng.choice([0.1, 0.3, 0.5]) if distribution == "dirichlet" else None
-
     batch_choices = [4, 8, 16, 32]
     learning_rate = rng.choice([1e-5, 2e-5, 3e-5, 5e-5, 1e-4])
+    
+    optimizer = rng.choice(["adamw", "sgd", "rmsprop"])
+
+    if optimizer == "adamw":
+        learning_rate = rng.choice([1e-5, 2e-5, 3e-5, 5e-5, 1e-4])
+        weight_decay = rng.choice([0.0, 0.01, 0.05])
+        momentum = 0.0
+
+    elif optimizer == "sgd":
+        learning_rate = rng.choice([1e-3, 5e-3, 1e-2, 5e-2])
+        weight_decay = rng.choice([0.0, 1e-4, 5e-4])
+        momentum = rng.choice([0.0, 0.9])
+
+    else:  # rmsprop
+        learning_rate = rng.choice([1e-4, 5e-4, 1e-3, 5e-3])
+        weight_decay = rng.choice([0.0, 1e-4, 1e-3])
+        momentum = rng.choice([0.0, 0.9])
+
 
     return {
         "batch_size": rng.choice(batch_choices),
         "learning_rate": learning_rate,
-        "optimizer": "adamw",
+        "optimizer": optimizer,
         "seed": seed,
         "distribution": distribution,
-        "num_shards": num_shards,
-        "weight_decay": rng.choice([0.0, 0.01, 0.05]),
-        "momentum": 0.0,
+        "weight_decay": weight_decay,
+        "momentum": momentum,
         "dirichlet_alpha": dirichlet_alpha,
         "save_weights": True,
     }
@@ -142,6 +174,8 @@ def _load_audit_metadata(json_path: str | None) -> dict[str, Any]:
                     "author": model.get("author"),
                     "url": model.get("url"),
                     "pipeline_tag": task.get("pipeline_tag"),
+                    "audit_dataset_tags": model.get("audit_dataset_tags") or model.get("dataset_tags") or [],
+                    "audit_raw_tags": model.get("audit_raw_tags") or [],
                 }
 
     return {"models": model_audit}
@@ -177,7 +211,14 @@ def _row_from_registry(
         "registry_task": next((task_key for task_key, spec in TASK_SPECS.items() if spec == task_spec), None),
         "run_regime": run_regime,
         "audit_json_used": bool(audit_meta),
+        "dataset_pairing_source": "registry.dataset_keys",
     }
+    if model_audit.get("audit_dataset_tags") or model_audit.get("audit_raw_tags"):
+        service_payload["audit_only_metadata"] = {
+            "dataset_tags": model_audit.get("audit_dataset_tags") or [],
+            "raw_tags": model_audit.get("audit_raw_tags") or [],
+            "used_for_pairing": False,
+        }
 
     row = {
         "external_run_id": f"hf_{task_spec.task_label}_{run_index:06d}",
@@ -201,7 +242,6 @@ def _row_from_registry(
         "optimizer": knobs["optimizer"],
         "seed": knobs["seed"],
         "distribution": knobs["distribution"],
-        "num_shards": knobs["num_shards"],
         "max_samples": dataset_spec.get("max_samples", 1000),
         "max_length": dataset_spec.get("max_length", 128),
         "num_workers": 2,
@@ -209,8 +249,8 @@ def _row_from_registry(
         "weight_decay": knobs["weight_decay"],
         "momentum": knobs["momentum"],
         "dirichlet_alpha": knobs["dirichlet_alpha"],
-        "aggregation": "fedavg",
-        "device": "auto",
+        "aggregation": "",
+        "device": "",
         "save_weights": knobs["save_weights"],
         "model_type": model_defaults["model_type"] if run_regime == "inference_only" else (model.get("model_type") or model_defaults["model_type"]),
         "hf_task": task_spec.hf_task,
@@ -274,6 +314,17 @@ def build_hf_manifest(
             for registry_id, dataset in DATASET_REGISTRY.items()
             if dataset.get("task_key") == task_key
         ]
+        print(f"\nTASK: {task_key}")
+        print(f"  models found: {len(models)}")
+        print(f"  datasets found: {len(datasets)}")
+
+        if models:
+            for m in models:
+                print(f"    model: {m.get('registry_id')} | hf_model_id={m.get('hf_model_id')} | dataset_keys={m.get('dataset_keys')} | allowed_run_regimes={m.get('allowed_run_regimes')}")
+        if datasets:
+                for d in datasets:
+                    print(f"    dataset: {d.get('registry_id')} | dataset_name={d.get('dataset_name')}")
+
         if not models or not datasets:
             continue
 
@@ -286,6 +337,12 @@ def build_hf_manifest(
             compatible_datasets = compatible_datasets[: max(0, datasets_per_model)]
 
             allowed_run_regimes = model.get("allowed_run_regimes") or selected_run_regimes
+
+            print(f"  checking model {model.get('registry_id')}")
+            print(f"    compatible datasets before cap: {[d.get('registry_id') for d in compatible_datasets]}")
+            print(f"    selected run regimes: {selected_run_regimes}")
+            print(f"    allowed run regimes: {allowed_run_regimes}")
+
             for dataset in compatible_datasets:
                 for run_regime in selected_run_regimes:
                     if run_regime not in allowed_run_regimes:
