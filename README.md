@@ -305,7 +305,7 @@ Use `task_tag` in manifest rows / `dataset_args` to select canonical decoding me
 
 - `summarization`: `rouge1`, `rouge2`, `rougeL`
 - `translation`: `sacrebleu`
-- `language-modeling`: `perplexity` (from eval loss when labels are available)
+- `language-modeling`: `loss`, `perplexity` (with cross-entropy loss as the primary metric when labels are available)
 
 ### Required HF columns for generation rows
 
@@ -339,7 +339,9 @@ Paired integrity checks enforce image/text alignment per split. With `drop`, row
 ### Metric availability rules
 
 - **Train**: `loss`, `perplexity` (when labels are present)
-- **Eval / inference**: decoding metric(s) by `task_tag`; optional `perplexity` when labels are available
+- **Eval / inference**:
+  - `causal_lm_generation`: `loss`, `perplexity`
+  - other generation tasks: decoding metric(s) by `task_tag`; optional `perplexity` when labels are available
 
 `metric_primary_name` / `metric_secondary_name` in run metadata are selected from the canonical metric set for the configured generation subtype.
 

@@ -77,17 +77,6 @@ class FederatedDataGenerator:
         if requested_task != meta_task:
             print(f"Warning: overriding dataset task type '{meta_task}' with requested '{self.task_type}'.")
 
-        # metric keys
-        if self.task_type == "clustering":
-            self.metric_key = "silhouette"
-            self.metric_label = "Silhouette"
-        elif self.task_type == "classification":
-            self.metric_key = "accuracy"
-            self.metric_label = "Accuracy"
-        else:
-            self.metric_key = "rmse"
-            self.metric_label = "RMSE"
-
         self.target_scaler = meta.get("target_scaler")
         self.save_weights = bool(self.config.get("save_weights", True))
         self.distribution_bins = int(self.config.get("distribution_bins", 10) or 10)
@@ -137,6 +126,20 @@ class FederatedDataGenerator:
             self.dataset_args.get("hf_task") or self.config.get("hf_task") or self.meta.get("hf_task")
         )
         self.task_family = canonical_task_family(self.task_type, self.hf_task)
+
+        # metric keys
+        if self.task_type == "clustering":
+            self.metric_key = "silhouette"
+            self.metric_label = "Silhouette"
+        elif self.task_family == "generation" and self.hf_task == "causal_lm_generation":
+            self.metric_key = "loss"
+            self.metric_label = "Loss"
+        elif self.task_type == "classification":
+            self.metric_key = "accuracy"
+            self.metric_label = "Accuracy"
+        else:
+            self.metric_key = "rmse"
+            self.metric_label = "RMSE"
 
         # strategy encapsulates build/train/eval details
         self.strategy = make_task_strategy(
@@ -197,9 +200,14 @@ class FederatedDataGenerator:
         task_family = canonical_task_family(self.task_type, hf_task)
         label_format = infer_label_format(self.meta, task_type=self.task_type) or canonical_label_format(task_family)
         task_tag = str(self.config.get("task_tag") or self.config.get("dataset_args", {}).get("task_tag") or "").strip().lower() or None
-        metric_primary_name, metric_secondary_name = canonical_metric_names(task_family, self.metric_key)
+        metric_primary_name, metric_secondary_name = canonical_metric_names(
+            task_family,
+            self.metric_key,
+            hf_task=hf_task,
+            task_tag=task_tag,
+        )
         has_labels = self.y_test is not None
-        availability = metric_availability(task_family, task_tag=task_tag, has_labels=has_labels)
+        availability = metric_availability(task_family, task_tag=task_tag, has_labels=has_labels, hf_task=hf_task)
         if task_family == "generation":
             eval_metrics = availability.get("eval", tuple())
             if eval_metrics:

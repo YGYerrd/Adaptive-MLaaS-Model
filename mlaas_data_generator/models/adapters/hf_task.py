@@ -902,19 +902,25 @@ class CausalLMGenerationSpec(HFTaskSpec):
         return generated[:, in_len:]
 
     def metrics(self, y_true, y_pred, y_extra=None):
-        y_true = np.asarray(y_true)
-        y_pred = np.asarray(y_pred)
-        if y_true.size == 0 or y_pred.size == 0:
-            return {"primary": np.nan, "secondary": np.nan, "named_metrics": {"perplexity": np.nan}}
-        common = min(y_true.shape[-1], y_pred.shape[-1])
-        yt = y_true[..., :common]
-        yp = y_pred[..., :common]
-        tok_acc = float((yt == yp).mean())
         loss_mean = np.nan
         if isinstance(y_extra, dict):
             loss_mean = float(y_extra.get("loss_mean", np.nan))
         ppl = float(np.exp(np.clip(loss_mean, a_min=-50.0, a_max=50.0))) if loss_mean == loss_mean else np.nan
-        return {"primary": ppl, "secondary": tok_acc, "named_metrics": {"perplexity": ppl, "token_accuracy": tok_acc}}
+        token_accuracy = np.nan
+
+        y_true = np.asarray(y_true)
+        y_pred = np.asarray(y_pred)
+        if y_true.size != 0 and y_pred.size != 0:
+            common = min(y_true.shape[-1], y_pred.shape[-1])
+            yt = y_true[..., :common]
+            yp = y_pred[..., :common]
+            token_accuracy = float((yt == yp).mean())
+
+        return {
+            "primary": loss_mean,
+            "secondary": ppl,
+            "named_metrics": {"cross_entropy_loss": loss_mean, "perplexity": ppl, "token_accuracy": token_accuracy},
+        }
 
 
 class Seq2SeqGenerationSpec(HFTaskSpec):
