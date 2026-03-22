@@ -903,8 +903,10 @@ class CausalLMGenerationSpec(HFTaskSpec):
 
     def metrics(self, y_true, y_pred, y_extra=None):
         loss_mean = np.nan
+        ignore_index = -100
         if isinstance(y_extra, dict):
             loss_mean = float(y_extra.get("loss_mean", np.nan))
+            ignore_index = int(y_extra.get("ignore_index", ignore_index))
         ppl = float(np.exp(np.clip(loss_mean, a_min=-50.0, a_max=50.0))) if loss_mean == loss_mean else np.nan
         token_accuracy = np.nan
 
@@ -914,7 +916,11 @@ class CausalLMGenerationSpec(HFTaskSpec):
             common = min(y_true.shape[-1], y_pred.shape[-1])
             yt = y_true[..., :common]
             yp = y_pred[..., :common]
-            token_accuracy = float((yt == yp).mean())
+            mask = (yt != ignore_index)
+            yt = yt[mask]
+            yp = yp[mask]
+            if yt.size != 0:
+                token_accuracy = float((yt == yp).mean())
 
         return {
             "primary": loss_mean,
@@ -968,6 +974,16 @@ class Seq2SeqGenerationSpec(HFTaskSpec):
         return model.generate(**enc, **generation_config)
 
     def metrics(self, y_true, y_pred, y_extra=None):
+        task_tag = ""
+        loss_mean = np.nan
+        ignore_index = -100
+        if isinstance(y_extra, dict):
+            task_tag = str(y_extra.get("task_tag") or "").strip().lower().replace("-", "_")
+            loss_mean = float(y_extra.get("loss_mean", np.nan))
+            ignore_index = int(y_extra.get("ignore_index", ignore_index))
+
+        ppl = float(np.exp(np.clip(loss_mean, a_min=-50.0, a_max=50.0))) if loss_mean == loss_mean else np.nan
+
         y_true = np.asarray(y_true)
         y_pred = np.asarray(y_pred)
         if y_true.size == 0 or y_pred.size == 0:
@@ -976,23 +992,23 @@ class Seq2SeqGenerationSpec(HFTaskSpec):
         common = min(y_true.shape[-1], y_pred.shape[-1])
         yt = y_true[..., :common]
         yp = y_pred[..., :common]
-        overlap = (yt == yp)
-        token_precision = float(overlap.mean())
-        token_recall = token_precision
-        token_f1 = 0.0 if (token_precision + token_recall) == 0 else (2.0 * token_precision * token_recall / (token_precision + token_recall))
+        mask = (yt != ignore_index)
+        yt = yt[mask]
+        yp = yp[mask]
 
-        task_tag = ""
-        loss_mean = np.nan
-        if isinstance(y_extra, dict):
-            task_tag = str(y_extra.get("task_tag") or "").strip().lower().replace("-", "_")
-            loss_mean = float(y_extra.get("loss_mean", np.nan))
-
-        ppl = float(np.exp(np.clip(loss_mean, a_min=-50.0, a_max=50.0))) if loss_mean == loss_mean else np.nan
+        token_precision = np.nan
+        token_recall = np.nan
+        token_f1 = np.nan
+        if yt.size != 0:
+            overlap = (yt == yp)
+            token_precision = float(overlap.mean())
+            token_recall = token_precision
+            token_f1 = 0.0 if (token_precision + token_recall) == 0 else (2.0 * token_precision * token_recall / (token_precision + token_recall))
 
         if task_tag == "summarization":
             rouge1 = token_f1
-            rouge2 = token_f1 * 0.8
-            rougeL = token_f1 * 0.9
+            rouge2 = float(token_f1 * 0.8) if token_f1 == token_f1 else np.nan
+            rougeL = float(token_f1 * 0.9) if token_f1 == token_f1 else np.nan
             named = {"rouge1": rouge1, "rouge2": rouge2, "rougel": rougeL, "perplexity": ppl}
             return {"primary": rouge1, "secondary": rouge2, "named_metrics": named}
 
