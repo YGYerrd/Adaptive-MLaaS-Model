@@ -1,3 +1,4 @@
+from ..accounting import append_accounting_stage, finalize_accounting
 import numpy as np
 
 
@@ -120,7 +121,7 @@ def _encode_split(
     if label_column is not None and len(y) != len(x["input_ids"]):
         raise ValueError("Multimodal alignment check failed: label length does not match paired inputs")
 
-    return x, y
+    return x, y, len(input_ids)
 
 
 def _resolve_multimodal_columns(
@@ -211,7 +212,7 @@ def preprocess_hf_multimodal(
         missing_pair_handling=policy,
     )
 
-    x_train, y_train = _encode_split(
+    x_train, y_train, train_survived = _encode_split(
         ds_train,
         tokenizer=tokenizer,
         image_processor=image_processor,
@@ -220,7 +221,7 @@ def preprocess_hf_multimodal(
         label_column=label_column,
         max_length=max_length,
     )
-    x_test, y_test = _encode_split(
+    x_test, y_test, test_survived = _encode_split(
         ds_test,
         tokenizer=tokenizer,
         image_processor=image_processor,
@@ -230,6 +231,29 @@ def preprocess_hf_multimodal(
         max_length=max_length,
     )
 
+    meta = append_accounting_stage(
+        meta,
+        stage="hf_multimodal",
+        split="train",
+        input_record_count=train_report.get("aligned_rows", len(ds_train)),
+        post_filter_record_count=train_survived,
+        tokenized_record_count=train_survived,
+        emitted_record_count=train_survived,
+        sequence_count=train_survived,
+        metric_instance_count=len(y_train),
+    )
+    meta = append_accounting_stage(
+        meta,
+        stage="hf_multimodal",
+        split="test",
+        input_record_count=test_report.get("aligned_rows", len(ds_test)),
+        post_filter_record_count=test_survived,
+        tokenized_record_count=test_survived,
+        emitted_record_count=test_survived,
+        sequence_count=test_survived,
+        metric_instance_count=len(y_test),
+    )
+    meta = finalize_accounting(meta)
     meta.update(
         {
             "modality": "multimodal",

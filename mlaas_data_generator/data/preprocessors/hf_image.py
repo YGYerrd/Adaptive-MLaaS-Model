@@ -1,3 +1,4 @@
+from ..accounting import append_accounting_stage, finalize_accounting
 import io
 import os
 
@@ -149,7 +150,7 @@ def _process_split(
     else:
         y = labels
 
-    report = {"total": len(ds), "failed": len(decode_errors)}
+    report = {"total": len(ds), "failed": len(decode_errors), "survived": len(images)}
     if report_decode_errors:
         report["errors"] = decode_errors
     return x, y, report
@@ -213,6 +214,27 @@ def preprocess_hf_image(
         report_decode_errors=report_decode_errors,
     )
 
+    meta = append_accounting_stage(
+        meta,
+        stage="hf_image",
+        split="train",
+        input_record_count=len(ds_train),
+        post_filter_record_count=int(train_report["survived"]),
+        emitted_record_count=len(x_train["pixel_values"]),
+        sequence_count=len(x_train["pixel_values"]),
+        metric_instance_count=len(y_train),
+    )
+    meta = append_accounting_stage(
+        meta,
+        stage="hf_image",
+        split="test",
+        input_record_count=len(ds_test),
+        post_filter_record_count=int(test_report["survived"]),
+        emitted_record_count=len(x_test["pixel_values"]),
+        sequence_count=len(x_test["pixel_values"]),
+        metric_instance_count=len(y_test),
+    )
+    meta = finalize_accounting(meta)
     meta.update(
         {
             "image_column": image_column,

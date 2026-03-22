@@ -1,3 +1,6 @@
+from ..accounting import append_accounting_stage, update_accounting
+
+
 def load_huggingface_source(**kwargs):
     try:
         from datasets import load_dataset
@@ -26,6 +29,7 @@ def load_huggingface_source(**kwargs):
     hf_task = kwargs.get("hf_task", "sequence_classification")
 
     ds_train = load_dataset(dataset_name, dataset_config, split=train_split)
+    raw_train_count = len(ds_train)
 
     def _try_load_split(split_name):
         return load_dataset(dataset_name, dataset_config, split=split_name)
@@ -45,6 +49,7 @@ def load_huggingface_source(**kwargs):
 
     ds_test = None
     chosen_test_split = None
+    raw_test_count = 0
     for candidate in [requested_test_split, "validation", "val", "dev"]:
         try:
             tmp = _try_load_split(candidate)
@@ -54,6 +59,7 @@ def load_huggingface_source(**kwargs):
             continue
         ds_test = tmp
         chosen_test_split = candidate
+        raw_test_count = len(tmp)
         break
 
     if ds_test is None:
@@ -62,6 +68,11 @@ def load_huggingface_source(**kwargs):
         ds_train = split["train"]
         ds_test = split["test"]
         chosen_test_split = "train_test_split"
+        raw_train_count = len(ds_train) + len(ds_test)
+        raw_test_count = len(ds_test)
+
+    post_split_train_count = len(ds_train)
+    post_split_test_count = len(ds_test)
 
     if max_samples:
         n = int(max_samples)
@@ -210,5 +221,27 @@ def load_huggingface_source(**kwargs):
         "loader_template": dataset_args.get("loader_template"),
         "dataset_args": dataset_args,
     }
+
+    meta = update_accounting(meta, raw_record_count=raw_train_count, post_filter_record_count=len(ds_train))
+    meta = append_accounting_stage(
+        meta,
+        stage="hf_source",
+        split="train",
+        raw_record_count=raw_train_count,
+        post_filter_record_count=len(ds_train),
+        emitted_record_count=len(ds_train),
+        sequence_count=len(ds_train),
+        metric_instance_count=len(ds_train),
+    )
+    meta = append_accounting_stage(
+        meta,
+        stage="hf_source",
+        split="test",
+        raw_record_count=raw_test_count,
+        post_filter_record_count=len(ds_test),
+        emitted_record_count=len(ds_test),
+        sequence_count=len(ds_test),
+        metric_instance_count=len(ds_test),
+    )
 
     return (ds_train, None), (ds_test, None), meta

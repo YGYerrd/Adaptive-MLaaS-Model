@@ -90,6 +90,8 @@ def test_image_decode_error_skip_and_report():
     assert x_train["pixel_values"].shape[0] == 1
     assert y_train.shape[0] == 1
     assert meta["decode_report"]["train"]["failed"] == 1
+    assert meta["accounting"]["post_filter_record_count"] == 1
+    assert meta["accounting"]["sequence_count"] == 1
 
 
 def test_image_detection_schema_passthrough():

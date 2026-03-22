@@ -12,6 +12,9 @@ class DummySplit:
         self._rows = rows
         self.column_names = list(rows[0].keys()) if rows else []
 
+    def __len__(self):
+        return len(self._rows)
+
     def __getitem__(self, key):
         return [r.get(key) for r in self._rows]
 
@@ -77,6 +80,8 @@ def test_causal_lm_generation_preprocessor_prompt_completion_mapping():
     assert x_train["input_ids"].shape == y_train.shape
     assert meta["column_mapping"]["prompt"] == "prompt"
     assert meta["column_mapping"]["target"] == "completion"
+    assert meta["accounting"]["sequence_count"] == 2
+    assert meta["accounting"]["supervised_token_count"] > 0
 
 
 def test_seq2seq_generation_preprocessor_source_target_mapping():

@@ -1,3 +1,5 @@
+from ..accounting import append_accounting_stage, finalize_accounting
+
 import numpy as np
 
 
@@ -106,6 +108,17 @@ def _pad_encodings(enc, pad_to):
         padded_ids.append(ids + [0] * pad_len)
         padded_mask.append(mask + [0] * pad_len)
     return np.asarray(padded_ids, dtype="int32"), np.asarray(padded_mask, dtype="int32")
+
+
+def _supervised_token_count(labels, ignore_index):
+    return int(np.count_nonzero(np.asarray(labels) != int(ignore_index)))
+
+
+def _dataset_size(ds, fallback_column):
+    try:
+        return int(len(ds))
+    except Exception:
+        return int(len(ds[fallback_column]))
 
 
 def preprocess_hf_text_causal_lm_generation(
@@ -231,6 +244,35 @@ def preprocess_hf_text_causal_lm_generation(
         "pad_token_id": int(tokenizer.pad_token_id),
         "padding_side": str(getattr(tokenizer, "padding_side", "right")),
     })
+    train_input_count = _dataset_size(ds_train, prompt_col)
+    test_input_count = _dataset_size(ds_test, prompt_col)
+    train_sequences = int(X_train["input_ids"].shape[0])
+    test_sequences = int(X_test["input_ids"].shape[0])
+    meta2 = append_accounting_stage(
+        meta2,
+        stage="hf_text_generation",
+        split="train",
+        input_record_count=train_input_count,
+        post_filter_record_count=train_input_count,
+        tokenized_record_count=train_sequences,
+        emitted_record_count=train_sequences,
+        sequence_count=train_sequences,
+        supervised_token_count=_supervised_token_count(y_train, ignore_index),
+        metric_instance_count=train_sequences,
+    )
+    meta2 = append_accounting_stage(
+        meta2,
+        stage="hf_text_generation",
+        split="test",
+        input_record_count=test_input_count,
+        post_filter_record_count=test_input_count,
+        tokenized_record_count=test_sequences,
+        emitted_record_count=test_sequences,
+        sequence_count=test_sequences,
+        supervised_token_count=_supervised_token_count(y_test, ignore_index),
+        metric_instance_count=test_sequences,
+    )
+    meta2 = finalize_accounting(meta2)
     return (X_train, y_train), (X_test, y_test), meta2
 
 
@@ -330,4 +372,33 @@ def preprocess_hf_text_seq2seq_generation(
         "target_shape": (tgt_pad_to,),
     })
 
+    train_input_count = _dataset_size(ds_train, source_col)
+    test_input_count = _dataset_size(ds_test, source_col)
+    train_sequences = int(X_train["input_ids"].shape[0])
+    test_sequences = int(X_test["input_ids"].shape[0])
+    meta2 = append_accounting_stage(
+        meta2,
+        stage="hf_text_generation",
+        split="train",
+        input_record_count=train_input_count,
+        post_filter_record_count=train_input_count,
+        tokenized_record_count=train_sequences,
+        emitted_record_count=train_sequences,
+        sequence_count=train_sequences,
+        supervised_token_count=_supervised_token_count(y_train, ignore_index),
+        metric_instance_count=train_sequences,
+    )
+    meta2 = append_accounting_stage(
+        meta2,
+        stage="hf_text_generation",
+        split="test",
+        input_record_count=test_input_count,
+        post_filter_record_count=test_input_count,
+        tokenized_record_count=test_sequences,
+        emitted_record_count=test_sequences,
+        sequence_count=test_sequences,
+        supervised_token_count=_supervised_token_count(y_test, ignore_index),
+        metric_instance_count=test_sequences,
+    )
+    meta2 = finalize_accounting(meta2)
     return (X_train, y_train), (X_test, y_test), meta2

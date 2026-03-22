@@ -1,6 +1,7 @@
 import numpy as np
 
 from .label_schema import attach_label_schema
+from ..accounting import append_accounting_stage, finalize_accounting
 from ...models.adapters.hf_cache import get_cached_tokenizer
 
 
@@ -87,5 +88,34 @@ def preprocess_hf_text_token(train, test, meta, *, hf_model_id, tokens_column, l
         "padding_mode": padding_mode,
     })
     meta2 = attach_label_schema(meta2, y_train, default_num_labels=num_classes, ignore_index=-100)
+    train_sequences = int(X_train["input_ids"].shape[0])
+    test_sequences = int(X_test["input_ids"].shape[0])
+    train_supervised_tokens = int(np.count_nonzero(y_train != -100))
+    test_supervised_tokens = int(np.count_nonzero(y_test != -100))
+    meta2 = append_accounting_stage(
+        meta2,
+        stage="hf_text_token",
+        split="train",
+        input_record_count=len(ds_train),
+        post_filter_record_count=len(ds_train),
+        tokenized_record_count=train_sequences,
+        emitted_record_count=train_sequences,
+        sequence_count=train_sequences,
+        supervised_token_count=train_supervised_tokens,
+        metric_instance_count=train_sequences,
+    )
+    meta2 = append_accounting_stage(
+        meta2,
+        stage="hf_text_token",
+        split="test",
+        input_record_count=len(ds_test),
+        post_filter_record_count=len(ds_test),
+        tokenized_record_count=test_sequences,
+        emitted_record_count=test_sequences,
+        sequence_count=test_sequences,
+        supervised_token_count=test_supervised_tokens,
+        metric_instance_count=test_sequences,
+    )
+    meta2 = finalize_accounting(meta2)
 
     return (X_train, y_train), (X_test, y_test), meta2

@@ -53,6 +53,8 @@ def test_hf_source_multimodal_pair_drop(monkeypatch):
     assert len(train) + len(test) == 2
     assert meta["schema"]["text_column"] == "text"
     assert meta["schema"]["pair_validation"]["missing_pair_handling"] == "drop"
+    assert meta["accounting"]["raw_record_count"] == 2
+    assert meta["accounting"]["post_filter_record_count"] == 1
 
 
 def test_hf_multimodal_preprocessor_contract(monkeypatch):
@@ -93,6 +95,7 @@ def test_hf_multimodal_preprocessor_contract(monkeypatch):
     assert set(x_train.keys()) == {"input_ids", "attention_mask", "pixel_values"}
     assert x_train["input_ids"].shape[0] == x_train["pixel_values"].shape[0] == len(y_train)
     assert meta["schema"]["batch_contract"]["combined_keys"] == ["input_ids", "attention_mask", "pixel_values"]
+    assert meta["accounting"]["sequence_count"] == 2
 
 
 
