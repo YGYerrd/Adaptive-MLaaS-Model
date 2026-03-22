@@ -348,8 +348,9 @@ class HFCore:
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=float(lr))
 
         total_loss = 0.0
-        total_loss_weight = 0
-        total_tokens = 0
+        train_loss_denominator_count = 0
+        train_supervised_token_count = 0
+        train_sequence_count = 0
         step_lat_ms = []
         t_start = time.time()
         timeout_hit = False
@@ -383,17 +384,22 @@ class HFCore:
                 loss.backward()
                 optimizer.step()
 
-                total_tokens += _count_supervised_tokens(labels_t, self.label_pad_value)
+                supervised_token_count = _count_supervised_tokens(labels_t, self.label_pad_value)
+                train_supervised_token_count += supervised_token_count
+
+                if isinstance(xb, dict):
+                    sequence_count = len(next(iter(xb.values())))
+                else:
+                    sequence_count = len(xb)
+                train_sequence_count += int(sequence_count)
 
                 if isinstance(labels_t, torch.Tensor) and labels_t.ndim >= 2:
-                    w = _count_supervised_tokens(labels_t, self.label_pad_value)
-                elif isinstance(xb, dict):
-                    w = len(next(iter(xb.values())))
+                    loss_denominator_count = supervised_token_count
                 else:
-                    w = len(xb)
+                    loss_denominator_count = sequence_count
 
-                total_loss += float(loss.detach().cpu().item()) * float(max(1, w))
-                total_loss_weight += int(max(1, w))
+                total_loss += float(loss.detach().cpu().item()) * float(max(1, loss_denominator_count))
+                train_loss_denominator_count += int(max(1, loss_denominator_count))
 
                 step_lat_ms.append((time.time() - t0) * 1000.0)
             
@@ -409,9 +415,13 @@ class HFCore:
         steady_step_mean = float(np.mean(steady_steps)) if steady_steps else np.nan
         steady_step_p95 = float(np.percentile(steady_steps, 95)) if steady_steps else np.nan
 
-        train_loss = float(total_loss / max(1, total_loss_weight))
-        train_throughput = float(total_loss_weight / max(duration_s, 1e-9))
-        token_throughput = float(total_tokens / max(duration_s, 1e-9)) if total_tokens > 0 else np.nan
+        train_loss = float(total_loss / max(1, train_loss_denominator_count))
+        train_throughput = float(train_sequence_count / max(duration_s, 1e-9))
+        token_throughput = (
+            float(train_supervised_token_count / max(duration_s, 1e-9))
+            if train_supervised_token_count > 0
+            else np.nan
+        )
 
         return {
             "train_loss": train_loss,
@@ -422,9 +432,14 @@ class HFCore:
             "train_step_latency_ms_steady_p95": steady_step_p95,
             "train_throughput_eps": train_throughput,
             **self._qos_startup(),
-            "train_samples": int(total_loss_weight),
-            "tokens_total": int(total_tokens),
+            "train_sequence_count": int(train_sequence_count),
+            "train_supervised_token_count": int(train_supervised_token_count),
+            "train_loss_denominator_count": int(train_loss_denominator_count),
+            "tokens_total": int(train_supervised_token_count),
             "tokens_per_second": token_throughput,
+            # Deprecated legacy aliases retained for downstream consumers expecting the
+            # old sample-count fields; these now map to the explicit unit-specific keys.
+            "train_samples": int(train_loss_denominator_count),
             "batch_size": int(self.batch_size),
             "device": str(self.device),
             "hf_model_id": self.model_id,
@@ -449,30 +464,33 @@ class HFCore:
 
         latencies_ms = []
         total_loss = 0.0
-        total_loss_weight = 0
-        total_tokens = 0
+        eval_loss_denominator_count = 0
+        eval_supervised_token_count = 0
 
         preds_all = []
         labels_all = []
         stats_accum = {}
 
         if isinstance(xs, dict):
-            n_eval = len(next(iter(xs.values())))
+            eval_sequence_count = len(next(iter(xs.values())))
         else:
-            n_eval = len(xs)
-        total_batches = int(np.ceil(float(n_eval) / float(max(1, self.batch_size)))) if n_eval else 0
+            eval_sequence_count = len(xs)
+        eval_batch_count = int(np.ceil(float(eval_sequence_count) / float(max(1, self.batch_size)))) if eval_sequence_count else 0
 
         t_start = time.time()
 
         last_extra = {}
-        total_batches = int((n_eval + max(1, self.batch_size) - 1) / max(1, self.batch_size))
+        eval_batch_count = int((eval_sequence_count + max(1, self.batch_size) - 1) / max(1, self.batch_size))
         progress_log_interval = int(progress_log_interval) if progress_log_interval is not None else 0
         max_eval_time_s = float(max_eval_time_s) if max_eval_time_s is not None else None
-        progress_log_every = max(1, min(25, total_batches // 4 if total_batches > 4 else total_batches or 1))
+        progress_log_every = max(
+            1,
+            min(25, eval_batch_count // 4 if eval_batch_count > 4 else eval_batch_count or 1),
+        )
 
         print(
             f"[HFCore.eval] dataloader creation starts | inference_only={bool(inference_only)} "
-            f"| batch_size={self.batch_size} | eval_samples={n_eval} | total_batches={total_batches}"
+            f"| batch_size={self.batch_size} | eval_sequence_count={eval_sequence_count} | eval_batch_count={eval_batch_count}"
         )
         first_batch_logged = False
 
@@ -483,7 +501,7 @@ class HFCore:
                 if max_eval_time_s is not None and (time.time() - t_start) > max_eval_time_s:
                     raise TimeoutError(
                         f"HF evaluation exceeded max_eval_time_s={max_eval_time_s} "
-                        f"after batch {batch_idx - 1}/{total_batches}"
+                        f"after batch {batch_idx - 1}/{eval_batch_count}"
                     )
                 t0 = time.time()
                 labels_recorded = False
@@ -540,31 +558,34 @@ class HFCore:
                         if loss is not None and labels_t is not None:
                             labels_all.append(labels_t.detach().cpu().numpy())
                             labels_recorded = True
-                            total_tokens += _count_supervised_tokens(labels_t, self.label_pad_value)
+                            supervised_token_count = _count_supervised_tokens(labels_t, self.label_pad_value)
+                            eval_supervised_token_count += supervised_token_count
 
                             if labels_t.ndim >= 2:
-                                w = _count_supervised_tokens(labels_t, self.label_pad_value)
+                                loss_denominator_count = supervised_token_count
                             elif isinstance(xb, dict):
-                                w = len(next(iter(xb.values())))
+                                loss_denominator_count = len(next(iter(xb.values())))
                             else:
-                                w = len(xb)
+                                loss_denominator_count = len(xb)
 
-                            total_loss += float(loss.detach().cpu().item()) * float(max(1, w))
-                            total_loss_weight += int(max(1, w))
+                            total_loss += float(loss.detach().cpu().item()) * float(max(1, loss_denominator_count))
+                            eval_loss_denominator_count += int(max(1, loss_denominator_count))
 
                 if labels_t is not None and bool(inference_only) and yb is not None and not labels_recorded:
                     labels_all.append(labels_t.detach().cpu().numpy())
 
                 latencies_ms.append((time.time() - t0) * 1000.0)
-                if total_batches and (
+                if eval_batch_count and (
                     batch_idx == 1
-                    or batch_idx == total_batches
+                    or batch_idx == eval_batch_count
                     or batch_idx % progress_log_every == 0
                 ):
+                    progress_units_done = min(batch_idx * self.batch_size, eval_sequence_count)
+                    progress_units_label = "examples_done" if stats_accum else "sequences_done"
                     print(
                         "[HFCore.eval] progress | "
-                        f"batch={batch_idx}/{total_batches} | "
-                        f"samples_done={min(batch_idx * self.batch_size, n_eval)}/{n_eval} | "
+                        f"batch={batch_idx}/{eval_batch_count} | "
+                        f"{progress_units_label}={progress_units_done}/{eval_sequence_count} | "
                         f"last_batch_ms={latencies_ms[-1]:.2f}"
                     )
                 first_batch_logged = True
@@ -575,7 +596,11 @@ class HFCore:
         y_pred_np = np.concatenate(preds_all, axis=0) if preds_all else np.asarray([], dtype="int64")
 
         named_metrics = None
-        loss_mean = float(total_loss / max(1, total_loss_weight)) if total_loss_weight > 0 else np.nan
+        loss_mean = (
+            float(total_loss / max(1, eval_loss_denominator_count))
+            if eval_loss_denominator_count > 0
+            else np.nan
+        )
 
         m_stats = self.task_spec.metrics_from_statistics(stats_accum) if stats_accum else None
         if isinstance(m_stats, dict) and m_stats:
@@ -609,8 +634,20 @@ class HFCore:
         steady_lat = latencies_ms[1:] if len(latencies_ms) > 1 else []
         lat_steady_mean = float(np.mean(steady_lat)) if steady_lat else np.nan
         lat_steady_p95 = float(np.percentile(steady_lat, 95)) if steady_lat else np.nan
-        throughput = float(n_eval / max(duration_s, 1e-9))
-        token_throughput = float(total_tokens / max(duration_s, 1e-9)) if total_tokens > 0 else np.nan
+        throughput = float(eval_sequence_count / max(duration_s, 1e-9))
+        token_throughput = (
+            float(eval_supervised_token_count / max(duration_s, 1e-9))
+            if eval_supervised_token_count > 0
+            else np.nan
+        )
+
+        metric_instance_count = None
+        if stats_accum:
+            for metric_count_key in ("metric_instance_count", "total"):
+                metric_count_value = stats_accum.get(metric_count_key)
+                if metric_count_value is not None:
+                    metric_instance_count = int(metric_count_value)
+                    break
 
         qos = {
             "eval_latency_ms_mean": lat_mean,
@@ -619,9 +656,14 @@ class HFCore:
             "eval_latency_ms_steady_p95": lat_steady_p95,
             "eval_throughput_eps": throughput,
             **self._qos_startup(),
-            "eval_samples": int(n_eval),
-            "tokens_total": int(total_tokens),
+            "eval_sequence_count": int(eval_sequence_count),
+            "eval_batch_count": int(eval_batch_count),
+            "eval_supervised_token_count": int(eval_supervised_token_count),
+            "tokens_total": int(eval_supervised_token_count),
             "tokens_per_second": token_throughput,
+            # Deprecated legacy aliases retained for downstream consumers expecting the
+            # old sample-count fields; these now map to the explicit unit-specific keys.
+            "eval_samples": int(eval_sequence_count),
             "batch_size": int(self.batch_size),
             "device": str(self.device),
             "hf_model_id": self.model_id,
@@ -631,6 +673,9 @@ class HFCore:
             "hf_weights_format": self.weight_format,
             "inference_only": bool(inference_only),
         }
+        if metric_instance_count is not None:
+            qos["metric_instance_count"] = int(metric_instance_count)
+
         if named_metrics and isinstance(named_metrics, dict):
             for mk, mv in named_metrics.items():
                 if mv is not None and not (isinstance(mv, float) and np.isnan(mv)):
