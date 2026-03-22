@@ -318,6 +318,11 @@ At minimum include:
 - `text_column` (source/prompt text)
 - `label_column` (target text; required for supervised train/perplexity)
 
+For HF generation preprocessing, explicit `dataset_args.column_mapping` always takes priority.
+Without it, `seq2seq_generation` auto-detects the first matching source/target columns in
+a fixed order, including common summarization and translation pairs such as
+`article` → `highlights`, `document` → `summary`, `question` → `answer`, and `src` → `tgt`.
+
 
 ### Multimodal manifest schema (paired image + text)
 

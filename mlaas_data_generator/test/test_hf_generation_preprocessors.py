@@ -2,6 +2,7 @@ import sys
 import types
 
 import numpy as np
+import pytest
 
 from mlaas_data_generator.data.preprocessors.hf import preprocess_hf
 
@@ -81,7 +82,7 @@ def test_seq2seq_generation_preprocessor_source_target_mapping():
     _install_fake_transformers()
     train_rows = [
         {"source_text": "summarize this long article", "target_text": "short summary"},
-        {"source_text": "another source", "target_text": "target output"},
+        {"source_text": "another source", "target_text": "target output with extra words"},
     ]
     test_rows = [{"source_text": "src", "target_text": "tgt"}]
 
@@ -139,3 +140,67 @@ def test_causal_lm_generation_preprocessor_single_text_column():
     assert np.array_equal(y_test[non_pad_test], x_test["input_ids"][non_pad_test])
     assert np.all(y_train[~non_pad_train] == -100)
     assert np.all(y_test[~non_pad_test] == -100)
+
+
+def test_seq2seq_generation_preprocessor_article_highlights_mapping():
+    _install_fake_transformers()
+    train_rows = [
+        {"article": "Long article body", "highlights": "Short summary"},
+        {"article": "Another document", "highlights": "Another summary"},
+    ]
+    test_rows = [{"article": "Held-out article", "highlights": "Held-out summary"}]
+
+    train, test, meta = preprocess_hf(
+        (DummySplit(train_rows), None),
+        (DummySplit(test_rows), None),
+        {"hf_task": "seq2seq_generation", "modality": "text", "max_length": 10, "hf_id": "dummy"},
+        hf_model_id="dummy/model",
+        source_max_length=7,
+        target_max_length=5,
+        dynamic_padding=True,
+    )
+
+    x_train, y_train = train
+    x_test, y_test = test
+
+    assert x_train["input_ids"].shape[0] == y_train.shape[0]
+    assert x_test["input_ids"].shape[0] == y_test.shape[0]
+    assert meta["column_mapping"] == {"source": "article", "target": "highlights"}
+
+
+def test_seq2seq_generation_preprocessor_column_mapping_overrides_heuristics():
+    _install_fake_transformers()
+    train_rows = [
+        {"article": "Heuristic source", "highlights": "Heuristic target", "src": "Mapped source", "tgt": "Mapped target"},
+    ]
+    test_rows = [
+        {"article": "Heuristic source test", "highlights": "Heuristic target test", "src": "Mapped source test", "tgt": "Mapped target test"},
+    ]
+
+    _, _, meta = preprocess_hf(
+        (DummySplit(train_rows), None),
+        (DummySplit(test_rows), None),
+        {"hf_task": "seq2seq_generation", "modality": "text", "max_length": 10, "hf_id": "dummy"},
+        hf_model_id="dummy/model",
+        column_mapping={"source": "src", "target": "tgt"},
+        source_max_length=7,
+        target_max_length=5,
+        dynamic_padding=True,
+    )
+
+    assert meta["column_mapping"] == {"source": "src", "target": "tgt"}
+
+
+def test_seq2seq_generation_preprocessor_raises_without_plausible_target():
+    _install_fake_transformers()
+    train_rows = [{"article": "Long article body", "document": "Duplicate candidate source"}]
+    test_rows = [{"article": "Held-out article", "document": "Held-out duplicate source"}]
+
+    with pytest.raises(ValueError, match="Could not resolve target column"):
+        preprocess_hf(
+            (DummySplit(train_rows), None),
+            (DummySplit(test_rows), None),
+            {"hf_task": "seq2seq_generation", "modality": "text", "max_length": 10, "hf_id": "dummy"},
+            hf_model_id="dummy/model",
+            dynamic_padding=True,
+        )
