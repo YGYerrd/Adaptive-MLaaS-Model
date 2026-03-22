@@ -433,7 +433,7 @@ class ImageClassificationSpec(HFTaskSpec):
 
 
 class ObjectDetectionSpec(HFTaskSpec):
-    name = "object_detection"
+    name = "image_detection"
 
     def __init__(self, score_threshold=0.05):
         self.score_threshold = float(score_threshold)
