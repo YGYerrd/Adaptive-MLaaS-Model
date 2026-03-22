@@ -29,6 +29,9 @@ def get_cached_tokenizer(*, hf_model_id, task, device, transformers_module):
 
     if getattr(tok, "pad_token_id", None) is None and getattr(tok, "eos_token_id", None) is not None:
         tok.pad_token = tok.eos_token
+    task_name = str(task or "").strip().lower()
+    if task_name == "causal_lm_generation":
+        tok.padding_side = "left"
 
     load_s = float(time.time() - t0)
     with _CACHE_LOCK:

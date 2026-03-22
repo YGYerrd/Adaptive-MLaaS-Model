@@ -49,6 +49,86 @@ def get_mlm_masked_token_stats(y, *, ignore_index=-100, top_k=10):
         "top_masked_token_ids": top,
     }
 
+
+
+def get_token_label_stats(y, *, ignore_index=-100, pad_token_id=None, top_k=10):
+    """Return summary stats for token-label tasks like generation."""
+    if y is None:
+        return {
+            "total_tokens": 0,
+            "supervised_tokens": 0,
+            "supervised_ratio": 0.0,
+            "unique_supervised_token_ids": 0,
+            "top_supervised_token_ids": {},
+        }
+
+    y_arr = np.asarray(y)
+    if y_arr.size == 0:
+        return {
+            "total_tokens": 0,
+            "supervised_tokens": 0,
+            "supervised_ratio": 0.0,
+            "unique_supervised_token_ids": 0,
+            "top_supervised_token_ids": {},
+        }
+
+    y_flat = y_arr.reshape(-1)
+    total_tokens = int(y_flat.size)
+
+    mask = np.ones(total_tokens, dtype=bool)
+    if ignore_index is not None:
+        mask &= (y_flat != int(ignore_index))
+    if pad_token_id is not None:
+        mask &= (y_flat != int(pad_token_id))
+
+    supervised = y_flat[mask]
+    supervised_tokens = int(supervised.size)
+    supervised_ratio = float(supervised_tokens / max(1, total_tokens))
+
+    if supervised_tokens == 0:
+        return {
+            "total_tokens": total_tokens,
+            "supervised_tokens": 0,
+            "supervised_ratio": supervised_ratio,
+            "unique_supervised_token_ids": 0,
+            "top_supervised_token_ids": {},
+        }
+
+    try:
+        supervised = supervised.astype("int64", copy=False)
+    except Exception:
+        cleaned = []
+        for token in supervised:
+            if token is None:
+                continue
+            try:
+                cleaned.append(int(token))
+            except Exception:
+                continue
+        supervised = np.asarray(cleaned, dtype="int64")
+        supervised_tokens = int(supervised.size)
+        supervised_ratio = float(supervised_tokens / max(1, total_tokens))
+        if supervised_tokens == 0:
+            return {
+                "total_tokens": total_tokens,
+                "supervised_tokens": 0,
+                "supervised_ratio": supervised_ratio,
+                "unique_supervised_token_ids": 0,
+                "top_supervised_token_ids": {},
+            }
+
+    token_ids, counts = np.unique(supervised, return_counts=True)
+    order = np.argsort(counts)[::-1][: int(top_k)]
+    top = {int(token_ids[i]): int(counts[i]) for i in order}
+
+    return {
+        "total_tokens": total_tokens,
+        "supervised_tokens": supervised_tokens,
+        "supervised_ratio": supervised_ratio,
+        "unique_supervised_token_ids": int(token_ids.size),
+        "top_supervised_token_ids": top,
+    }
+
 def get_data_distribution(
     y,
     num_classes=None,
