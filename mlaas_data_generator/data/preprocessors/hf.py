@@ -10,6 +10,14 @@ from .hf_image import preprocess_hf_image
 from .hf_multimodal import preprocess_hf_multimodal
 
 
+IMAGE_TASK_TYPES = {
+    "image_classification": "classification",
+    "image_detection": "detection",
+    "image_segmentation": "segmentation",
+}
+_IMAGE_TASKS = frozenset(IMAGE_TASK_TYPES)
+
+
 _EXPECTED_BATCH_KEYS = {
     "sequence_classification": {"input_ids", "attention_mask"},
     "token_classification": {"input_ids", "attention_mask"},
@@ -67,6 +75,10 @@ def _resolve_dataset_loader_template(meta, dataset_args):
     return str(template).strip().lower() if template else None
 
 
+def _resolve_image_hf_task(meta, dataset_args):
+    return _normalize_hf_task(meta.get("hf_task", dataset_args.get("hf_task", meta.get("task_type"))))
+
+
 def _resolve_text_hf_task(meta, dataset_args):
     template = _resolve_dataset_loader_template(meta, dataset_args)
     if template == "hf_text_generation":
@@ -114,14 +126,23 @@ def _validate_hf_preprocessor_output(train, test, meta):
 
 def preprocess_hf(train, test, meta, **dataset_args):
     modality = str(meta.get("modality", "text")).strip().lower()
+    hf_task = _resolve_image_hf_task(meta, dataset_args)
     hf_model_id = dataset_args.get("hf_model_id")
     if not hf_model_id:
         raise ValueError("HF preprocessing requires hf_model_id in dataset_args")
 
-    if modality == "image":
-        task_type = str(meta.get("task_type", "classification")).strip().lower()
-        hf_task = f"image_{task_type}"
+    if hf_task in _IMAGE_TASKS or modality == "image":
+        if hf_task in _IMAGE_TASKS:
+            task_type = IMAGE_TASK_TYPES[hf_task]
+        else:
+            task_type = str(meta.get("task_type", "classification")).strip().lower()
+            hf_task = _normalize_hf_task(f"image_{task_type}")
+            if hf_task not in _IMAGE_TASKS:
+                raise ValueError(f"Unsupported HF image task: {hf_task}")
+            task_type = IMAGE_TASK_TYPES[hf_task]
         meta["hf_task"] = hf_task
+        meta["modality"] = "image"
+        meta["task_type"] = task_type
         out = preprocess_hf_image(
             train,
             test,
@@ -160,6 +181,7 @@ def preprocess_hf(train, test, meta, **dataset_args):
 
     hf_task = _resolve_text_hf_task(meta, dataset_args)
     meta["hf_task"] = hf_task
+    meta["modality"] = "text"
 
     if hf_task == "sequence_classification":
         out = preprocess_hf_text_sequence(
