@@ -1,6 +1,13 @@
 import numpy as np
 
 
+_TASK_COLUMN_DEFAULTS = {
+    "visual_question_answering": {"text_column": "question", "label_column": "answer"},
+    "text_image_retrieval": {"text_column": "text", "label_column": None},
+    "image_captioning": {"text_column": "text", "label_column": None},
+}
+
+
 def _has_value(value):
     if value is None:
         return False
@@ -116,17 +123,53 @@ def _encode_split(
     return x, y
 
 
+def _resolve_multimodal_columns(
+    hf_task,
+    image_column,
+    text_column,
+    label_column,
+    question_column,
+    answer_column,
+    ranking_label_column,
+):
+    task = str(hf_task or "multimodal").strip().lower().replace("-", "_")
+    defaults = _TASK_COLUMN_DEFAULTS.get(task, {})
+
+    resolved_text_column = text_column
+    resolved_label_column = label_column
+
+    if task == "visual_question_answering":
+        resolved_text_column = question_column or (
+            defaults.get("text_column", "question") if text_column in {None, "", "text"} else text_column
+        )
+        resolved_label_column = answer_column or (
+            defaults.get("label_column", "answer") if label_column in {None, "", "label"} else label_column
+        )
+    elif task == "text_image_retrieval":
+        resolved_text_column = text_column or defaults.get("text_column", "text")
+        resolved_label_column = ranking_label_column if ranking_label_column is not None else label_column
+    elif task == "image_captioning":
+        resolved_text_column = text_column or defaults.get("text_column", "text")
+        resolved_label_column = label_column
+
+    return task, image_column, resolved_text_column, resolved_label_column
+
+
 def preprocess_hf_multimodal(
     train,
     test,
     meta,
     *,
     hf_model_id,
+    hf_task="multimodal",
     image_column="image",
     text_column="text",
     label_column=None,
     max_length=128,
     missing_pair_handling="drop",
+    question_column=None,
+    answer_column=None,
+    ranking_label_column=None,
 ):
     try:
         from transformers import AutoTokenizer, AutoImageProcessor
@@ -139,6 +182,16 @@ def preprocess_hf_multimodal(
 
     ds_train, _ = train
     ds_test, _ = test
+
+    hf_task, image_column, text_column, label_column = _resolve_multimodal_columns(
+        hf_task,
+        image_column,
+        text_column,
+        label_column,
+        question_column,
+        answer_column,
+        ranking_label_column,
+    )
 
     tokenizer = AutoTokenizer.from_pretrained(hf_model_id, use_fast=True)
     image_processor = AutoImageProcessor.from_pretrained(hf_model_id)
@@ -180,6 +233,7 @@ def preprocess_hf_multimodal(
     meta.update(
         {
             "modality": "multimodal",
+            "hf_task": hf_task,
             "hf_processor": hf_model_id,
             "image_column": image_column,
             "text_column": text_column,
@@ -189,6 +243,7 @@ def preprocess_hf_multimodal(
                 "image_column": image_column,
                 "text_column": text_column,
                 "label_column": label_column,
+                "task": hf_task,
                 "pair_validation": {
                     "missing_pair_handling": policy,
                     "train": train_report,

@@ -10,6 +10,12 @@ from .hf_image import preprocess_hf_image
 from .hf_multimodal import preprocess_hf_multimodal
 
 
+MULTIMODAL_TASK_TYPES = {
+    "text_image_retrieval",
+    "visual_question_answering",
+    "image_captioning",
+}
+
 IMAGE_TASK_TYPES = {
     "image_classification": "classification",
     "image_detection": "detection",
@@ -29,6 +35,9 @@ _EXPECTED_BATCH_KEYS = {
     "image_detection": {"pixel_values"},
     "image_segmentation": {"pixel_values"},
     "multimodal": {"input_ids", "attention_mask", "pixel_values"},
+    "text_image_retrieval": {"input_ids", "attention_mask", "pixel_values"},
+    "visual_question_answering": {"input_ids", "attention_mask", "pixel_values"},
+    "image_captioning": {"input_ids", "attention_mask", "pixel_values"},
 }
 
 _DATASET_TEMPLATE_TO_TASK = {
@@ -65,6 +74,11 @@ def _normalize_hf_task(hf_task):
         "detection": "image_detection",
         "semantic_segmentation": "image_segmentation",
         "segmentation": "image_segmentation",
+        "image_text_retrieval": "text_image_retrieval",
+        "retrieval": "text_image_retrieval",
+        "vqa": "visual_question_answering",
+        "visual_qa": "visual_question_answering",
+        "captioning": "image_captioning",
     }
     return aliases.get(task, task)
 
@@ -126,7 +140,11 @@ def _validate_hf_preprocessor_output(train, test, meta):
 
 def preprocess_hf(train, test, meta, **dataset_args):
     modality = str(meta.get("modality", "text")).strip().lower()
-    hf_task = _resolve_image_hf_task(meta, dataset_args)
+    hf_task = _normalize_hf_task(meta.get("hf_task", dataset_args.get("hf_task", meta.get("task_type"))))
+
+    if hf_task in MULTIMODAL_TASK_TYPES and modality != "multimodal":
+        modality = "multimodal"
+
     hf_model_id = dataset_args.get("hf_model_id")
     if not hf_model_id:
         raise ValueError("HF preprocessing requires hf_model_id in dataset_args")
@@ -162,17 +180,24 @@ def preprocess_hf(train, test, meta, **dataset_args):
         return _validate_hf_preprocessor_output(*out)
 
     if modality == "multimodal":
-        meta["hf_task"] = "multimodal"
+        if hf_task not in MULTIMODAL_TASK_TYPES:
+            hf_task = "multimodal"
+        meta["hf_task"] = hf_task
+        meta["modality"] = "multimodal"
         out = preprocess_hf_multimodal(
             train,
             test,
             meta,
             hf_model_id=hf_model_id,
+            hf_task=hf_task,
             image_column=dataset_args.get("image_column", "image"),
             text_column=dataset_args.get("text_column", "text"),
             label_column=dataset_args.get("label_column"),
             max_length=dataset_args.get("max_length", meta.get("max_length", 128)),
             missing_pair_handling=dataset_args.get("missing_pair_handling", "drop"),
+            question_column=dataset_args.get("question_column"),
+            answer_column=dataset_args.get("answer_column"),
+            ranking_label_column=dataset_args.get("ranking_label_column"),
         )
         return _validate_hf_preprocessor_output(*out)
 
