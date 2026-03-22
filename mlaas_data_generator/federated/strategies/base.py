@@ -185,6 +185,10 @@ class ClientOutcome:
     avg_host_ram_mb: float | None
     payload: dict | list | None   # weights for NN, None for clustering
     extras: dict                  # extra columns per task
+    sequence_count: int | None = None
+    supervised_token_count: int | None = None
+    aggregation_weight_unit: str | None = None
+    aggregation_weight_value: float | None = None
 
 class TaskStrategy:
     """Base class: thin wrapper around your existing per-task logic."""

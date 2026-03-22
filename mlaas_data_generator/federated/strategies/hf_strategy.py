@@ -1,5 +1,6 @@
 # hf_strategy.py
 import time
+import math
 import numpy as np
 
 from .base import TaskStrategy, ClientOutcome, _nanmean, weights_size, metric_score_value
@@ -31,6 +32,87 @@ class HFStrategy(TaskStrategy):
     # -------------------------
     # Logging + scoring policies
     # -------------------------
+    def _weighting_policy(self):
+        task = str(self.hf_task or "").lower()
+        token_weighted_tasks = {
+            "token_classification",
+            "token-cls",
+            "ner",
+            "fill_mask",
+            "masked_lm",
+            "mlm",
+            "causal_lm_generation",
+            "causal-lm",
+            "language-modeling",
+            "language_modeling",
+            "seq2seq_generation",
+        }
+        sequence_weighted_tasks = {
+            "sequence_classification",
+            "text_classification",
+            "sentence_similarity",
+            "image_classification",
+        }
+        if task in token_weighted_tasks:
+            return "supervised_token_count"
+        if task in sequence_weighted_tasks:
+            return "sequence_count"
+
+        accounting = (self.meta or {}).get("accounting") if isinstance(self.meta, dict) else {}
+        if accounting.get("supervised_token_count"):
+            return "supervised_token_count"
+        return "sequence_count"
+
+    def _resolve_client_weighting(self, samples_count, extras=None):
+        extras = extras if isinstance(extras, dict) else {}
+
+        def _intish(*keys):
+            for key in keys:
+                value = extras.get(key)
+                if value is None:
+                    continue
+                try:
+                    return int(value)
+                except Exception:
+                    continue
+            return None
+
+        sequence_count = _intish(
+            "train_sequence_count",
+            "eval_sequence_count",
+            "sequence_count",
+            "eval_samples",
+            "train_samples",
+        )
+        if sequence_count is None:
+            sequence_count = int(samples_count)
+
+        supervised_token_count = _intish(
+            "train_supervised_token_count",
+            "eval_supervised_token_count",
+            "supervised_token_count",
+            "tokens_total",
+            "train_loss_denominator_count",
+        )
+
+        weight_unit = self._weighting_policy()
+        if weight_unit == "supervised_token_count":
+            weight_value = supervised_token_count
+        else:
+            weight_unit = "sequence_count"
+            weight_value = sequence_count
+
+        if weight_value is None or weight_value <= 0:
+            weight_unit = "sequence_count"
+            weight_value = sequence_count if sequence_count and sequence_count > 0 else int(samples_count)
+
+        return {
+            "sequence_count": int(sequence_count) if sequence_count is not None else None,
+            "supervised_token_count": int(supervised_token_count) if supervised_token_count is not None else None,
+            "aggregation_weight_unit": weight_unit,
+            "aggregation_weight_value": float(weight_value),
+        }
+
     def _metric_score(self, primary_metric_value):
         if primary_metric_value != primary_metric_value:
             return np.nan
@@ -71,6 +153,7 @@ class HFStrategy(TaskStrategy):
             "length_penalty": ds_args.get("length_penalty") or self.config.get("length_penalty"),
             "max_train_time_s": self.knobs.get("max_train_time_s", self.config.get("max_train_time_s", 60)),
             "padding_mode": ("dynamic" if ds_args.get("dynamic_padding") else "max_length"),
+            "aggregation_weight_unit": self._weighting_policy(),
         }
 
         dataset = {
@@ -216,6 +299,7 @@ class HFStrategy(TaskStrategy):
                 usage = tracker.stop(duration)
 
                 mscore = self._metric_score(primary)
+                weighting = self._resolve_client_weighting(samples_count, qos)
 
                 return ClientOutcome(
                     participated=True,
@@ -242,6 +326,7 @@ class HFStrategy(TaskStrategy):
                     avg_host_ram_mb=usage.avg_host_ram_mb,
                     payload=None,
                     extras=qos if isinstance(qos, dict) else {},
+                    **weighting,
                 )
 
             # fine-tune mode
@@ -263,6 +348,7 @@ class HFStrategy(TaskStrategy):
                 extras.update(train_qos)
             if isinstance(eval_qos, dict):
                 extras.update(eval_qos)
+            weighting = self._resolve_client_weighting(samples_count, extras)
 
             return ClientOutcome(
                 participated=True,
@@ -289,11 +375,14 @@ class HFStrategy(TaskStrategy):
                 avg_host_ram_mb=usage.avg_host_ram_mb,
                 payload=payload,
                 extras=extras,
+                **weighting,
             )
 
         except Exception as e:
             duration = time.time() - start
             usage = tracker.stop(duration or 1e-9)
+
+            weighting = self._resolve_client_weighting(samples_count, {})
 
             return ClientOutcome(
                 participated=False,
@@ -320,6 +409,7 @@ class HFStrategy(TaskStrategy):
                 avg_host_ram_mb=usage.avg_host_ram_mb,
                 payload=None,
                 extras={},
+                **weighting,
             )
 
     def aggregate_and_eval(self, global_model, client_payloads, client_outcomes, round_idx, x_train, x_test, y_test):
@@ -328,41 +418,42 @@ class HFStrategy(TaskStrategy):
             return np.nan, np.nan, np.nan, np.nan
 
         if self.inference_only:
-            if self.hf_task == "fill_mask":
-                weights = []
-                for o in participated:
-                    extras = getattr(o, "extras", {}) if hasattr(o, "extras") else {}
-                    token_w = 0
-                    if isinstance(extras, dict):
-                        token_w = int(extras.get("tokens_total") or 0)
-                    weights.append(float(max(1, token_w)))
+            weights = []
+            for o in participated:
+                value = getattr(o, "aggregation_weight_value", None)
+                if value is None or not math.isfinite(float(value)) or float(value) <= 0:
+                    value = getattr(o, "sequence_count", None) or getattr(o, "samples_count", 1)
+                weights.append(float(value))
 
-                def _weighted(values, ws):
-                    pairs = [(float(v), float(w)) for v, w in zip(values, ws) if v == v and w > 0]
-                    if not pairs:
-                        return np.nan
-                    vals, wts = zip(*pairs)
-                    return float(np.average(vals, weights=wts))
+            def _weighted(values, ws):
+                pairs = [(float(v), float(w)) for v, w in zip(values, ws) if v == v and w > 0]
+                if not pairs:
+                    return np.nan
+                vals, wts = zip(*pairs)
+                return float(np.average(vals, weights=wts))
 
-                loss = _weighted([o.loss for o in participated], weights)
+            loss = _weighted([o.loss for o in participated], weights)
+            stats = self._collect_metric_stats(participated)
+            derived = self._metrics_from_stats(stats)
+            if derived is not None:
+                primary, secondary = derived
+            else:
                 primary = _weighted([o.metric_value for o in participated], weights)
                 secondary = _weighted([o.extra_metric for o in participated], weights)
-            else:
-                loss = _nanmean([o.loss for o in participated])
-                stats = self._collect_metric_stats(participated)
-                derived = self._metrics_from_stats(stats)
-                if derived is not None:
-                    primary, secondary = derived
-                else:
-                    primary = _nanmean([o.metric_value for o in participated])
-                    secondary = _nanmean([o.extra_metric for o in participated])
             mscore = self._metric_score(primary)
             return loss, primary, mscore, secondary
 
         adapter = global_model if global_model is not None else self.build_model()
 
         payloads = [o.payload for o in participated if o.payload is not None]
-        weights = [float(o.samples_count) for o in participated if o.payload is not None]
+        weights = []
+        for o in participated:
+            if o.payload is None:
+                continue
+            value = getattr(o, "aggregation_weight_value", None)
+            if value is None or not math.isfinite(float(value)) or float(value) <= 0:
+                value = getattr(o, "sequence_count", None) or getattr(o, "samples_count", 1)
+            weights.append(float(value))
 
         if payloads:
             agg = aggregate_state_dict(payloads, weights=weights)
