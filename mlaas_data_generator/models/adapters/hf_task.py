@@ -808,6 +808,29 @@ class CausalLMGenerationSpec(HFTaskSpec):
     requires_num_labels = False
     supports_generation = True
 
+    @staticmethod
+    def _left_pad_batch(tokenizer, input_ids, attention_mask):
+        pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
+        if pad_id is None:
+            return input_ids, attention_mask
+
+        ids_np = np.asarray(input_ids)
+        mask_np = np.asarray(attention_mask)
+        if ids_np.ndim != 2 or mask_np.ndim != 2 or ids_np.shape != mask_np.shape:
+            return input_ids, attention_mask
+
+        shifted_ids = np.full(ids_np.shape, int(pad_id), dtype=ids_np.dtype)
+        shifted_mask = np.zeros(mask_np.shape, dtype=mask_np.dtype)
+
+        for row_idx in range(ids_np.shape[0]):
+            valid = int(mask_np[row_idx].sum())
+            if valid <= 0:
+                continue
+            shifted_ids[row_idx, -valid:] = ids_np[row_idx, :valid]
+            shifted_mask[row_idx, -valid:] = mask_np[row_idx, :valid]
+
+        return shifted_ids, shifted_mask
+
     def build_model(self, transformers, model_id, num_labels):
         AutoModel = transformers.AutoModelForCausalLM
         self.weight_format = None
@@ -824,7 +847,15 @@ class CausalLMGenerationSpec(HFTaskSpec):
 
     def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
         if isinstance(xb, dict):
-            enc = {k: torch.tensor(v, dtype=torch.long, device=device) for k, v in xb.items() if k in {"input_ids", "attention_mask", "token_type_ids"}}
+            batch = {k: v for k, v in xb.items() if k in {"input_ids", "attention_mask", "token_type_ids"}}
+            if inference_only and "input_ids" in batch and "attention_mask" in batch:
+                batch["input_ids"], batch["attention_mask"] = self._left_pad_batch(
+                    tokenizer,
+                    batch["input_ids"],
+                    batch["attention_mask"],
+                )
+            enc = {k: torch.tensor(v, dtype=torch.long, device=device) for k, v in batch.items()}
+            labels_t = None if yb is None else torch.tensor(yb, dtype=torch.long, device=device)
             labels_t = None if yb is None else torch.tensor(yb, dtype=torch.long, device=device)
             return enc, labels_t, {"ignore_index": int(ignore_index)}
 
@@ -863,7 +894,10 @@ class CausalLMGenerationSpec(HFTaskSpec):
         return torch.argmax(logits, dim=-1)
 
     def generate_predictions(self, model, enc, tokenizer, torch, generation_config):
-        generated = model.generate(**enc, **generation_config)
+        cfg = dict(generation_config)
+        if cfg.get("pad_token_id") is None and tokenizer.pad_token_id is not None:
+            cfg["pad_token_id"] = int(tokenizer.pad_token_id)
+        generated = model.generate(**enc, **cfg)
         in_len = enc["input_ids"].shape[1]
         return generated[:, in_len:]
 
