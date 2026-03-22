@@ -1,6 +1,7 @@
 #base.p
 from dataclasses import dataclass
 import numpy as np
+from ...hf_tasks import normalize_hf_task as shared_normalize_hf_task
 from ...models.label_schema import infer_num_labels
 
 
@@ -33,32 +34,7 @@ def _nanmean(values):
 
 def normalize_hf_task(hf_task: str | None) -> str:
     """Normalize user/provider HF task aliases to canonical names."""
-    task = (hf_task or "").strip().lower().replace("-", "_")
-    mapping = {
-        "text_classification": "sequence_classification",
-        "seq_cls": "sequence_classification",
-        "sequence_cls": "sequence_classification",
-        "token_cls": "token_classification",
-        "ner": "token_classification",
-        "masked_lm": "fill_mask",
-        "mlm": "fill_mask",
-        "text_generation": "causal_lm_generation",
-        "causal_lm": "causal_lm_generation",
-        "text2text": "seq2seq_generation",
-        "text2text_generation": "seq2seq_generation",
-        "vision_classification": "image_classification",
-        "image_cls": "image_classification",
-        "object_detection": "image_detection",
-        "detection": "image_detection",
-        "semantic_segmentation": "image_segmentation",
-        "segmentation": "image_segmentation",
-        "image_to_text": "image_captioning",
-        "image_caption": "image_captioning",
-        "image_text_retrieval": "text_image_retrieval",
-        "retrieval": "text_image_retrieval",
-        "vqa": "visual_question_answering",
-    }
-    return mapping.get(task, task or "unknown")
+    return shared_normalize_hf_task(hf_task, default="unknown", unknown="unknown")
 
 
 def canonical_task_family(task_type: str | None, hf_task: str | None = None) -> str:
@@ -138,7 +114,7 @@ def canonical_generation_metrics(task_tag: str | None, has_labels: bool) -> tupl
         base = ("rouge1", "rouge2", "rougeL")
     elif tag == "translation":
         base = ("sacrebleu",)
-    elif tag in {"captioning", "image_captioning", "image_to_text"}:
+    elif tag in {"captioning", "image_captioning"}:
         base = ("cider", "bleu")
     else:
         base = tuple()

@@ -63,8 +63,8 @@ def test_image_classification_routing_and_deterministic_eval():
     assert meta["hf_task"] == "image_classification"
     assert x_train["pixel_values"].shape == (2, 3, 4, 4)
     assert x_test["pixel_values"].shape == (1, 3, 4, 4)
-    assert float(x_train["pixel_values"][0, 0, 0, 0]) == 0.1
-    assert float(x_test["pixel_values"][0, 0, 0, 0]) != 0.1
+    assert np.isclose(float(x_train["pixel_values"][0, 0, 0, 0]), 0.1)
+    assert not np.isclose(float(x_test["pixel_values"][0, 0, 0, 0]), 0.1)
     assert y_train.dtype == np.int64
     assert y_test.dtype == np.int64
 
@@ -114,3 +114,49 @@ def test_image_detection_schema_passthrough():
     assert meta["schema"]["detection"]["boxes_column"] == "boxes"
     assert y_train[0]["boxes"].shape == (1, 4)
     assert y_train[0]["classes"].shape == (1,)
+
+
+def test_image_task_dispatch_uses_hf_task_when_modality_missing():
+    _install_fake_transformers()
+    train_rows = [{"image": np.zeros((3, 3, 3), dtype=np.uint8), "label": 1}]
+    test_rows = [{"image": np.ones((3, 3, 3), dtype=np.uint8), "label": 0}]
+
+    train, test, meta = preprocess_hf(
+        (DummySplit(train_rows), None),
+        (DummySplit(test_rows), None),
+        {"hf_task": "image_classification", "hf_id": "dummy"},
+        hf_model_id="dummy/vision",
+    )
+
+    x_train, y_train = train
+    x_test, y_test = test
+    assert meta["modality"] == "image"
+    assert meta["task_type"] == "classification"
+    assert meta["hf_task"] == "image_classification"
+    assert x_train["pixel_values"].shape == (1, 3, 3, 3)
+    assert x_test["pixel_values"].shape == (1, 3, 3, 3)
+    assert y_train.tolist() == [1]
+    assert y_test.tolist() == [0]
+
+
+def test_image_task_dispatch_normalizes_detection_alias_with_wrong_modality():
+    _install_fake_transformers()
+    train_rows = [{"image": np.zeros((2, 2, 3), dtype=np.uint8), "boxes": [[0, 0, 1, 1]], "classes": [2]}]
+    test_rows = [{"image": np.zeros((2, 2, 3), dtype=np.uint8), "boxes": [], "classes": []}]
+
+    train, test, meta = preprocess_hf(
+        (DummySplit(train_rows), None),
+        (DummySplit(test_rows), None),
+        {"hf_task": "object_detection", "modality": "text", "hf_id": "dummy"},
+        hf_model_id="dummy/vision",
+        boxes_column="boxes",
+        classes_column="classes",
+    )
+
+    _, y_train = train
+    _, y_test = test
+    assert meta["modality"] == "image"
+    assert meta["task_type"] == "detection"
+    assert meta["hf_task"] == "image_detection"
+    assert y_train[0]["boxes"].shape == (1, 4)
+    assert y_test[0]["boxes"].shape == (0, 4)

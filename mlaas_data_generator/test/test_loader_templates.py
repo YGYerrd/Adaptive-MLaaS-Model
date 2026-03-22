@@ -58,3 +58,22 @@ def test_model_loader_templates_override_legacy_hf_task():
     task, spec = build_task_spec("fill_mask", loader_template="hf_sentence_similarity", num_labels=1, label_format="continuous")
     assert task == "sentence_similarity"
     assert spec.name == "sentence_similarity"
+
+
+
+def test_aliases_normalize_identically_across_preprocess_and_model_paths():
+    aliases = {
+        "object_detection": "image_detection",
+        "detection": "image_detection",
+        "semantic_segmentation": "image_segmentation",
+        "segmentation": "image_segmentation",
+        "image_to_text": "image_captioning",
+        "retrieval": "text_image_retrieval",
+        "vqa": "visual_question_answering",
+    }
+
+    for alias, canonical in aliases.items():
+        assert hf_preprocessors.normalize_hf_task(alias) == canonical
+        assert resolve_hf_task(hf_task=alias) == canonical
+
+

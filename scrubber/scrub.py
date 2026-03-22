@@ -7,6 +7,8 @@ from typing import Any
 
 from huggingface_hub import HfApi
 
+from mlaas_data_generator.hf_tasks import PIPELINE_TAG_TO_HF_TASK, resolve_hf_task_spec
+
 
 
 @dataclass(frozen=True)
@@ -18,64 +20,27 @@ class TaskSpec:
 
 
 TASK_SPECS: dict[str, TaskSpec] = {
-    "text_classification": TaskSpec(
-        pipeline_tag="text-classification",
-        hf_task="sequence_classification",
-    ),
-    "token_classification": TaskSpec(
-        pipeline_tag="token-classification",
-        hf_task="token_classification",
-    ),
-    "sentence_similarity": TaskSpec(
-        pipeline_tag="sentence-similarity",
-        hf_task="sentence_similarity",
-    ),
-    "fill_mask": TaskSpec(
-        pipeline_tag="fill-mask",
-        hf_task="fill_mask",
-    ),
-    "text_generation": TaskSpec(
-        pipeline_tag="text-generation",
-        hf_task="causal_lm_generation",
-        task_tag="language-modeling",
-    ),
-    "text2text_generation": TaskSpec(
-        pipeline_tag="text2text-generation",
-        hf_task="seq2seq_generation",
-    ),
-    "image_classification": TaskSpec(
-        pipeline_tag="image-classification",
-        hf_task="image_classification",
-        modality="image",
-    ),
-    "object_detection": TaskSpec(
-        pipeline_tag="object-detection",
-        hf_task="object_detection",
-        modality="image",
-    ),
-    "image_segmentation": TaskSpec(
-        pipeline_tag="image-segmentation",
-        hf_task="image_segmentation",
-        modality="image",
-    ),
-    "image_captioning": TaskSpec(
-        pipeline_tag="image-to-text",
-        hf_task="image_captioning",
-        modality="multimodal",
-        task_tag="captioning",
-    ),
-    "text_image_retrieval": TaskSpec(
-        pipeline_tag="zero-shot-image-classification",
-        hf_task="text_image_retrieval",
-        modality="multimodal",
-        task_tag="retrieval",
-    ),
-    "visual_question_answering": TaskSpec(
-        pipeline_tag="visual-question-answering",
-        hf_task="visual_question_answering",
-        modality="multimodal",
-        task_tag="vqa",
-    ),
+    task_key: TaskSpec(
+        pipeline_tag=pipeline_tag,
+        hf_task=spec.hf_task,
+        modality=spec.modality,
+        task_tag=("language-modeling" if spec.hf_task == "causal_lm_generation" else spec.task_tag),
+    )
+    for pipeline_tag, task_key in (
+        ("text-classification", "text_classification"),
+        ("token-classification", "token_classification"),
+        ("sentence-similarity", "sentence_similarity"),
+        ("fill-mask", "fill_mask"),
+        ("text-generation", "text_generation"),
+        ("text2text-generation", "text2text_generation"),
+        ("image-classification", "image_classification"),
+        ("object-detection", "object_detection"),
+        ("image-segmentation", "image_segmentation"),
+        ("image-to-text", "image_captioning"),
+        ("zero-shot-image-classification", "text_image_retrieval"),
+        ("visual-question-answering", "visual_question_answering"),
+    )
+    for spec in (resolve_hf_task_spec(PIPELINE_TAG_TO_HF_TASK[pipeline_tag]),)
 }
 
 

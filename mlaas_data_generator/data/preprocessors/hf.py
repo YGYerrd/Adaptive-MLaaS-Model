@@ -8,6 +8,17 @@ from .hf_text_generation import (
 )
 from .hf_image import preprocess_hf_image
 from .hf_multimodal import preprocess_hf_multimodal
+from ...hf_tasks import (
+    HF_TASK_MODALITY,
+    IMAGE_TASK_TYPES,
+    normalize_hf_task,
+    resolve_dataset_hf_task,
+    resolve_hf_task_spec,
+)
+
+
+_MULTIMODAL_TASKS = frozenset(task for task, modality in HF_TASK_MODALITY.items() if modality == "multimodal" and task != "multimodal")
+_IMAGE_TASKS = frozenset(IMAGE_TASK_TYPES)
 
 
 _EXPECTED_BATCH_KEYS = {
@@ -21,45 +32,10 @@ _EXPECTED_BATCH_KEYS = {
     "image_detection": {"pixel_values"},
     "image_segmentation": {"pixel_values"},
     "multimodal": {"input_ids", "attention_mask", "pixel_values"},
+    "text_image_retrieval": {"input_ids", "attention_mask", "pixel_values"},
+    "visual_question_answering": {"input_ids", "attention_mask", "pixel_values"},
+    "image_captioning": {"input_ids", "attention_mask", "pixel_values"},
 }
-
-_DATASET_TEMPLATE_TO_TASK = {
-    "hf_text_classification": "sequence_classification",
-    "hf_token_classification": "token_classification",
-    "hf_sentence_pair_classification": "sentence_similarity",
-    "hf_masked_lm": "fill_mask",
-    "hf_causal_lm": "causal_lm_generation",
-    "hf_seq2seq": "seq2seq_generation",
-    # backwards compatibility
-    "hf_text_sequence": "sequence_classification",
-    "hf_text_token": "token_classification",
-    "hf_text_similarity": "sentence_similarity",
-    "hf_text_fill_mask": "fill_mask",
-    "hf_text_generation": None,
-}
-
-
-def _normalize_hf_task(hf_task):
-    task = str(hf_task or "sequence_classification").strip().lower().replace("-", "_")
-    aliases = {
-        "text_classification": "sequence_classification",
-        "seq_cls": "sequence_classification",
-        "token_cls": "token_classification",
-        "masked_lm": "fill_mask",
-        "mlm": "fill_mask",
-        "text_generation": "causal_lm_generation",
-        "causal_lm": "causal_lm_generation",
-        "text2text": "seq2seq_generation",
-        "text2text_generation": "seq2seq_generation",
-        "vision_classification": "image_classification",
-        "image_cls": "image_classification",
-        "object_detection": "image_detection",
-        "detection": "image_detection",
-        "semantic_segmentation": "image_segmentation",
-        "segmentation": "image_segmentation",
-    }
-    return aliases.get(task, task)
-
 
 def _resolve_dataset_loader_template(meta, dataset_args):
     dataset_meta = meta.get("dataset_args") if isinstance(meta.get("dataset_args"), dict) else {}
@@ -68,17 +44,12 @@ def _resolve_dataset_loader_template(meta, dataset_args):
 
 
 def _resolve_text_hf_task(meta, dataset_args):
-    template = _resolve_dataset_loader_template(meta, dataset_args)
-    if template == "hf_text_generation":
-        task_tag = str(meta.get("task_tag") or dataset_args.get("task_tag") or "").strip().lower().replace("-", "_")
-        pipeline_tag = str(meta.get("pipeline_tag") or dataset_args.get("pipeline_tag") or "").strip().lower()
-        if task_tag in {"summarization", "translation", "seq2seq", "text2text"} or pipeline_tag == "text2text-generation":
-            return "seq2seq_generation"
-        return "causal_lm_generation"
-    mapped = _DATASET_TEMPLATE_TO_TASK.get(template)
-    if mapped:
-        return mapped
-    return _normalize_hf_task(meta.get("hf_task", dataset_args.get("hf_task", "sequence_classification")))
+    return resolve_dataset_hf_task(
+        loader_template=_resolve_dataset_loader_template(meta, dataset_args),
+        hf_task=meta.get("hf_task", dataset_args.get("hf_task", "sequence_classification")),
+        task_tag=meta.get("task_tag") or dataset_args.get("task_tag"),
+        pipeline_tag=meta.get("pipeline_tag") or dataset_args.get("pipeline_tag"),
+    )
 
 
 def _validate_hf_preprocessor_output(train, test, meta):
@@ -113,15 +84,28 @@ def _validate_hf_preprocessor_output(train, test, meta):
 
 
 def preprocess_hf(train, test, meta, **dataset_args):
-    modality = str(meta.get("modality", "text")).strip().lower()
+    requested_modality = str(meta.get("modality", "text")).strip().lower()
+    requested_task = meta.get("hf_task", dataset_args.get("hf_task", meta.get("task_type")))
+    hf_task = normalize_hf_task(requested_task)
+    canonical_modality = HF_TASK_MODALITY.get(hf_task)
+    modality = requested_modality if requested_modality in {"image", "multimodal"} else (canonical_modality or requested_modality)
+
     hf_model_id = dataset_args.get("hf_model_id")
     if not hf_model_id:
         raise ValueError("HF preprocessing requires hf_model_id in dataset_args")
 
     if modality == "image":
-        task_type = str(meta.get("task_type", "classification")).strip().lower()
-        hf_task = f"image_{task_type}"
+        if hf_task not in _IMAGE_TASKS:
+            task_type = str(meta.get("task_type", "classification")).strip().lower()
+            hf_task = normalize_hf_task(f"image_{task_type}")
+        task_spec = resolve_hf_task_spec(hf_task)
+        if task_spec.hf_task not in _IMAGE_TASKS:
+            raise ValueError(f"Unsupported HF image task: {hf_task}")
+        hf_task = task_spec.hf_task
+        task_type = task_spec.task_type
         meta["hf_task"] = hf_task
+        meta["modality"] = "image"
+        meta["task_type"] = task_type
         out = preprocess_hf_image(
             train,
             test,
@@ -141,17 +125,24 @@ def preprocess_hf(train, test, meta, **dataset_args):
         return _validate_hf_preprocessor_output(*out)
 
     if modality == "multimodal":
-        meta["hf_task"] = "multimodal"
+        if hf_task not in _MULTIMODAL_TASKS:
+            hf_task = "multimodal"
+        meta["hf_task"] = hf_task
+        meta["modality"] = "multimodal"
         out = preprocess_hf_multimodal(
             train,
             test,
             meta,
             hf_model_id=hf_model_id,
+            hf_task=hf_task,
             image_column=dataset_args.get("image_column", "image"),
             text_column=dataset_args.get("text_column", "text"),
             label_column=dataset_args.get("label_column"),
             max_length=dataset_args.get("max_length", meta.get("max_length", 128)),
             missing_pair_handling=dataset_args.get("missing_pair_handling", "drop"),
+            question_column=dataset_args.get("question_column"),
+            answer_column=dataset_args.get("answer_column"),
+            ranking_label_column=dataset_args.get("ranking_label_column"),
         )
         return _validate_hf_preprocessor_output(*out)
 
@@ -160,6 +151,7 @@ def preprocess_hf(train, test, meta, **dataset_args):
 
     hf_task = _resolve_text_hf_task(meta, dataset_args)
     meta["hf_task"] = hf_task
+    meta["modality"] = "text"
 
     if hf_task == "sequence_classification":
         out = preprocess_hf_text_sequence(

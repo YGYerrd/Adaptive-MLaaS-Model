@@ -1,5 +1,6 @@
 from .hf_core import HFCore
 from .hf_cache import get_cached_model
+from ...hf_tasks import resolve_model_hf_task
 from .hf_task import (
     SequenceClassificationSpec,
     SentenceSimilaritySpec,
@@ -16,50 +17,8 @@ from .hf_task import (
 )
 
 
-def _normalize_hf_task_name(hf_task):
-    task = str(hf_task or "sequence_classification").strip().lower().replace("-", "_")
-    aliases = {
-        "text_classification": "sequence_classification",
-        "seq_cls": "sequence_classification",
-        "token_cls": "token_classification",
-        "masked_lm": "fill_mask",
-        "mlm": "fill_mask",
-        "text_generation": "causal_lm_generation",
-        "causal_lm": "causal_lm_generation",
-        "text2text": "seq2seq_generation",
-        "text2text_generation": "seq2seq_generation",
-        "vision_classification": "image_classification",
-        "image_cls": "image_classification",
-        "object_detection": "image_detection",
-        "detection": "image_detection",
-        "semantic_segmentation": "image_segmentation",
-        "segmentation": "image_segmentation",
-    }
-    return aliases.get(task, task)
-
-
-_MODEL_TEMPLATE_TO_TASK = {
-    "hf_sequence_classification": "sequence_classification",
-    "hf_token_classification": "token_classification",
-    "hf_sentence_similarity": "sentence_similarity",
-    "hf_fill_mask": "fill_mask",
-    "hf_causal_lm": "causal_lm_generation",
-    "hf_seq2seq": "seq2seq_generation",
-    # backwards compatibility
-    "auto_sequence_classification": "sequence_classification",
-    "auto_token_classification": "token_classification",
-    "auto_masked_lm": "fill_mask",
-    "auto_causal_lm": "causal_lm_generation",
-    "auto_seq2seq_lm": "seq2seq_generation",
-}
-
-
 def resolve_hf_task(loader_template=None, hf_task=None):
-    template = str(loader_template).strip().lower() if loader_template else None
-    mapped = _MODEL_TEMPLATE_TO_TASK.get(template)
-    if mapped:
-        return mapped
-    return _normalize_hf_task_name(hf_task)
+    return resolve_model_hf_task(loader_template=loader_template, hf_task=hf_task)
 
 
 def build_task_spec(hf_task=None, *, loader_template=None, num_labels=None, multilabel=False, label_format="single_index"):
@@ -76,17 +35,17 @@ def build_task_spec(hf_task=None, *, loader_template=None, num_labels=None, mult
         return task, CausalLMGenerationSpec()
     if task == "seq2seq_generation":
         return task, Seq2SeqGenerationSpec()
-    if task in {"image_classification", "vision_classification"}:
+    if task == "image_classification":
         return "image_classification", ImageClassificationSpec()
-    if task in {"object_detection", "image_detection", "detection"}:
+    if task == "image_detection":
         return "image_detection", ObjectDetectionSpec()
-    if task in {"image_segmentation", "semantic_segmentation", "segmentation"}:
+    if task == "image_segmentation":
         return "image_segmentation", ImageSegmentationSpec()
-    if task in {"image_captioning", "image_to_text"}:
+    if task == "image_captioning":
         return "image_captioning", ImageCaptioningSpec()
-    if task in {"text_image_retrieval", "image_text_retrieval"}:
+    if task == "text_image_retrieval":
         return "text_image_retrieval", TextImageRetrievalSpec()
-    if task in {"visual_question_answering", "vqa"}:
+    if task == "visual_question_answering":
         return "visual_question_answering", VQASpec()
     return "sequence_classification", SequenceClassificationSpec(multilabel=multilabel, label_format=label_format)
 
