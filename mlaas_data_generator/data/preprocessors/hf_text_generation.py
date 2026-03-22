@@ -130,6 +130,7 @@ def preprocess_hf_text_causal_lm_generation(
     tokenizer = AutoTokenizer.from_pretrained(hf_model_id, use_fast=True)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "left"
 
     resolved = resolve_generation_columns(ds_train, column_mapping=column_mapping, hf_task="causal_lm_generation")
     prompt_col, target_col = resolved["source"], resolved["target"]
@@ -227,6 +228,8 @@ def preprocess_hf_text_causal_lm_generation(
         "source_max_length": src_max,
         "target_max_length": tgt_max,
         "dynamic_padding": bool(dynamic_padding),
+        "pad_token_id": int(tokenizer.pad_token_id),
+        "padding_side": str(getattr(tokenizer, "padding_side", "right")),
     })
     return (X_train, y_train), (X_test, y_test), meta2
 
@@ -252,6 +255,7 @@ def preprocess_hf_text_seq2seq_generation(
     tokenizer = AutoTokenizer.from_pretrained(hf_model_id, use_fast=True)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "left"
 
     resolved = resolve_generation_columns(ds_train, column_mapping=column_mapping, hf_task="seq2seq_generation")
     source_col, target_col = resolved["source"], resolved["target"]

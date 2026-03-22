@@ -20,6 +20,7 @@ class FakeTokenizer:
     pad_token_id = 0
     eos_token_id = 2
     pad_token = "<pad>"
+    padding_side = "right"
 
     @classmethod
     def from_pretrained(cls, *args, **kwargs):
@@ -204,3 +205,20 @@ def test_seq2seq_generation_preprocessor_raises_without_plausible_target():
             hf_model_id="dummy/model",
             dynamic_padding=True,
         )
+
+
+def test_causal_lm_generation_preprocessor_sets_left_padding_and_meta():
+    _install_fake_transformers()
+    train_rows = [{"text": "left pad me"}]
+    test_rows = [{"text": "and me too"}]
+
+    _, _, meta = preprocess_hf(
+        (DummySplit(train_rows), None),
+        (DummySplit(test_rows), None),
+        {"hf_task": "causal_lm_generation", "modality": "text", "max_length": 8, "hf_id": "dummy"},
+        hf_model_id="dummy/model",
+        dynamic_padding=True,
+    )
+
+    assert meta["padding_side"] == "left"
+    assert meta["pad_token_id"] == 0

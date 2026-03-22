@@ -9,7 +9,7 @@ from numbers import Number
 from ..config import CONFIG
 from ..data.master_loader import load_dataset
 from ..data.splitters import split_data
-from ..data.distributions import get_data_distribution, get_mlm_masked_token_stats
+from ..data.distributions import get_data_distribution, get_mlm_masked_token_stats, get_token_label_stats
 from ..storage.writer import make_writer
 from .strategies.factory import make_task_strategy
 from .strategies.base import canonical_task_family, canonical_label_format, canonical_metric_names, normalize_hf_task, metric_availability
@@ -462,12 +462,20 @@ class FederatedDataGenerator:
         print("Client data distributions before training:")
         client_distributions = {}
         is_fill_mask = self.task_family == "fill_mask"
-        ignore_index = int(self.meta.get("label_pad_value", -100))
+        is_generation = self.task_family == "generation"
+        ignore_index = int(self.meta.get("label_pad_value", self.meta.get("ignore_index", -100)))
+        pad_token_id = self.meta.get("pad_token_id")
         for client_id, data in clients.items():
             if is_fill_mask:
                 dist = get_mlm_masked_token_stats(
                     data["y"],
                     ignore_index=ignore_index,
+                )
+            elif is_generation:
+                dist = get_token_label_stats(
+                    data["y"],
+                    ignore_index=ignore_index,
+                    pad_token_id=pad_token_id,
                 )
             else:
                 dist = get_data_distribution(
