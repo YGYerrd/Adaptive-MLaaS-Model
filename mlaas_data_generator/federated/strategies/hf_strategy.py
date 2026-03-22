@@ -35,6 +35,9 @@ class HFStrategy(TaskStrategy):
         if primary_metric_value != primary_metric_value:
             return np.nan
 
+        if self.hf_task in ("causal_lm_generation", "causal-lm", "language-modeling", "language_modeling"):
+            return metric_score_value("regression", float(primary_metric_value))
+
         # token classification primary is typically F1 already in [0,1]
         if self.hf_task in ("token_classification", "token-cls", "ner"):
             return float(primary_metric_value)

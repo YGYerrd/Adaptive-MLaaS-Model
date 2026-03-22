@@ -1,8 +1,10 @@
+import numpy as np
 import pandas as pd
 
 from mlaas_data_generator.cli.manifest.hf_manifest_builder import MANIFEST_COLUMNS, build_hf_manifest
 from mlaas_data_generator.cli.run_manifest import _build_dataset_args, _resolve_row
-from mlaas_data_generator.federated.strategies.base import canonical_generation_metrics, metric_availability
+from mlaas_data_generator.federated.strategies.base import canonical_generation_metrics, canonical_metric_names, metric_availability
+from mlaas_data_generator.models.adapters.hf_task import CausalLMGenerationSpec
 from mlaas_data_generator.registry import DATASET_REGISTRY, MODEL_REGISTRY
 
 
@@ -68,10 +70,17 @@ def test_manifest_builder_uses_flat_registries_for_generation_rows():
 
 
 def test_generation_metric_availability_by_subtype():
+    assert canonical_generation_metrics(None, has_labels=True, hf_task="causal_lm_generation") == ("loss", "perplexity")
     assert canonical_generation_metrics("summarization", has_labels=True) == ("rouge1", "rouge2", "rougeL", "perplexity")
     assert canonical_generation_metrics("translation", has_labels=True) == ("sacrebleu", "perplexity")
     assert canonical_generation_metrics("translation", has_labels=False) == ("sacrebleu",)
     assert canonical_generation_metrics("captioning", has_labels=True) == ("cider", "bleu", "perplexity")
+
+    assert canonical_metric_names("generation", "loss", hf_task="causal_lm_generation") == ("loss", "perplexity")
+
+    causal_avail = metric_availability("generation", has_labels=True, hf_task="causal_lm_generation")
+    assert causal_avail["train"] == ("loss", "perplexity")
+    assert causal_avail["eval"] == ("loss", "perplexity")
 
     avail = metric_availability("generation", task_tag="summarization", has_labels=True)
     assert avail["train"] == ("loss", "perplexity")
@@ -113,3 +122,18 @@ def test_retrieval_and_vqa_metric_availability():
 
     vqa = metric_availability("vqa", has_labels=True)
     assert vqa["eval"] == ("exact_match",)
+
+
+def test_causal_lm_metrics_report_loss_as_primary_and_perplexity_as_secondary():
+    spec = CausalLMGenerationSpec()
+    out = spec.metrics(
+        np.asarray([[1, 2, 3]]),
+        np.asarray([[1, 4, 3]]),
+        y_extra={"loss_mean": 0.5},
+    )
+
+    assert np.isclose(out["primary"], 0.5)
+    assert np.isclose(out["secondary"], np.exp(0.5))
+    assert np.isclose(out["named_metrics"]["cross_entropy_loss"], 0.5)
+    assert np.isclose(out["named_metrics"]["perplexity"], np.exp(0.5))
+    assert np.isclose(out["named_metrics"]["token_accuracy"], 2 / 3)

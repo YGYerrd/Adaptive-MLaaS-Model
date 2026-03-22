@@ -83,7 +83,7 @@ def canonical_label_format(task_family: str) -> str:
     return mapping.get(task_family, "unknown")
 
 
-def canonical_metric_names(task_family: str, metric_key: str) -> tuple[str, str | None]:
+def canonical_metric_names(task_family: str, metric_key: str, *, hf_task: str | None = None, task_tag: str | None = None) -> tuple[str, str | None]:
     if task_family == "classification":
         return ("accuracy", "f1")
     if task_family == "token_classification":
@@ -93,6 +93,12 @@ def canonical_metric_names(task_family: str, metric_key: str) -> tuple[str, str 
     if task_family == "regression":
         return ("rmse", "mae")
     if task_family == "generation":
+        hf = normalize_hf_task(hf_task)
+        tag = (task_tag or "").strip().lower().replace("-", "_")
+        if hf == "causal_lm_generation":
+            return ("loss", "perplexity")
+        if hf == "seq2seq_generation" and tag in {"", "language_modeling", "language-modeling"}:
+            return ("loss", "perplexity")
         return ("perplexity", None)
     if task_family == "clustering":
         return ("silhouette", None)
@@ -107,8 +113,12 @@ def canonical_metric_names(task_family: str, metric_key: str) -> tuple[str, str 
     return ((metric_key or "metric").lower(), None)
 
 
-def canonical_generation_metrics(task_tag: str | None, has_labels: bool) -> tuple[str, ...]:
+def canonical_generation_metrics(task_tag: str | None, has_labels: bool, *, hf_task: str | None = None) -> tuple[str, ...]:
     """Decode-centric metric set for generation by subtype."""
+    hf = normalize_hf_task(hf_task)
+    if hf == "causal_lm_generation":
+        return ("loss", "perplexity") if has_labels else tuple()
+
     tag = (task_tag or "").strip().lower().replace("-", "_")
     if tag == "summarization":
         base = ("rouge1", "rouge2", "rougeL")
@@ -124,12 +134,12 @@ def canonical_generation_metrics(task_tag: str | None, has_labels: bool) -> tupl
     return base
 
 
-def metric_availability(task_family: str, task_tag: str | None = None, has_labels: bool = True) -> dict[str, tuple[str, ...]]:
+def metric_availability(task_family: str, task_tag: str | None = None, has_labels: bool = True, *, hf_task: str | None = None) -> dict[str, tuple[str, ...]]:
     """Return canonical train/eval metric availability by task family."""
     if task_family == "generation":
         return {
             "train": ("loss", "perplexity") if has_labels else tuple(),
-            "eval": canonical_generation_metrics(task_tag=task_tag, has_labels=has_labels),
+            "eval": canonical_generation_metrics(task_tag=task_tag, has_labels=has_labels, hf_task=hf_task),
         }
 
     if task_family == "retrieval":
