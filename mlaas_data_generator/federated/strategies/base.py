@@ -255,6 +255,7 @@ class TaskStrategy:
     
     def loggable_run_params(self):
         ds_args = self.config.get("dataset_args", {}) or {}
+        accounting = (self.meta or {}).get("accounting") if isinstance(self.meta, dict) else None
 
         adapter = {
             "optimizer": self.knobs.get("optimizer"),
@@ -271,6 +272,8 @@ class TaskStrategy:
         dataset = {}
         if ds_args:
             dataset["dataset_args"] = ds_args
+        if isinstance(accounting, dict):
+            dataset["accounting"] = accounting
 
         return {
             "adapter": adapter,

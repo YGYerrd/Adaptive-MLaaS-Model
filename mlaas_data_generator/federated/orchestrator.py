@@ -8,6 +8,7 @@ from numbers import Number
 
 from ..config import CONFIG
 from ..data.master_loader import load_dataset
+from ..data.accounting import finalize_accounting
 from ..data.splitters import split_data
 from ..data.distributions import get_data_distribution, get_mlm_masked_token_stats, get_token_label_stats
 from ..storage.writer import make_writer
@@ -196,9 +197,11 @@ class FederatedDataGenerator:
     
 
     def _canonical_run_metadata(self):
+        self.meta = finalize_accounting(self.meta, batch_size=self.knobs.get("batch_size"))
         hf_task = normalize_hf_task(getattr(self.strategy, "hf_task", self.hf_task))
         task_family = canonical_task_family(self.task_type, hf_task)
         label_format = infer_label_format(self.meta, task_type=self.task_type) or canonical_label_format(task_family)
+        accounting = self.meta.get("accounting", {}) if isinstance(self.meta, dict) else {}
         task_tag = str(self.config.get("task_tag") or self.config.get("dataset_args", {}).get("task_tag") or "").strip().lower() or None
         metric_primary_name, metric_secondary_name = canonical_metric_names(
             task_family,
@@ -224,6 +227,13 @@ class FederatedDataGenerator:
             "num_labels": infer_num_labels(self.meta, fallback=self.num_classes),
             "train_set_size": int(len(self.y_train)),
             "eval_set_size": int(len(self.y_test)),
+            "raw_record_count": accounting.get("raw_record_count"),
+            "post_filter_record_count": accounting.get("post_filter_record_count"),
+            "tokenized_record_count": accounting.get("tokenized_record_count"),
+            "sequence_count": accounting.get("sequence_count"),
+            "supervised_token_count": accounting.get("supervised_token_count"),
+            "batch_count": accounting.get("batch_count"),
+            "metric_instance_count": accounting.get("metric_instance_count"),
         }
 
     def _extract_dynamic_metrics(self, outcome):
@@ -587,6 +597,8 @@ class FederatedDataGenerator:
 
                 # dataset args (store as JSON)
                 writer.write_run_param(run_id, "dataset", "dataset_args", self.dataset_args)
+                if isinstance(self.meta, dict) and isinstance(self.meta.get("accounting"), dict):
+                    writer.write_run_param(run_id, "dataset", "accounting", self.meta["accounting"])
 
                 if is_hf_run:
                     if self.hf_task and self.hf_task != "unknown":

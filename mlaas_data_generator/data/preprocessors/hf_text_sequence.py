@@ -1,6 +1,7 @@
 import numpy as np
 
 from .label_schema import attach_label_schema
+from ..accounting import append_accounting_stage, finalize_accounting
 from ...models.adapters.hf_cache import get_cached_tokenizer
 
 
@@ -242,5 +243,30 @@ def preprocess_hf_text_sequence(
     })
     meta2["input_shape"] = (pad_to,)
     meta2 = attach_label_schema(meta2, y_train, default_num_labels=num_classes)
+    train_sequences = int(X_train["input_ids"].shape[0])
+    test_sequences = int(X_test["input_ids"].shape[0])
+    meta2 = append_accounting_stage(
+        meta2,
+        stage="hf_text_sequence",
+        split="train",
+        input_record_count=len(ds_train),
+        post_filter_record_count=len(ds_train),
+        tokenized_record_count=train_sequences,
+        emitted_record_count=train_sequences,
+        sequence_count=train_sequences,
+        metric_instance_count=train_sequences,
+    )
+    meta2 = append_accounting_stage(
+        meta2,
+        stage="hf_text_sequence",
+        split="test",
+        input_record_count=len(ds_test),
+        post_filter_record_count=len(ds_test),
+        tokenized_record_count=test_sequences,
+        emitted_record_count=test_sequences,
+        sequence_count=test_sequences,
+        metric_instance_count=test_sequences,
+    )
+    meta2 = finalize_accounting(meta2)
 
     return (X_train, y_train), (X_test, y_test), meta2
