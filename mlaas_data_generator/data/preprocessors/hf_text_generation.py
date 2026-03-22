@@ -1,6 +1,39 @@
 import numpy as np
 
 
+# Seq2seq auto-mapping priority is ordered from the most explicit generic schema
+# names to common summarization/translation aliases. The first match wins so the
+# behavior stays deterministic whenever multiple plausible columns are present.
+SEQ2SEQ_SOURCE_CANDIDATES = [
+    "source_text",
+    "input",
+    "prompt",
+    "instruction",
+    "text",
+    "source",
+    "article",
+    "document",
+    "context",
+    "question",
+    "src",
+    "input_text",
+]
+
+SEQ2SEQ_TARGET_CANDIDATES = [
+    "target_text",
+    "label",
+    "output",
+    "completion",
+    "response",
+    "target",
+    "highlights",
+    "summary",
+    "answer",
+    "tgt",
+    "output_text",
+]
+
+
 def _first_existing(columns, candidates):
     for name in candidates:
         if name in columns:
@@ -13,12 +46,8 @@ def resolve_generation_columns(ds_train, *, column_mapping=None, hf_task="causal
     mapping = dict(column_mapping or {})
 
     if hf_task == "seq2seq_generation":
-        source_col = mapping.get("source") or _first_existing(cols, [
-            "source_text", "input", "prompt", "instruction", "text", "source",
-        ])
-        target_col = mapping.get("target") or _first_existing(cols, [
-            "target_text", "label", "output", "completion", "response", "target",
-        ])
+        source_col = mapping.get("source") or _first_existing(cols, SEQ2SEQ_SOURCE_CANDIDATES)
+        target_col = mapping.get("target") or _first_existing(cols, SEQ2SEQ_TARGET_CANDIDATES)
         mode = "source_target"
     else:
         prompt_col = mapping.get("prompt") or _first_existing(cols, [
