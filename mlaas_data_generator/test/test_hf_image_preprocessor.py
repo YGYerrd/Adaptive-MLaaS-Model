@@ -35,8 +35,25 @@ class FakeImageProcessor:
         return {"pixel_values": arr}
 
 
+class FakeImageProcessorNoAugmentArg:
+    @classmethod
+    def from_pretrained(cls, *args, **kwargs):
+        return cls()
+
+    def __call__(self, image, return_tensors=None, do_resize=True, do_normalize=True):
+        arr = np.asarray(image, dtype=np.float32)
+        if do_normalize and arr.max() > 1:
+            arr = arr / 255.0
+        return {"pixel_values": arr}
+
+
 def _install_fake_transformers():
     fake_mod = types.SimpleNamespace(AutoImageProcessor=FakeImageProcessor)
+    sys.modules["transformers"] = fake_mod
+
+
+def _install_fake_transformers_no_augment_arg():
+    fake_mod = types.SimpleNamespace(AutoImageProcessor=FakeImageProcessorNoAugmentArg)
     sys.modules["transformers"] = fake_mod
 
 
@@ -162,3 +179,27 @@ def test_image_task_dispatch_normalizes_detection_alias_with_wrong_modality():
     assert meta["hf_task"] == "image_detection"
     assert y_train[0]["boxes"].shape == (1, 4)
     assert y_test[0]["boxes"].shape == (0, 4)
+
+
+def test_image_preprocessor_handles_processors_without_do_augment_arg():
+    _install_fake_transformers_no_augment_arg()
+    train_rows = [{"image": np.zeros((2, 2, 3), dtype=np.uint8), "boxes": [[0, 0, 1, 1]], "classes": [1]}]
+    test_rows = [{"image": np.zeros((2, 2, 3), dtype=np.uint8), "boxes": [[0, 0, 1, 1]], "classes": [1]}]
+
+    train, test, meta = preprocess_hf(
+        (DummySplit(train_rows), None),
+        (DummySplit(test_rows), None),
+        {"hf_task": "object_detection", "modality": "image", "task_type": "detection", "hf_id": "dummy"},
+        hf_model_id="dummy/vision",
+        boxes_column="boxes",
+        classes_column="classes",
+    )
+
+    x_train, y_train = train
+    x_test, y_test = test
+    assert x_train["pixel_values"].shape[0] == 1
+    assert x_test["pixel_values"].shape[0] == 1
+    assert len(y_train) == 1
+    assert len(y_test) == 1
+    assert meta["decode_report"]["train"]["failed"] == 0
+    assert meta["decode_report"]["test"]["failed"] == 0
