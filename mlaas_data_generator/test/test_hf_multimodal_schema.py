@@ -212,3 +212,40 @@ def test_hf_multimodal_vqa_defaults(monkeypatch):
     assert y_test.tolist() == ["home"]
     assert meta["text_column"] == "question"
     assert meta["label_column"] == "answer"
+
+
+def test_hf_multimodal_caption_fallback_and_image_dict_payload(monkeypatch):
+    train = DummyDS([
+        {"image": {"array": np.ones((8, 8, 3), dtype=np.uint8)}, "caption": "a cat"},
+    ])
+    test = DummyDS([
+        {"image": {"array": np.ones((8, 8, 3), dtype=np.uint8)}, "caption": "a dog"},
+    ])
+
+    class DummyTokenizer:
+        def __call__(self, text, **kwargs):
+            return {"input_ids": [1, 2, 0], "attention_mask": [1, 1, 0]}
+
+    class DummyImageProcessor:
+        def __call__(self, image, **kwargs):
+            chw = np.transpose(np.asarray(image, dtype=np.float32), (2, 0, 1))
+            return {"pixel_values": chw}
+
+    fake_tr = types.SimpleNamespace(
+        AutoTokenizer=types.SimpleNamespace(from_pretrained=lambda *a, **k: DummyTokenizer()),
+        AutoImageProcessor=types.SimpleNamespace(from_pretrained=lambda *a, **k: DummyImageProcessor()),
+    )
+    monkeypatch.setitem(sys.modules, "transformers", fake_tr)
+
+    (x_train, _), (x_test, _), meta = preprocess_hf_multimodal(
+        (train, None),
+        (test, None),
+        {},
+        hf_model_id="dummy/model",
+        hf_task="image_captioning",
+        text_column="text",
+    )
+
+    assert x_train["pixel_values"].shape[0] == 1
+    assert x_test["pixel_values"].shape[0] == 1
+    assert meta["text_column"] == "caption"
