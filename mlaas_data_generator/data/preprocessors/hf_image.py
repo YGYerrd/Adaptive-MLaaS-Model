@@ -138,22 +138,29 @@ def _process_split(
             "return_tensors": None,
             "do_resize": True,
             "do_normalize": True,
-            "do_augment": bool(training_enabled),
         }
+        supports_do_augment = ("do_augment" in accepted_params) or ("do_augment" in preprocess_params)
+        if supports_do_augment:
+            base_kwargs["do_augment"] = bool(training_enabled)
 
         if not accepts_kwargs and accepted_params:
             candidate_kwargs = {k: v for k, v in base_kwargs.items() if k in accepted_params}
         elif accepts_kwargs and preprocess_params and not preprocess_accepts_kwargs:
             candidate_kwargs = {k: v for k, v in base_kwargs.items() if k in preprocess_params}
+        elif accepts_kwargs and preprocess_params:
+            candidate_kwargs = {k: v for k, v in base_kwargs.items() if k in preprocess_params}
         else:
             candidate_kwargs = dict(base_kwargs)
 
-        call_attempts = [
-            dict(candidate_kwargs),
-            {k: v for k, v in candidate_kwargs.items() if k != "do_augment"},
-            {k: v for k, v in candidate_kwargs.items() if k in {"return_tensors"}},
-            {},
-        ]
+        call_attempts = [dict(candidate_kwargs)]
+        if "do_augment" in candidate_kwargs:
+            call_attempts.append({k: v for k, v in candidate_kwargs.items() if k != "do_augment"})
+        call_attempts.extend(
+            [
+                {k: v for k, v in candidate_kwargs.items() if k in {"return_tensors"}},
+                {},
+            ]
+        )
 
         last_err = None
         for kwargs in call_attempts:
@@ -207,7 +214,18 @@ def _process_split(
         else:
             labels.append(None)
 
-    x = {"pixel_values": np.asarray(images, dtype=np.float32)} if on_decode_error != "report" else {"pixel_values": images}
+    if on_decode_error != "report":
+        try:
+            stacked_images = np.stack(images, axis=0).astype(np.float32, copy=False)
+        except ValueError as e:
+            unique_shapes = sorted({tuple(np.asarray(img).shape) for img in images})
+            raise ValueError(
+                "pixel values have inconsistent shapes after preprocessing; this usually means resizing "
+                f"was not applied consistently. observed shapes={unique_shapes}"
+            ) from e
+        x = {"pixel_values": stacked_images}
+    else:
+        x = {"pixel_values": images}
     if task_type == "classification":
         y = np.asarray(labels, dtype=np.int64)
     else:
