@@ -126,3 +126,91 @@ def test_aggregate_and_eval_uses_sequence_weights_for_image_classification(monke
     assert math.isclose(primary, 0.75)
     assert math.isclose(score, 0.75)
     assert math.isclose(secondary, 0.5)
+
+
+def test_loggable_run_params_image_schema_omits_text_defaults():
+    strategy = HFStrategy(
+        meta={"modality": "image"},
+        knobs={"batch_size": 2, "local_epochs": 1, "learning_rate": 1e-4},
+        config={
+            "model_type": "hf_finetune",
+            "dataset_args": {
+                "hf_task": "image_detection",
+                "dataset_name": "dummy",
+                "image_column": "image",
+                "label_column": "label",
+                "boxes_column": "boxes",
+                "classes_column": "classes",
+            },
+        },
+        x_test=[],
+        y_test=[],
+        metric_key="accuracy",
+        save_weights=False,
+    )
+
+    params = strategy.loggable_run_params()
+    assert "padding_mode" not in params["adapter"]
+    assert params["dataset"]["image_column"] == "image"
+    assert params["dataset"]["boxes_column"] == "boxes"
+    assert params["dataset"]["classes_column"] == "classes"
+    assert "text_column" not in params["dataset"]
+    assert "tokens_column" not in params["dataset"]
+    assert "padding_mode" not in params["dataset"]
+
+
+def test_loggable_run_params_multimodal_includes_pair_integrity_and_both_schemas():
+    strategy = HFStrategy(
+        meta={"modality": "multimodal"},
+        knobs={"batch_size": 2, "local_epochs": 1, "learning_rate": 1e-4},
+        config={
+            "model_type": "hf_finetune",
+            "dataset_args": {
+                "hf_task": "visual_question_answering",
+                "dataset_name": "dummy",
+                "image_column": "image",
+                "text_column": "question",
+                "label_column": "answer",
+                "missing_pair_handling": "drop",
+                "dynamic_padding": True,
+            },
+        },
+        x_test=[],
+        y_test=[],
+        metric_key="accuracy",
+        save_weights=False,
+    )
+
+    params = strategy.loggable_run_params()
+    assert params["adapter"]["padding_mode"] == "dynamic"
+    assert params["dataset"]["image_column"] == "image"
+    assert params["dataset"]["text_column"] == "question"
+    assert params["dataset"]["label_column"] == "answer"
+    assert params["dataset"]["missing_pair_handling"] == "drop"
+    assert params["dataset"]["padding_mode"] == "dynamic"
+
+
+def test_loggable_run_params_infers_image_modality_from_hf_task():
+    strategy = HFStrategy(
+        meta={},
+        knobs={"batch_size": 2, "local_epochs": 1, "learning_rate": 1e-4},
+        config={
+            "model_type": "hf_finetune",
+            "dataset_args": {
+                "hf_task": "image_segmentation",
+                "dataset_name": "dummy",
+                "image_column": "image",
+                "mask_column": "mask",
+            },
+        },
+        x_test=[],
+        y_test=[],
+        metric_key="accuracy",
+        save_weights=False,
+    )
+
+    params = strategy.loggable_run_params()
+    assert params["dataset"]["image_column"] == "image"
+    assert params["dataset"]["mask_column"] == "mask"
+    assert "text_column" not in params["dataset"]
+    assert "padding_mode" not in params["adapter"]
