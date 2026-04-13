@@ -74,6 +74,15 @@ def _validate_hf_preprocessor_output(train, test, meta):
 
     train_count = len(next(iter(x_train.values())))
     test_count = len(next(iter(x_test.values())))
+    if train_count == 0 or test_count == 0:
+        train_split = meta.get("train_split", "train")
+        test_split = meta.get("test_split", "test")
+        raise ValueError(
+            f"HF preprocessor output validation failed for task '{hf_task}': "
+            f"zero samples detected "
+            f"(split='{train_split}', count={train_count}; split='{test_split}', count={test_count}). "
+            f"Expected keys={sorted(expected)}."
+        )
     if train_count != len(y_train) or test_count != len(y_test):
         raise ValueError(
             f"HF preprocessor output validation failed for task '{hf_task}': feature/label batch mismatch."

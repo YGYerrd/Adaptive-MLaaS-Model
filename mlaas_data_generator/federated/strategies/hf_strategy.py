@@ -276,6 +276,35 @@ class HFStrategy(TaskStrategy):
 
     def train_client(self, client_id, x, y, global_model, round_idx, rounds_so_far, comm_down):
         samples_count = len(y)
+        if samples_count == 0:
+            weighting = self._resolve_client_weighting(samples_count, {})
+            return ClientOutcome(
+                participated=False,
+                fail_reason="Client received zero samples after preprocessing/partitioning",
+                samples_count=samples_count,
+                duration=0.0,
+                loss=np.nan,
+                metric_value=np.nan,
+                metric_score=np.nan,
+                extra_metric=np.nan,
+                rounds_so_far=rounds_so_far - 1,
+                comm_down=(0 if self.inference_only else comm_down),
+                comm_up=0,
+                cpu_time_s=0.0,
+                cpu_utilization=0.0,
+                memory_used_mb=0.0,
+                memory_utilization=0.0,
+                gpu_utilization=0.0,
+                gpu_memory_utilization=0.0,
+                gpu_memory_used_mb=0.0,
+                peak_vram_mb=0.0,
+                avg_vram_mb=0.0,
+                peak_host_ram_mb=0.0,
+                avg_host_ram_mb=0.0,
+                payload=None,
+                extras={},
+                **weighting,
+            )
 
         start = time.time()
         tracker = ResourceTracker()
