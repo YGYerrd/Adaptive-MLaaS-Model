@@ -41,3 +41,9 @@ def test_segmentation_metrics_from_statistics_iou_and_dice():
     )
     assert np.isclose(out["primary"], 0.5)
     assert np.isclose(out["secondary"], 2 * 30 / (40 + 50))
+
+
+def test_image_specs_do_not_require_tokenizer():
+    assert ImageClassificationSpec.requires_tokenizer is False
+    assert ObjectDetectionSpec.requires_tokenizer is False
+    assert ImageSegmentationSpec.requires_tokenizer is False

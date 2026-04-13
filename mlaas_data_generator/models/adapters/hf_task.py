@@ -17,6 +17,7 @@ class HFTaskSpec:
     name = "base"
 
     requires_num_labels = True
+    requires_tokenizer = True
     supports_generation = False
 
     def build_model(self, transformers, model_id, num_labels):
@@ -378,6 +379,7 @@ class TokenClassificationSpec(HFTaskSpec):
 
 class ImageClassificationSpec(HFTaskSpec):
     name = "image_classification"
+    requires_tokenizer = False
 
     def build_model(self, transformers, model_id, num_labels):
         return transformers.AutoModelForImageClassification.from_pretrained(
@@ -434,6 +436,7 @@ class ImageClassificationSpec(HFTaskSpec):
 
 class ObjectDetectionSpec(HFTaskSpec):
     name = "image_detection"
+    requires_tokenizer = False
 
     def __init__(self, score_threshold=0.05):
         self.score_threshold = float(score_threshold)
@@ -565,6 +568,7 @@ class ObjectDetectionSpec(HFTaskSpec):
 
 class ImageSegmentationSpec(HFTaskSpec):
     name = "image_segmentation"
+    requires_tokenizer = False
 
     def build_model(self, transformers, model_id, num_labels):
         return transformers.AutoModelForSemanticSegmentation.from_pretrained(

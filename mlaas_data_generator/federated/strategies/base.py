@@ -42,6 +42,19 @@ def canonical_task_family(task_type: str | None, hf_task: str | None = None) -> 
     base = (task_type or "").strip().lower()
     hf = normalize_hf_task(hf_task)
 
+    if base in {"image_classification"}:
+        return "classification"
+    if base in {"object_detection", "image_detection", "detection"}:
+        return "detection"
+    if base in {"image_segmentation", "semantic_segmentation", "segmentation"}:
+        return "segmentation"
+    if base in {"generation", "text_generation", "text2text_generation", "image_captioning"}:
+        return "generation"
+    if base in {"retrieval", "text_image_retrieval", "image_text_retrieval"}:
+        return "retrieval"
+    if base in {"vqa", "visual_question_answering", "visual_qa"}:
+        return "vqa"
+
     if base == "clustering":
         return "clustering"
     if base == "regression":
