@@ -170,8 +170,10 @@ def _shrink_dataset(x, y, sample_size=None, sample_frac=None, rng=None):
     n = _num_samples(x)
     if sample_size is None and sample_frac is None:
         return x, y
+    requested_size = None if sample_size is None else int(sample_size)
     if sample_frac is not None:
-        sample_size = int(round(n * float(sample_frac)))
+        frac_size = int(round(n * float(sample_frac)))
+        sample_size = frac_size if requested_size is None else min(requested_size, frac_size)
     sample_size = max(0, min(n, int(sample_size)))
     idx = seed.choice(n, size=sample_size, replace=False)
 
