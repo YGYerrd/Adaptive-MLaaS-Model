@@ -129,6 +129,21 @@ class HFStrategy(TaskStrategy):
 
     def loggable_run_params(self):
         ds_args = self.config.get("dataset_args", {}) or {}
+        task = str(self.hf_task or "").strip().lower().replace("-", "_")
+
+        inferred_modality = ((self.meta or {}).get("modality") if isinstance(self.meta, dict) else None)
+        inferred_modality = str(inferred_modality or "").strip().lower()
+        if inferred_modality not in {"text", "image", "multimodal"}:
+            image_tasks = {"image_classification", "image_detection", "image_segmentation"}
+            multimodal_tasks = {"image_captioning", "text_image_retrieval", "visual_question_answering", "multimodal"}
+            if task in image_tasks:
+                inferred_modality = "image"
+            elif task in multimodal_tasks:
+                inferred_modality = "multimodal"
+            else:
+                inferred_modality = "text"
+
+        uses_tokenization = inferred_modality in {"text", "multimodal"}
 
         hf_model_id = ds_args.get("hf_model_id") or self.config.get("hf_model_id")
         max_length  = ds_args.get("max_length") or self.config.get("max_length")
@@ -152,22 +167,33 @@ class HFStrategy(TaskStrategy):
             "top_p": ds_args.get("top_p") or self.config.get("top_p"),
             "length_penalty": ds_args.get("length_penalty") or self.config.get("length_penalty"),
             "max_train_time_s": self.knobs.get("max_train_time_s", self.config.get("max_train_time_s", 60)),
-            "padding_mode": ("dynamic" if ds_args.get("dynamic_padding") else "max_length"),
             "aggregation_weight_unit": self._weighting_policy(),
         }
+        if uses_tokenization:
+            adapter["padding_mode"] = ("dynamic" if ds_args.get("dynamic_padding") else "max_length")
 
         dataset = {
             "dataset_name": ds_args.get("dataset_name"),
             "dataset_config": ds_args.get("dataset_config"),
             "train_split": ds_args.get("train_split"),
             "test_split": ds_args.get("test_split"),
-            "text_column": ds_args.get("text_column"),
-            "tokens_column": ds_args.get("tokens_column"),
-            "label_column": ds_args.get("label_column"),
             "max_samples": ds_args.get("max_samples"),
-            "dynamic_padding": ds_args.get("dynamic_padding"),
-            "padding_mode": ("dynamic" if ds_args.get("dynamic_padding") else "max_length"),
         }
+        if inferred_modality in {"text", "multimodal"}:
+            dataset["text_column"] = ds_args.get("text_column")
+            dataset["tokens_column"] = ds_args.get("tokens_column")
+        if inferred_modality in {"image", "multimodal"}:
+            dataset["image_column"] = ds_args.get("image_column")
+            dataset["boxes_column"] = ds_args.get("boxes_column")
+            dataset["classes_column"] = ds_args.get("classes_column")
+            dataset["mask_column"] = ds_args.get("mask_column")
+        if inferred_modality in {"image", "multimodal"} or task in {"sequence_classification", "token_classification", "sentence_similarity"}:
+            dataset["label_column"] = ds_args.get("label_column")
+        if inferred_modality == "multimodal":
+            dataset["missing_pair_handling"] = ds_args.get("missing_pair_handling")
+        if uses_tokenization:
+            dataset["dynamic_padding"] = ds_args.get("dynamic_padding")
+            dataset["padding_mode"] = ("dynamic" if ds_args.get("dynamic_padding") else "max_length")
 
         adapter = {k: v for k, v in adapter.items() if v is not None}
         dataset = {k: v for k, v in dataset.items() if v is not None}
