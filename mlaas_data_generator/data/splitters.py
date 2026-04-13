@@ -22,6 +22,19 @@ def _num_samples(x):
         return int(len(first))
     return int(len(x))
 
+
+def _is_scalar_label_vector(y):
+    """True when labels are a 1D vector of per-example scalar class ids."""
+    arr = np.asarray(y, dtype=object)
+    if arr.ndim != 1:
+        return False
+    if arr.size == 0:
+        return True
+    sample = arr[0]
+    if isinstance(sample, (list, tuple, dict, np.ndarray)):
+        return False
+    return True
+
 def _build_clients_from_indices(x, y, indices_by_client: dict):
     clients = {}
     for cid, idx in indices_by_client.items():
@@ -191,6 +204,14 @@ def split_data(x, y, num_clients, strategy = "iid", distribution_param = None, c
         x,y = _shrink_dataset(x=x, y=y, sample_frac=sample_frac, sample_size=sample_size, rng=rng)
     
     resolved = {"strategy": strategy, "distribution_param": None}
+    requires_scalar_labels = {"dirichlet", "shard", "label_per_client", "custom"}
+    if strategy in requires_scalar_labels and not _is_scalar_label_vector(y):
+        resolved["strategy"] = "iid"
+        resolved["fallback_reason"] = (
+            f"strategy='{strategy}' requires scalar class labels; "
+            "falling back to iid split for structured/token labels"
+        )
+        return _split_iid(x, y, num_clients, rng=rng), resolved
 
     if num_clients <= 0:
         raise ValueError("num_clients must be positive.")

@@ -927,6 +927,8 @@ class CausalLMGenerationSpec(HFTaskSpec):
         return torch.argmax(logits, dim=-1)
 
     def generate_predictions(self, model, enc, tokenizer, torch, generation_config):
+        if getattr(tokenizer, "padding_side", None) != "left":
+            tokenizer.padding_side = "left"
         cfg = dict(generation_config)
         if cfg.get("pad_token_id") is None and tokenizer.pad_token_id is not None:
             cfg["pad_token_id"] = int(tokenizer.pad_token_id)
