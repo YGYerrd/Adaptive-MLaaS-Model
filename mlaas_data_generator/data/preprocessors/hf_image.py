@@ -26,6 +26,8 @@ def _to_numpy_rgb(image_like):
         arr = _decode_bytes(image_like)
     elif isinstance(image_like, str):
         arr = _decode_path(image_like)
+    elif hasattr(image_like, "__array__") or hasattr(image_like, "__array_interface__"):
+        arr = np.asarray(image_like)
     else:
         raise TypeError(f"unsupported image payload type={type(image_like)}")
 
