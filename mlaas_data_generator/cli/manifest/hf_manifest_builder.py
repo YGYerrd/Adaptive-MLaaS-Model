@@ -15,25 +15,27 @@ from mlaas_data_generator.registry import DATASET_REGISTRY, MODEL_REGISTRY
 class TaskSpec:
     pipeline_tag: str
     hf_task: str
+    modality: str
     task_type: str
     task_label: str
     task_tag: str | None = None
 
 
 TASK_SPECS: dict[str, TaskSpec] = {
-    "text_classification": TaskSpec("text-classification", "sequence_classification", "classification", "textcls"),
-    "token_classification": TaskSpec("token-classification", "token_classification", "classification", "tokencls"),
-    "sentence_similarity": TaskSpec("sentence-similarity", "sentence_similarity", "classification", "pairscore"),
-    "fill_mask": TaskSpec("fill-mask", "fill_mask", "classification", "fillmask"),
-    "text_generation": TaskSpec("text-generation", "causal_lm_generation", "classification", "textgen", "language-modeling"),
-    "text2text_generation": TaskSpec("text2text-generation", "seq2seq_generation", "classification", "text2text", "summarization"),
-    "image_classification": TaskSpec("image-classification", "image_classification", "classification", "imgcls"),
-    "object_detection": TaskSpec("object-detection", "image_detection", "detection", "objdet"),
-    "image_segmentation": TaskSpec("image-segmentation", "image_segmentation", "segmentation", "imgseg"),
-    "image_captioning": TaskSpec("image-to-text", "image_captioning", "generation", "imgcap", "captioning"),
+    "text_classification": TaskSpec("text-classification", "sequence_classification", "text", "classification", "textcls"),
+    "token_classification": TaskSpec("token-classification", "token_classification", "text", "classification", "tokencls"),
+    "sentence_similarity": TaskSpec("sentence-similarity", "sentence_similarity", "text", "classification", "pairscore"),
+    "fill_mask": TaskSpec("fill-mask", "fill_mask", "text", "classification", "fillmask"),
+    "text_generation": TaskSpec("text-generation", "causal_lm_generation", "text", "classification", "textgen", "language-modeling"),
+    "text2text_generation": TaskSpec("text2text-generation", "seq2seq_generation", "text", "classification", "text2text", "summarization"),
+    "image_classification": TaskSpec("image-classification", "image_classification", "image", "classification", "imgcls"),
+    "object_detection": TaskSpec("object-detection", "image_detection", "image", "detection", "objdet"),
+    "image_segmentation": TaskSpec("image-segmentation", "image_segmentation", "image", "segmentation", "imgseg"),
+    "image_captioning": TaskSpec("image-to-text", "image_captioning", "multimodal", "generation", "imgcap", "captioning"),
     "text_image_retrieval": TaskSpec(
         "zero-shot-image-classification",
         "text_image_retrieval",
+        "multimodal",
         "retrieval",
         "imgtxtret",
         "retrieval",
@@ -41,6 +43,7 @@ TASK_SPECS: dict[str, TaskSpec] = {
     "visual_question_answering": TaskSpec(
         "visual-question-answering",
         "visual_question_answering",
+        "multimodal",
         "vqa",
         "vqa",
         "vqa",
