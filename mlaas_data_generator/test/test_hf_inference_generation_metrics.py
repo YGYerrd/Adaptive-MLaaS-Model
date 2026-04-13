@@ -52,6 +52,7 @@ class DummyTokenizer:
 class DummyGenerationModel:
     def __init__(self):
         self.forward_calls = 0
+        self.config = type("Cfg", (), {"is_encoder_decoder": False})()
 
     def eval(self):
         return self
@@ -174,6 +175,7 @@ def test_hfcore_eval_inference_only_generation_uses_teacher_forced_labels_for_me
     assert qos["eval_supervised_token_count"] == 4
     assert qos["tokens_total"] == 4
     assert core.model.forward_calls == 1
+    assert core.tokenizer.padding_side == "left"
 
 
 def test_causal_lm_encode_batch_left_pads_dict_inputs_even_without_labels():

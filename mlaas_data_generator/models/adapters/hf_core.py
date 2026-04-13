@@ -120,6 +120,14 @@ class HFCore:
         except Exception:
             return "cpu"
 
+    def _ensure_left_padding_for_decoder_only_generation(self):
+        if not bool(getattr(self.task_spec, "supports_generation", False)):
+            return
+        model_cfg = getattr(self.model, "config", None)
+        is_encoder_decoder = bool(getattr(model_cfg, "is_encoder_decoder", False))
+        if not is_encoder_decoder and getattr(self.tokenizer, "padding_side", None) != "left":
+            self.tokenizer.padding_side = "left"
+
     def _batch_iter(self, xs, ys):
         bs = self.batch_size
 
@@ -538,6 +546,7 @@ class HFCore:
                         eval_supervised_token_count += supervised_token_count
 
                 if bool(inference_only) and bool(getattr(self.task_spec, "supports_generation", False)):
+                    self._ensure_left_padding_for_decoder_only_generation()
                     if not first_batch_logged:
                         print("[HFCore.eval] model forward starts")
                     pred_t = self.task_spec.generate_predictions(
