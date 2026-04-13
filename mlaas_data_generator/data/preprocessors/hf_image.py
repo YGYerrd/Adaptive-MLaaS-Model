@@ -6,6 +6,14 @@ import inspect
 import numpy as np
 
 
+def _is_pil_image(value):
+    try:
+        from PIL import Image
+    except Exception:
+        return False
+    return isinstance(value, Image.Image)
+
+
 def _to_numpy_rgb(image_like):
     if image_like is None:
         raise ValueError("image is None")
@@ -26,6 +34,8 @@ def _to_numpy_rgb(image_like):
         arr = _decode_bytes(image_like)
     elif isinstance(image_like, str):
         arr = _decode_path(image_like)
+    elif _is_pil_image(image_like):
+        arr = np.asarray(image_like.convert("RGB"))
     else:
         raise TypeError(f"unsupported image payload type={type(image_like)}")
 
@@ -110,6 +120,18 @@ def _process_split(
             accepted_params = set(sig.parameters)
         except (TypeError, ValueError):
             accepts_kwargs = True
+    preprocess_call = getattr(image_processor, "preprocess", None)
+    preprocess_accepts_kwargs = False
+    preprocess_params = set()
+    if callable(preprocess_call):
+        try:
+            preprocess_sig = inspect.signature(preprocess_call)
+            preprocess_accepts_kwargs = any(
+                p.kind == inspect.Parameter.VAR_KEYWORD for p in preprocess_sig.parameters.values()
+            )
+            preprocess_params = set(preprocess_sig.parameters)
+        except (TypeError, ValueError):
+            preprocess_accepts_kwargs = True
 
     for idx in range(len(ds)):
         row = ds[idx]
@@ -123,6 +145,10 @@ def _process_split(
             }
             if not accepts_kwargs and accepted_params:
                 processor_kwargs = {k: v for k, v in processor_kwargs.items() if k in accepted_params}
+            elif accepts_kwargs and preprocess_params and not preprocess_accepts_kwargs:
+                # Many HF processors expose permissive __call__(**kwargs) wrappers but validate
+                # against preprocess(...) kwargs. Filter here to avoid warnings about ignored args.
+                processor_kwargs = {k: v for k, v in processor_kwargs.items() if k in preprocess_params}
             proc = image_processor(image, **processor_kwargs)
             pix = proc.get("pixel_values", proc)
             pix = np.asarray(pix, dtype=np.float32)
@@ -250,7 +276,7 @@ def preprocess_hf_image(
     meta = finalize_accounting(meta)
     inferred_input_shape = ()
     pixel_values = x_train.get("pixel_values") if isinstance(x_train, dict) else None
-    if pixel_values and len(pixel_values) > 0:
+    if pixel_values is not None and len(pixel_values) > 0:
         inferred_input_shape = tuple(getattr(pixel_values[0], "shape", ()))
     meta.update(
         {

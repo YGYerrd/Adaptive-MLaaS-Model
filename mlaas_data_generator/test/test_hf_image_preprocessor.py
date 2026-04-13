@@ -47,6 +47,21 @@ class FakeImageProcessorNoAugmentArg:
         return {"pixel_values": arr}
 
 
+class FakeImageProcessorCallKwargsButStrictPreprocess:
+    @classmethod
+    def from_pretrained(cls, *args, **kwargs):
+        return cls()
+
+    def __call__(self, image, **kwargs):
+        return self.preprocess(image, **kwargs)
+
+    def preprocess(self, image, return_tensors=None, do_resize=True, do_normalize=True):
+        arr = np.asarray(image, dtype=np.float32)
+        if do_normalize and arr.max() > 1:
+            arr = arr / 255.0
+        return {"pixel_values": arr}
+
+
 def _install_fake_transformers():
     fake_mod = types.SimpleNamespace(AutoImageProcessor=FakeImageProcessor)
     sys.modules["transformers"] = fake_mod
@@ -54,6 +69,11 @@ def _install_fake_transformers():
 
 def _install_fake_transformers_no_augment_arg():
     fake_mod = types.SimpleNamespace(AutoImageProcessor=FakeImageProcessorNoAugmentArg)
+    sys.modules["transformers"] = fake_mod
+
+
+def _install_fake_transformers_call_kwargs_strict_preprocess():
+    fake_mod = types.SimpleNamespace(AutoImageProcessor=FakeImageProcessorCallKwargsButStrictPreprocess)
     sys.modules["transformers"] = fake_mod
 
 
@@ -203,3 +223,22 @@ def test_image_preprocessor_handles_processors_without_do_augment_arg():
     assert len(y_test) == 1
     assert meta["decode_report"]["train"]["failed"] == 0
     assert meta["decode_report"]["test"]["failed"] == 0
+
+
+def test_image_preprocessor_filters_kwargs_against_preprocess_signature():
+    _install_fake_transformers_call_kwargs_strict_preprocess()
+    train_rows = [{"image": np.zeros((2, 2, 3), dtype=np.uint8), "label": 1}]
+    test_rows = [{"image": np.zeros((2, 2, 3), dtype=np.uint8), "label": 1}]
+
+    (x_train, y_train), (x_test, y_test), meta = preprocess_hf(
+        (DummySplit(train_rows), None),
+        (DummySplit(test_rows), None),
+        {"hf_task": "image_classification", "modality": "image", "hf_id": "dummy"},
+        hf_model_id="dummy/vision",
+    )
+
+    assert x_train["pixel_values"].shape[0] == 1
+    assert x_test["pixel_values"].shape[0] == 1
+    assert y_train.tolist() == [1]
+    assert y_test.tolist() == [1]
+    assert meta["decode_report"]["train"]["failed"] == 0

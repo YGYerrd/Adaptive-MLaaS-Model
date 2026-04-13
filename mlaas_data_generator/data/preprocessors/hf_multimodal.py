@@ -4,8 +4,8 @@ import numpy as np
 
 _TASK_COLUMN_DEFAULTS = {
     "visual_question_answering": {"text_column": "question", "label_column": "answer"},
-    "text_image_retrieval": {"text_column": "text", "label_column": None},
-    "image_captioning": {"text_column": "text", "label_column": None},
+    "text_image_retrieval": {"text_column": "caption", "label_column": None},
+    "image_captioning": {"text_column": "caption", "label_column": None},
 }
 
 
@@ -15,6 +15,27 @@ def _has_value(value):
     if isinstance(value, str):
         return bool(value.strip())
     return True
+
+
+def _is_pil_image(value):
+    try:
+        from PIL import Image
+    except Exception:
+        return False
+    return isinstance(value, Image.Image)
+
+
+def _coerce_image_input(value):
+    if _is_pil_image(value):
+        return value.convert("RGB")
+    if isinstance(value, dict):
+        if value.get("array") is not None:
+            return np.asarray(value.get("array"))
+        if value.get("bytes") is not None:
+            return value.get("bytes")
+        if value.get("path"):
+            return value.get("path")
+    return value
 
 
 def _validate_pair_alignment(ds, *, image_column, text_column, split_name, missing_pair_handling):
@@ -80,7 +101,7 @@ def _encode_split(
             return_tensors=None,
         )
         image_enc = image_processor(
-            image_val,
+            _coerce_image_input(image_val),
             return_tensors=None,
             do_resize=True,
             do_normalize=True,
@@ -156,6 +177,15 @@ def _resolve_multimodal_columns(
     return task, image_column, resolved_text_column, resolved_label_column
 
 
+def _pick_existing_column(preferred, available_columns, *, aliases):
+    if preferred in available_columns:
+        return preferred
+    for name in aliases:
+        if name in available_columns:
+            return name
+    return preferred
+
+
 def preprocess_hf_multimodal(
     train,
     test,
@@ -193,6 +223,14 @@ def preprocess_hf_multimodal(
         answer_column,
         ranking_label_column,
     )
+    train_columns = set(getattr(ds_train, "column_names", []) or [])
+    if train_columns:
+        text_column = _pick_existing_column(
+            text_column,
+            train_columns,
+            aliases=("text", "caption", "captions", "sentence", "sentences", "description", "descriptions", "question"),
+        )
+        image_column = _pick_existing_column(image_column, train_columns, aliases=("image", "img", "images", "pixel_values"))
 
     tokenizer = AutoTokenizer.from_pretrained(hf_model_id, use_fast=True)
     image_processor = AutoImageProcessor.from_pretrained(hf_model_id)
@@ -256,7 +294,7 @@ def preprocess_hf_multimodal(
     meta = finalize_accounting(meta)
     inferred_input_shape = ()
     pixel_values = x_train.get("pixel_values") if isinstance(x_train, dict) else None
-    if pixel_values and len(pixel_values) > 0:
+    if pixel_values is not None and len(pixel_values) > 0:
         inferred_input_shape = tuple(getattr(pixel_values[0], "shape", ()))
     meta.update(
         {
