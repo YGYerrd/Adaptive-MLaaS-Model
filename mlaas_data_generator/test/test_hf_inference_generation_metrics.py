@@ -46,6 +46,7 @@ class FakeTorch:
 class DummyTokenizer:
     pad_token_id = 0
     eos_token_id = 99
+    padding_side = "right"
 
 
 class DummyGenerationModel:
@@ -173,3 +174,28 @@ def test_hfcore_eval_inference_only_generation_uses_teacher_forced_labels_for_me
     assert qos["eval_supervised_token_count"] == 4
     assert qos["tokens_total"] == 4
     assert core.model.forward_calls == 1
+
+
+def test_causal_lm_encode_batch_left_pads_dict_inputs_even_without_labels():
+    spec = CausalLMGenerationSpec()
+    fake_torch = FakeTorch()
+    tok = DummyTokenizer()
+    xb = {
+        "input_ids": np.asarray([[10, 11, 0, 0], [20, 21, 22, 0]], dtype=np.int64),
+        "attention_mask": np.asarray([[1, 1, 0, 0], [1, 1, 1, 0]], dtype=np.int64),
+    }
+
+    enc, labels_t, _ = spec.encode_batch(
+        tok,
+        xb,
+        None,
+        max_length=4,
+        torch=fake_torch,
+        device="cpu",
+        inference_only=True,
+    )
+
+    assert tok.padding_side == "left"
+    assert enc["input_ids"].numpy().tolist() == [[0, 0, 10, 11], [0, 20, 21, 22]]
+    assert enc["attention_mask"].numpy().tolist() == [[0, 0, 1, 1], [0, 1, 1, 1]]
+    assert labels_t is None

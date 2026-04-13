@@ -846,6 +846,9 @@ class CausalLMGenerationSpec(HFTaskSpec):
         return model
 
     def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
+        if getattr(tokenizer, "padding_side", None) != "left":
+            tokenizer.padding_side = "left"
+
         if isinstance(xb, dict):
             batch = {k: v for k, v in xb.items() if k in {"input_ids", "attention_mask", "token_type_ids"}}
             labels_np = None if yb is None else np.asarray(yb)
@@ -879,6 +882,7 @@ class CausalLMGenerationSpec(HFTaskSpec):
                         padded_mask.append(([0] * pad_len) + list(row_mask))
                     batch["input_ids"] = np.asarray(padded_ids, dtype=input_ids.dtype)
                     batch["attention_mask"] = np.asarray(padded_mask, dtype=attention_mask.dtype)
+            if "input_ids" in batch and "attention_mask" in batch:
                 batch["input_ids"], batch["attention_mask"] = self._left_pad_batch(
                     tokenizer,
                     batch["input_ids"],
