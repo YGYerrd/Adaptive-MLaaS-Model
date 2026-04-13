@@ -51,9 +51,9 @@ def _split_iid(x, y, num_clients, rng=None):
     seed = _seed(rng)
 
     idx = seed.permutation(n)
-    data_per_client = n // num_clients
+    splits = np.array_split(idx, num_clients)
     indices_by_client = {
-        f"client_{i+1}" : idx[i*data_per_client: (i+1)*data_per_client] for i in range(num_clients)
+        f"client_{i+1}": split for i, split in enumerate(splits)
     }
     return _build_clients_from_indices(x, y, indices_by_client)
 
