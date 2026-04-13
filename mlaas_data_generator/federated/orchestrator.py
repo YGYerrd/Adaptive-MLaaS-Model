@@ -160,19 +160,30 @@ class FederatedDataGenerator:
         )
         self.task_family = canonical_task_family(self.task_type, self.hf_task)
 
-        # metric keys
-        if self.task_type == "clustering":
-            self.metric_key = "silhouette"
-            self.metric_label = "Silhouette"
-        elif self.task_family == "generation" and self.hf_task == "causal_lm_generation":
-            self.metric_key = "loss"
-            self.metric_label = "Loss"
-        elif self.task_type == "classification":
-            self.metric_key = "accuracy"
-            self.metric_label = "Accuracy"
-        else:
-            self.metric_key = "rmse"
-            self.metric_label = "RMSE"
+        # metric keys: resolve from canonical task-family/HF-task mapping.
+        task_tag = str(
+            self.config.get("task_tag")
+            or self.dataset_args.get("task_tag")
+            or ""
+        ).strip().lower() or None
+        metric_primary_name, _metric_secondary_name = canonical_metric_names(
+            self.task_family,
+            "metric",
+            hf_task=self.hf_task,
+            task_tag=task_tag,
+        )
+        self.metric_key = metric_primary_name
+
+        metric_label_overrides = {
+            "rmse": "RMSE",
+            "f1": "F1",
+            "iou": "IoU",
+            "map": "mAP",
+        }
+        self.metric_label = metric_label_overrides.get(
+            self.metric_key,
+            self.metric_key.replace("_", " ").title(),
+        )
 
         # strategy encapsulates build/train/eval details
         self.strategy = make_task_strategy(
