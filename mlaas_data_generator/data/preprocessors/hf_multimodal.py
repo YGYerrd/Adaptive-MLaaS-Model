@@ -254,8 +254,13 @@ def preprocess_hf_multimodal(
         metric_instance_count=len(y_test),
     )
     meta = finalize_accounting(meta)
+    inferred_input_shape = ()
+    pixel_values = x_train.get("pixel_values") if isinstance(x_train, dict) else None
+    if pixel_values and len(pixel_values) > 0:
+        inferred_input_shape = tuple(getattr(pixel_values[0], "shape", ()))
     meta.update(
         {
+            "input_shape": inferred_input_shape,
             "modality": "multimodal",
             "hf_task": hf_task,
             "hf_processor": hf_model_id,

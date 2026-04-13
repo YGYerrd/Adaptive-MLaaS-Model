@@ -235,8 +235,13 @@ def preprocess_hf_image(
         metric_instance_count=len(y_test),
     )
     meta = finalize_accounting(meta)
+    inferred_input_shape = ()
+    pixel_values = x_train.get("pixel_values") if isinstance(x_train, dict) else None
+    if pixel_values and len(pixel_values) > 0:
+        inferred_input_shape = tuple(getattr(pixel_values[0], "shape", ()))
     meta.update(
         {
+            "input_shape": inferred_input_shape,
             "image_column": image_column,
             "label_column": label_column,
             "boxes_column": boxes_column,
