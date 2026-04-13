@@ -84,6 +84,27 @@ def _encode_split(
     pixel_values = []
     labels = []
 
+    def _process_image(image_value):
+        candidate_kwargs = [
+            {"return_tensors": None, "do_resize": True, "do_normalize": True},
+            {"return_tensors": None},
+            {},
+        ]
+        last_err = None
+        image_input = _coerce_image_input(image_value)
+        for kwargs in candidate_kwargs:
+            try:
+                return image_processor(image_input, **kwargs)
+            except TypeError as e:
+                last_err = e
+                continue
+            except ValueError as e:
+                last_err = e
+                continue
+        if last_err is not None:
+            raise last_err
+        return image_processor(image_input)
+
     for idx in range(len(ds)):
         row = ds[idx]
         text_val = row.get(text_column)
@@ -100,12 +121,7 @@ def _encode_split(
             return_attention_mask=True,
             return_tensors=None,
         )
-        image_enc = image_processor(
-            _coerce_image_input(image_val),
-            return_tensors=None,
-            do_resize=True,
-            do_normalize=True,
-        )
+        image_enc = _process_image(image_val)
 
         ids = np.asarray(text_enc["input_ids"], dtype=np.int64)
         mask = np.asarray(text_enc["attention_mask"], dtype=np.int64)
