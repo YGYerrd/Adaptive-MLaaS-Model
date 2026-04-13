@@ -242,6 +242,11 @@ def _row_from_registry(
         "audit_json_used": bool(audit_meta),
     }
     explainability = _resolve_explainability_metadata(model=model, dataset_spec=dataset_spec, run_regime=run_regime)
+    resolved_modality = str(dataset_spec.get("modality") or "").strip().lower()
+    if resolved_modality not in {"text", "image", "multimodal"} or (
+        task_spec.modality and resolved_modality != task_spec.modality
+    ):
+        resolved_modality = task_spec.modality or "text"
 
     row = {
         "external_run_id": f"hf_{task_spec.task_label}_{run_index:06d}",
@@ -278,7 +283,7 @@ def _row_from_registry(
         "model_type": model_defaults["model_type"] if run_regime == "inference_only" else (model.get("model_type") or model_defaults["model_type"]),
         "hf_task": task_spec.hf_task,
         "task_type": dataset_spec.get("task_type", task_spec.task_type),
-        "modality": dataset_spec.get("modality", "text"),
+        "modality": resolved_modality,
         "dataset_name": dataset_spec.get("dataset_name"),
         "dataset_config": dataset_spec.get("dataset_config"),
         "hf_model_id": model_id,

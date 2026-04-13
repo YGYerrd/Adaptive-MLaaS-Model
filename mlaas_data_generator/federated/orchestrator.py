@@ -28,6 +28,34 @@ class _StageTimer:
         return float(time.perf_counter() - self._start)
 
 
+def _first_sample_shape(x_train):
+    """Best-effort shape inference for metadata compatibility."""
+    if isinstance(x_train, dict):
+        if "pixel_values" in x_train and len(x_train["pixel_values"]) > 0:
+            sample = x_train["pixel_values"][0]
+            return tuple(getattr(sample, "shape", ()))
+        if "input_ids" in x_train and len(x_train["input_ids"]) > 0:
+            sample = x_train["input_ids"][0]
+            seq_len = int(len(sample))
+            return (seq_len,)
+        return tuple()
+
+    if hasattr(x_train, "shape"):
+        shape = tuple(getattr(x_train, "shape", ()))
+        if len(shape) > 1:
+            return tuple(shape[1:])
+        return shape
+
+    if isinstance(x_train, (list, tuple)) and len(x_train) > 0:
+        sample = x_train[0]
+        if hasattr(sample, "shape"):
+            return tuple(getattr(sample, "shape", ()))
+        arr = np.asarray(sample)
+        return tuple(arr.shape)
+
+    return tuple()
+
+
 class FederatedDataGenerator:
     """Generate MLaaS client records using a simple federated-learning loop."""
     def __init__(
@@ -68,7 +96,11 @@ class FederatedDataGenerator:
         self._run_stage_measurements["stage_dataset_load_s"] = dataset_load_timer.elapsed_s()
         (self.x_train, self.y_train), (self.x_test, self.y_test) = train, test
         self.meta = meta
-        self.input_shape = tuple(meta["input_shape"])
+        resolved_input_shape = meta.get("input_shape")
+        if resolved_input_shape is None:
+            resolved_input_shape = _first_sample_shape(self.x_train)
+            self.meta["input_shape"] = tuple(resolved_input_shape)
+        self.input_shape = tuple(resolved_input_shape)
         self.num_classes = meta.get("num_classes")
 
         # task type resolution
