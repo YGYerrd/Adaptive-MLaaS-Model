@@ -48,12 +48,18 @@ class HFCore:
         self.task_spec = task_spec or SequenceClassificationSpec()
         self.generation_config = self._resolve_generation_config(generation_config)
         self.task_tag = (task_tag or "").strip().lower().replace("-", "_") or None
-        self.tokenizer, self.tokenizer_load_s, self.tokenizer_cache_hit = get_cached_tokenizer(
-            hf_model_id=model_id,
-            task=getattr(self.task_spec, "name", None),
-            device=self.device,
-            transformers_module=transformers,
-        )
+        tokenizer_required = bool(getattr(self.task_spec, "requires_tokenizer", True))
+        if tokenizer_required:
+            self.tokenizer, self.tokenizer_load_s, self.tokenizer_cache_hit = get_cached_tokenizer(
+                hf_model_id=model_id,
+                task=getattr(self.task_spec, "name", None),
+                device=self.device,
+                transformers_module=transformers,
+            )
+        else:
+            self.tokenizer = None
+            self.tokenizer_load_s = 0.0
+            self.tokenizer_cache_hit = True
 
         self.model = None
         self.weight_format = None

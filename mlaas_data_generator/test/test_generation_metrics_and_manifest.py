@@ -3,7 +3,12 @@ import pandas as pd
 
 from mlaas_data_generator.cli.manifest.hf_manifest_builder import MANIFEST_COLUMNS, build_hf_manifest
 from mlaas_data_generator.cli.run_manifest import _build_dataset_args, _resolve_row
-from mlaas_data_generator.federated.strategies.base import canonical_generation_metrics, canonical_metric_names, metric_availability
+from mlaas_data_generator.federated.strategies.base import (
+    canonical_generation_metrics,
+    canonical_metric_names,
+    canonical_task_family,
+    metric_availability,
+)
 from mlaas_data_generator.models.adapters.hf_task import CausalLMGenerationSpec
 from mlaas_data_generator.registry import DATASET_REGISTRY, MODEL_REGISTRY
 
@@ -122,6 +127,14 @@ def test_retrieval_and_vqa_metric_availability():
 
     vqa = metric_availability("vqa", has_labels=True)
     assert vqa["eval"] == ("exact_match",)
+
+
+def test_canonical_task_family_accepts_manifest_task_types():
+    assert canonical_task_family("detection", None) == "detection"
+    assert canonical_task_family("segmentation", None) == "segmentation"
+    assert canonical_task_family("generation", None) == "generation"
+    assert canonical_task_family("retrieval", None) == "retrieval"
+    assert canonical_task_family("image_classification", None) == "classification"
 
 
 def test_causal_lm_metrics_report_loss_as_primary_and_perplexity_as_secondary():
