@@ -848,14 +848,43 @@ class CausalLMGenerationSpec(HFTaskSpec):
     def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
         if isinstance(xb, dict):
             batch = {k: v for k, v in xb.items() if k in {"input_ids", "attention_mask", "token_type_ids"}}
-            if inference_only and "input_ids" in batch and "attention_mask" in batch:
+            labels_np = None if yb is None else np.asarray(yb)
+            if inference_only and labels_np is not None and "input_ids" in batch and "attention_mask" in batch:
+                input_ids = np.asarray(batch["input_ids"])
+                attention_mask = np.asarray(batch["attention_mask"])
+                if labels_np.shape == input_ids.shape:
+                    prompt_only_ids = []
+                    prompt_only_mask = []
+                    for row_ids, row_mask, row_labels in zip(input_ids, attention_mask, labels_np):
+                        active = np.asarray(row_mask).astype(bool)
+                        prompt_positions = active & (np.asarray(row_labels) == int(ignore_index))
+                        if np.any(prompt_positions):
+                            trimmed_ids = np.asarray(row_ids)[prompt_positions]
+                            trimmed_mask = np.ones(trimmed_ids.shape[0], dtype=np.asarray(row_mask).dtype)
+                        else:
+                            valid_ids = np.asarray(row_ids)[active]
+                            trimmed_ids = valid_ids[:-1] if valid_ids.shape[0] > 1 else valid_ids
+                            trimmed_mask = np.ones(trimmed_ids.shape[0], dtype=np.asarray(row_mask).dtype)
+                        prompt_only_ids.append(trimmed_ids.tolist())
+                        prompt_only_mask.append(trimmed_mask.tolist())
+                    max_prompt_len = max((len(row) for row in prompt_only_ids), default=0)
+                    pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
+                    if pad_id is None:
+                        pad_id = 0
+                    padded_ids = []
+                    padded_mask = []
+                    for row_ids, row_mask in zip(prompt_only_ids, prompt_only_mask):
+                        pad_len = max_prompt_len - len(row_ids)
+                        padded_ids.append(([int(pad_id)] * pad_len) + list(row_ids))
+                        padded_mask.append(([0] * pad_len) + list(row_mask))
+                    batch["input_ids"] = np.asarray(padded_ids, dtype=input_ids.dtype)
+                    batch["attention_mask"] = np.asarray(padded_mask, dtype=attention_mask.dtype)
                 batch["input_ids"], batch["attention_mask"] = self._left_pad_batch(
                     tokenizer,
                     batch["input_ids"],
                     batch["attention_mask"],
                 )
             enc = {k: torch.tensor(v, dtype=torch.long, device=device) for k, v in batch.items()}
-            labels_t = None if yb is None else torch.tensor(yb, dtype=torch.long, device=device)
             labels_t = None if yb is None else torch.tensor(yb, dtype=torch.long, device=device)
             return enc, labels_t, {"ignore_index": int(ignore_index)}
 

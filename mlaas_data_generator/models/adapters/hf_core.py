@@ -518,6 +518,24 @@ class HFCore:
                 )
 
                 last_extra = dict(extra or {})
+                teacher_forced = None
+                if bool(inference_only) and bool(getattr(self.task_spec, "supports_generation", False)) and yb is not None:
+                    teacher_enc, teacher_labels_t, teacher_extra = self.task_spec.encode_batch(
+                        self.tokenizer,
+                        xb,
+                        yb,
+                        self.max_length,
+                        torch,
+                        self.device,
+                        ignore_index=self.label_pad_value,
+                        inference_only=False,
+                    )
+                    teacher_forced = (teacher_enc, teacher_labels_t, dict(teacher_extra or {}))
+                    if teacher_labels_t is not None:
+                        labels_all.append(teacher_labels_t.detach().cpu().numpy())
+                        labels_recorded = True
+                        supervised_token_count = _count_supervised_tokens(teacher_labels_t, self.label_pad_value)
+                        eval_supervised_token_count += supervised_token_count
 
                 if bool(inference_only) and bool(getattr(self.task_spec, "supports_generation", False)):
                     if not first_batch_logged:
@@ -532,6 +550,37 @@ class HFCore:
                     if not first_batch_logged:
                         print("[HFCore.eval] first batch forward ends")
                     preds_all.append(pred_t.detach().cpu().numpy())
+
+                    if teacher_forced is not None:
+                        teacher_enc, teacher_labels_t, teacher_extra = teacher_forced
+                        teacher_inputs = self.task_spec.build_forward_inputs(
+                            teacher_enc,
+                            labels_t=teacher_labels_t,
+                            inference_only=False,
+                        )
+                        outputs = self.model(**teacher_inputs)
+                        logits = outputs.logits
+                        stat = self.task_spec.batch_metric_statistics(torch, logits, teacher_labels_t, teacher_extra)
+                        if stat:
+                            for k, v in stat.items():
+                                stats_accum[k] = float(stats_accum.get(k, 0.0)) + float(v)
+
+                        stat_out = self.task_spec.batch_metric_statistics_from_outputs(torch, outputs, teacher_labels_t, teacher_extra)
+                        if stat_out:
+                            for k, v in stat_out.items():
+                                stats_accum[k] = float(stats_accum.get(k, 0.0)) + float(v)
+
+                        loss = self.task_spec.extract_loss(torch, outputs, logits, teacher_labels_t, teacher_extra)
+                        if loss is not None:
+                            if teacher_labels_t.ndim >= 2:
+                                loss_denominator_count = supervised_token_count
+                            elif isinstance(xb, dict):
+                                loss_denominator_count = len(next(iter(xb.values())))
+                            else:
+                                loss_denominator_count = len(xb)
+
+                            total_loss += float(loss.detach().cpu().item()) * float(max(1, loss_denominator_count))
+                            eval_loss_denominator_count += int(max(1, loss_denominator_count))
                 else:
                     model_inputs = self.task_spec.build_forward_inputs(enc, labels_t=labels_t, inference_only=bool(inference_only))
                     if not first_batch_logged:
