@@ -133,23 +133,47 @@ def _process_split(
         except (TypeError, ValueError):
             preprocess_accepts_kwargs = True
 
+    def _process_image(image_array, *, training_enabled):
+        base_kwargs = {
+            "return_tensors": None,
+            "do_resize": True,
+            "do_normalize": True,
+            "do_augment": bool(training_enabled),
+        }
+
+        if not accepts_kwargs and accepted_params:
+            candidate_kwargs = {k: v for k, v in base_kwargs.items() if k in accepted_params}
+        elif accepts_kwargs and preprocess_params and not preprocess_accepts_kwargs:
+            candidate_kwargs = {k: v for k, v in base_kwargs.items() if k in preprocess_params}
+        else:
+            candidate_kwargs = dict(base_kwargs)
+
+        call_attempts = [
+            dict(candidate_kwargs),
+            {k: v for k, v in candidate_kwargs.items() if k != "do_augment"},
+            {k: v for k, v in candidate_kwargs.items() if k in {"return_tensors"}},
+            {},
+        ]
+
+        last_err = None
+        for kwargs in call_attempts:
+            try:
+                return image_processor(image_array, **kwargs)
+            except TypeError as e:
+                last_err = e
+                continue
+            except ValueError as e:
+                last_err = e
+                continue
+        if last_err is not None:
+            raise last_err
+        return image_processor(image_array)
+
     for idx in range(len(ds)):
         row = ds[idx]
         try:
             image = _to_numpy_rgb(row.get(image_column))
-            processor_kwargs = {
-                "return_tensors": None,
-                "do_resize": True,
-                "do_normalize": True,
-                "do_augment": bool(training),
-            }
-            if not accepts_kwargs and accepted_params:
-                processor_kwargs = {k: v for k, v in processor_kwargs.items() if k in accepted_params}
-            elif accepts_kwargs and preprocess_params and not preprocess_accepts_kwargs:
-                # Many HF processors expose permissive __call__(**kwargs) wrappers but validate
-                # against preprocess(...) kwargs. Filter here to avoid warnings about ignored args.
-                processor_kwargs = {k: v for k, v in processor_kwargs.items() if k in preprocess_params}
-            proc = image_processor(image, **processor_kwargs)
+            proc = _process_image(image, training_enabled=training)
             pix = proc.get("pixel_values", proc)
             pix = np.asarray(pix, dtype=np.float32)
             if pix.ndim == 4:
@@ -278,6 +302,9 @@ def preprocess_hf_image(
     pixel_values = x_train.get("pixel_values") if isinstance(x_train, dict) else None
     if pixel_values is not None and len(pixel_values) > 0:
         inferred_input_shape = tuple(getattr(pixel_values[0], "shape", ()))
+    inferred_num_classes = None
+    if task_type == "classification" and len(y_train) > 0:
+        inferred_num_classes = int(np.unique(np.asarray(y_train)).size)
     meta.update(
         {
             "input_shape": inferred_input_shape,
@@ -290,6 +317,7 @@ def preprocess_hf_image(
             "modality": "image",
             "hf_processor": hf_model_id,
             "channel_order": "CHW",
+            "num_classes": inferred_num_classes,
             "training_augmentations": bool(training_augmentations),
             "eval_augmentations": bool(eval_augmentations),
             "decode_error_policy": on_decode_error,
