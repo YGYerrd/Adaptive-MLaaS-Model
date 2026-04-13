@@ -1,6 +1,7 @@
 from ..accounting import append_accounting_stage, finalize_accounting
 import io
 import os
+import inspect
 
 import numpy as np
 
@@ -99,18 +100,30 @@ def _process_split(
     images = []
     labels = []
     decode_errors = []
+    processor_call = getattr(image_processor, "__call__", None)
+    accepts_kwargs = False
+    accepted_params = set()
+    if callable(processor_call):
+        try:
+            sig = inspect.signature(processor_call)
+            accepts_kwargs = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+            accepted_params = set(sig.parameters)
+        except (TypeError, ValueError):
+            accepts_kwargs = True
 
     for idx in range(len(ds)):
         row = ds[idx]
         try:
             image = _to_numpy_rgb(row.get(image_column))
-            proc = image_processor(
-                image,
-                return_tensors=None,
-                do_resize=True,
-                do_normalize=True,
-                do_augment=bool(training),
-            )
+            processor_kwargs = {
+                "return_tensors": None,
+                "do_resize": True,
+                "do_normalize": True,
+                "do_augment": bool(training),
+            }
+            if not accepts_kwargs and accepted_params:
+                processor_kwargs = {k: v for k, v in processor_kwargs.items() if k in accepted_params}
+            proc = image_processor(image, **processor_kwargs)
             pix = proc.get("pixel_values", proc)
             pix = np.asarray(pix, dtype=np.float32)
             if pix.ndim == 4:
