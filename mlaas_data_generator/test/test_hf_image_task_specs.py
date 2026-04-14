@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 
 from mlaas_data_generator.models.adapters.hf_task import (
     ImageClassificationSpec,
@@ -66,3 +67,42 @@ def test_object_detection_does_not_require_num_labels_and_builds_without_it():
     model = spec.build_model(_Transformers, "fake/model", num_labels=None)
     assert model["model_id"] == "fake/model"
     assert "num_labels" not in _AutoModelForObjectDetection.called_kwargs
+
+
+def test_object_detection_encode_batch_converts_absolute_xywh_to_normalized_cxcywh():
+    spec = ObjectDetectionSpec()
+    xb = {"pixel_values": [np.zeros((3, 100, 200), dtype=np.float32)]}
+    yb = [{"boxes": [[20, 10, 40, 30]], "classes": [2]}]
+
+    _, labels_t, _ = spec.encode_batch(
+        tokenizer=None,
+        xb=xb,
+        yb=yb,
+        max_length=0,
+        torch=torch,
+        device=torch.device("cpu"),
+    )
+
+    boxes = labels_t[0]["boxes"].detach().cpu().numpy()
+    # xywh absolute [20,10,40,30] on (h=100,w=200) -> xyxy norm [0.1,0.1,0.3,0.4] -> cxcywh [0.2,0.25,0.2,0.3]
+    assert np.allclose(boxes, np.asarray([[0.2, 0.25, 0.2, 0.3]], dtype=np.float32), atol=1e-6)
+
+
+def test_object_detection_batch_metric_statistics_from_outputs_counts_true_positive():
+    spec = ObjectDetectionSpec(score_threshold=0.05)
+    labels_t = [
+        {
+            "class_labels": torch.tensor([1], dtype=torch.long),
+            "boxes": torch.tensor([[0.5, 0.5, 0.4, 0.4]], dtype=torch.float32),
+        }
+    ]
+
+    class _Outputs:
+        logits = torch.tensor([[[0.1, 5.0, -4.0]]], dtype=torch.float32)  # class 1 is top score, final index is no-object
+        pred_boxes = torch.tensor([[[0.5, 0.5, 0.4, 0.4]]], dtype=torch.float32)
+
+    stats = spec.batch_metric_statistics_from_outputs(torch, _Outputs(), labels_t, {"score_threshold": 0.05})
+    assert np.isclose(stats["gt"], 1.0)
+    assert np.isclose(stats["tp_0.5"], 1.0)
+    assert np.isclose(stats["tp_0.75"], 1.0)
+    assert np.isclose(stats["tp_0.95"], 1.0)
