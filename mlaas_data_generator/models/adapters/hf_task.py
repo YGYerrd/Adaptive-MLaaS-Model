@@ -437,15 +437,18 @@ class ImageClassificationSpec(HFTaskSpec):
 class ObjectDetectionSpec(HFTaskSpec):
     name = "image_detection"
     requires_tokenizer = False
+    requires_num_labels = False
 
     def __init__(self, score_threshold=0.05):
         self.score_threshold = float(score_threshold)
 
     def build_model(self, transformers, model_id, num_labels):
+        kwargs = {"ignore_mismatched_sizes": True}
+        if num_labels is not None:
+            kwargs["num_labels"] = int(num_labels)
         return transformers.AutoModelForObjectDetection.from_pretrained(
             model_id,
-            num_labels=int(num_labels),
-            ignore_mismatched_sizes=True,
+            **kwargs,
         )
 
     def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
