@@ -108,6 +108,25 @@ def test_object_detection_batch_metric_statistics_from_outputs_counts_true_posit
     assert np.isclose(stats["tp_0.95"], 1.0)
 
 
+def test_object_detection_batch_metric_statistics_remaps_predicted_contiguous_ids_for_coco_models():
+    spec = ObjectDetectionSpec(score_threshold=0.05)
+    spec._model_valid_class_ids = [1, 2]
+    labels_t = [
+        {
+            "class_labels": torch.tensor([1], dtype=torch.long),
+            "boxes": torch.tensor([[0.5, 0.5, 0.4, 0.4]], dtype=torch.float32),
+        }
+    ]
+
+    class _Outputs:
+        # Predicted class index 0 should be remapped to model class id 1 when valid ids start at 1.
+        logits = torch.tensor([[[5.0, 0.1, -4.0]]], dtype=torch.float32)
+        pred_boxes = torch.tensor([[[0.5, 0.5, 0.4, 0.4]]], dtype=torch.float32)
+
+    stats = spec.batch_metric_statistics_from_outputs(torch, _Outputs(), labels_t, {"score_threshold": 0.05})
+    assert np.isclose(stats["tp_0.5"], 1.0)
+
+
 def test_object_detection_encode_batch_remaps_contiguous_coco_ids_when_model_uses_na_zero_slot():
     spec = ObjectDetectionSpec()
     # Mimic COCO-style id2label where index 0 is "N/A" and real classes start at 1.
