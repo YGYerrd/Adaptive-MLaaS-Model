@@ -225,6 +225,37 @@ def test_image_preprocessor_handles_processors_without_do_augment_arg():
     assert meta["decode_report"]["test"]["failed"] == 0
 
 
+def test_image_detection_extracts_boxes_and_classes_from_annotation_column():
+    _install_fake_transformers()
+    train_rows = [
+        {
+            "image": np.zeros((2, 2, 3), dtype=np.uint8),
+            "annotation": {"objects": {"bbox": [[0, 0, 1, 1]], "category": [3]}},
+        }
+    ]
+    test_rows = [
+        {
+            "image": np.zeros((2, 2, 3), dtype=np.uint8),
+            "annotation": {"objects": {"bbox": [[0, 0, 1, 1]], "category_id": [4]}},
+        }
+    ]
+
+    train, test, _ = preprocess_hf(
+        (DummySplit(train_rows), None),
+        (DummySplit(test_rows), None),
+        {"hf_task": "object_detection", "modality": "image", "task_type": "detection", "hf_id": "dummy"},
+        hf_model_id="dummy/vision",
+        label_column="annotation",
+    )
+
+    _, y_train = train
+    _, y_test = test
+    assert y_train[0]["boxes"].shape == (1, 4)
+    assert y_train[0]["classes"].tolist() == [3]
+    assert y_test[0]["boxes"].shape == (1, 4)
+    assert y_test[0]["classes"].tolist() == [4]
+
+
 def test_image_preprocessor_filters_kwargs_against_preprocess_signature():
     _install_fake_transformers_call_kwargs_strict_preprocess()
     train_rows = [{"image": np.zeros((2, 2, 3), dtype=np.uint8), "label": 1}]

@@ -151,6 +151,26 @@ class HFCore:
             yb = None if ys is None else ys[i:i + bs]
             yield xb, yb
 
+    def _labels_to_numpy(self, labels_t):
+        if labels_t is None:
+            return None
+        if hasattr(labels_t, "detach"):
+            return labels_t.detach().cpu().numpy()
+        if isinstance(labels_t, (list, tuple)):
+            converted = []
+            for item in labels_t:
+                if isinstance(item, dict):
+                    converted.append(
+                        {
+                            k: (v.detach().cpu().numpy() if hasattr(v, "detach") else np.asarray(v))
+                            for k, v in item.items()
+                        }
+                    )
+                else:
+                    converted.append(item.detach().cpu().numpy() if hasattr(item, "detach") else np.asarray(item))
+            return np.asarray(converted, dtype=object)
+        return np.asarray(labels_t)
+
     def _debug_shape(self, value):
         if value is None:
             return None
@@ -351,8 +371,11 @@ class HFCore:
     def finetune(self, xs, ys, epochs=1, lr=5e-5, max_train_time_s=60):
         torch = self.torch
 
+        def _is_dense_label_tensor(value):
+            return hasattr(value, "ndim") and not isinstance(value, (list, tuple, dict))
+
         def _count_supervised_tokens(labels_t, ignore_index):
-            if labels_t is None or labels_t.ndim < 2:
+            if not _is_dense_label_tensor(labels_t) or labels_t.ndim < 2:
                 return 0
             return int((labels_t != int(ignore_index)).sum().detach().cpu().item())
 
@@ -407,7 +430,7 @@ class HFCore:
                     sequence_count = len(xb)
                 train_sequence_count += int(sequence_count)
 
-                if isinstance(labels_t, torch.Tensor) and labels_t.ndim >= 2:
+                if _is_dense_label_tensor(labels_t) and labels_t.ndim >= 2:
                     loss_denominator_count = supervised_token_count
                 else:
                     loss_denominator_count = sequence_count
@@ -468,8 +491,11 @@ class HFCore:
     def eval(self, xs, ys, inference_only=False, max_eval_time_s=None, progress_log_interval=None):
         torch = self.torch
 
+        def _is_dense_label_tensor(value):
+            return hasattr(value, "ndim") and not isinstance(value, (list, tuple, dict))
+
         def _count_supervised_tokens(labels_t, ignore_index):
-            if labels_t is None or labels_t.ndim < 2:
+            if not _is_dense_label_tensor(labels_t) or labels_t.ndim < 2:
                 return 0
             return int((labels_t != int(ignore_index)).sum().detach().cpu().item())
 
@@ -546,7 +572,7 @@ class HFCore:
                     )
                     teacher_forced = (teacher_enc, teacher_labels_t, dict(teacher_extra or {}))
                     if teacher_labels_t is not None:
-                        labels_all.append(teacher_labels_t.detach().cpu().numpy())
+                        labels_all.append(self._labels_to_numpy(teacher_labels_t))
                         labels_recorded = True
                         supervised_token_count = _count_supervised_tokens(teacher_labels_t, self.label_pad_value)
                         eval_supervised_token_count += supervised_token_count
@@ -587,7 +613,7 @@ class HFCore:
 
                         loss = self.task_spec.extract_loss(torch, outputs, logits, teacher_labels_t, teacher_extra)
                         if loss is not None:
-                            if teacher_labels_t.ndim >= 2:
+                            if _is_dense_label_tensor(teacher_labels_t) and teacher_labels_t.ndim >= 2:
                                 loss_denominator_count = supervised_token_count
                             elif isinstance(xb, dict):
                                 loss_denominator_count = len(next(iter(xb.values())))
@@ -620,12 +646,12 @@ class HFCore:
 
                         loss = self.task_spec.extract_loss(torch, outputs, logits, labels_t, extra)
                         if loss is not None and labels_t is not None:
-                            labels_all.append(labels_t.detach().cpu().numpy())
+                            labels_all.append(self._labels_to_numpy(labels_t))
                             labels_recorded = True
                             supervised_token_count = _count_supervised_tokens(labels_t, self.label_pad_value)
                             eval_supervised_token_count += supervised_token_count
 
-                            if labels_t.ndim >= 2:
+                            if _is_dense_label_tensor(labels_t) and labels_t.ndim >= 2:
                                 loss_denominator_count = supervised_token_count
                             elif isinstance(xb, dict):
                                 loss_denominator_count = len(next(iter(xb.values())))
@@ -636,7 +662,7 @@ class HFCore:
                             eval_loss_denominator_count += int(max(1, loss_denominator_count))
 
                 if labels_t is not None and bool(inference_only) and yb is not None and not labels_recorded:
-                    labels_all.append(labels_t.detach().cpu().numpy())
+                    labels_all.append(self._labels_to_numpy(labels_t))
 
                 latencies_ms.append((time.time() - t0) * 1000.0)
                 if eval_batch_count and (
@@ -656,7 +682,10 @@ class HFCore:
 
         duration_s = time.time() - t_start
 
-        y_true_np = np.concatenate(labels_all, axis=0) if labels_all else np.asarray([], dtype="int64")
+        try:
+            y_true_np = np.concatenate(labels_all, axis=0) if labels_all else np.asarray([], dtype="int64")
+        except Exception:
+            y_true_np = np.asarray(labels_all, dtype=object) if labels_all else np.asarray([], dtype=object)
         y_pred_np = np.concatenate(preds_all, axis=0) if preds_all else np.asarray([], dtype="int64")
 
         named_metrics = None

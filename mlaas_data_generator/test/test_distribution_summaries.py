@@ -30,3 +30,29 @@ def test_get_data_distribution_detection_dict_targets():
     assert stats["total_boxes"] == 3
     assert stats["avg_boxes_per_sample"] == 1.5
     assert stats["class_counts"] == {1: 1, 2: 2}
+
+
+def test_get_data_distribution_detection_supports_classes_and_class_labels():
+    y = [
+        {"boxes": [[0, 0, 10, 10]], "classes": [5]},
+        {"bbox": [[1, 1, 8, 8]], "class_labels": [7]},
+    ]
+
+    stats = get_data_distribution(y, num_classes=None)
+
+    assert stats["samples"] == 2
+    assert stats["total_boxes"] == 2
+    assert stats["class_counts"] == {5: 1, 7: 1}
+
+
+def test_get_data_distribution_detection_supports_nested_annotation_schemas():
+    y = [
+        {"annotation": {"objects": {"bbox": [[0, 0, 10, 10]], "category": [3]}}},
+        {"annotation": {"annotations": {"boxes": [[2, 2, 6, 6]], "category_id": [4]}}},
+    ]
+
+    stats = get_data_distribution(y, num_classes=None)
+
+    assert stats["samples"] == 2
+    assert stats["total_boxes"] == 2
+    assert stats["class_counts"] == {3: 1, 4: 1}
