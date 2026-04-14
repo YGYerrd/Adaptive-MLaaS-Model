@@ -217,8 +217,8 @@ def test_image_preprocessor_handles_processors_without_do_augment_arg():
 
     x_train, y_train = train
     x_test, y_test = test
-    assert x_train["pixel_values"].shape[0] == 1
-    assert x_test["pixel_values"].shape[0] == 1
+    assert len(x_train["pixel_values"]) == 1
+    assert len(x_test["pixel_values"]) == 1
     assert len(y_train) == 1
     assert len(y_test) == 1
     assert meta["decode_report"]["train"]["failed"] == 0
