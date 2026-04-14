@@ -633,7 +633,7 @@ class HFCore:
                         print("[HFCore.eval] first batch forward ends")
                     preds_all.append(pred_t.detach().cpu().numpy())
                     
-                    if not bool(inference_only):
+                    if labels_t is not None:
                         stat = self.task_spec.batch_metric_statistics(torch, logits, labels_t, extra)
                         if stat:
                             for k, v in stat.items():
@@ -644,6 +644,7 @@ class HFCore:
                             for k, v in stat_out.items():
                                 stats_accum[k] = float(stats_accum.get(k, 0.0)) + float(v)
 
+                    if not bool(inference_only):
                         loss = self.task_spec.extract_loss(torch, outputs, logits, labels_t, extra)
                         if loss is not None and labels_t is not None:
                             labels_all.append(self._labels_to_numpy(labels_t))
