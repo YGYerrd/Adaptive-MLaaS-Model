@@ -264,49 +264,39 @@ def _process_split(
         labels.append(label)
 
     if on_decode_error != "report":
+        # Object detection datasets can include thousands of high-resolution images.
+        # Stacking the full split into one contiguous NCHW tensor eagerly allocates
+        # all pixel storage at once and can exhaust host RAM before batching.
+        #
+        # Keep detection pixel values as a per-sample list and let the training loop
+        # materialize tensor batches lazily in HFCore._batch_iter/encode_batch.
         if task_type == "detection":
-            LOGGER.info(
-                "[detection preprocessing] split=%s before np.stack(images) count=%d",
-                split_name,
-                len(images),
-            )
-        try:
-            stacked_images = np.stack(images, axis=0).astype(np.float32, copy=False)
-        except ValueError:
-            if task_type == "detection":
-                LOGGER.info(
-                    "[detection preprocessing] split=%s np.stack failed; investigating shapes before recovery",
-                    split_name,
-                )
-            unique_shapes = sorted({tuple(np.asarray(img).shape) for img in images})
-            channel_counts = {shape[0] for shape in unique_shapes if len(shape) == 3}
-            if channel_counts != {3}:
-                raise ValueError(
-                    "pixel values have inconsistent non-CHW shapes after preprocessing. "
-                    f"observed shapes={unique_shapes}"
-                )
+            x = {"pixel_values": images}
+        else:
+            try:
+                stacked_images = np.stack(images, axis=0).astype(np.float32, copy=False)
+            except ValueError:
+                unique_shapes = sorted({tuple(np.asarray(img).shape) for img in images})
+                channel_counts = {shape[0] for shape in unique_shapes if len(shape) == 3}
+                if channel_counts != {3}:
+                    raise ValueError(
+                        "pixel values have inconsistent non-CHW shapes after preprocessing. "
+                        f"observed shapes={unique_shapes}"
+                    )
 
-            max_h = max(shape[1] for shape in unique_shapes)
-            max_w = max(shape[2] for shape in unique_shapes)
-            padded_images = []
-            for image in images:
-                if task_type == "detection":
-                    LOGGER.info("[detection preprocessing] split=%s before np.asarray(image) for padding", split_name)
-                arr = np.asarray(image, dtype=np.float32)
-                if arr.shape[1] == max_h and arr.shape[2] == max_w:
-                    padded_images.append(arr)
-                    continue
-                pad_h = max_h - arr.shape[1]
-                pad_w = max_w - arr.shape[2]
-                padded_images.append(np.pad(arr, ((0, 0), (0, pad_h), (0, pad_w)), mode="constant"))
-            if task_type == "detection":
-                LOGGER.info(
-                    "[detection preprocessing] split=%s before np.stack(padded_images) count=%d",
-                    split_name,
-                    len(padded_images),
-                )
-            stacked_images = np.stack(padded_images, axis=0).astype(np.float32, copy=False)
-        x = {"pixel_values": stacked_images}
+                max_h = max(shape[1] for shape in unique_shapes)
+                max_w = max(shape[2] for shape in unique_shapes)
+                padded_images = []
+                for image in images:
+                    arr = np.asarray(image, dtype=np.float32)
+                    if arr.shape[1] == max_h and arr.shape[2] == max_w:
+                        padded_images.append(arr)
+                        continue
+                    pad_h = max_h - arr.shape[1]
+                    pad_w = max_w - arr.shape[2]
+                    padded_images.append(np.pad(arr, ((0, 0), (0, pad_h), (0, pad_w)), mode="constant"))
+                stacked_images = np.stack(padded_images, axis=0).astype(np.float32, copy=False)
+            x = {"pixel_values": stacked_images}
     else:
         x = {"pixel_values": images}
     if task_type == "classification":
