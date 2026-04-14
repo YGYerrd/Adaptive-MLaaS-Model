@@ -2,8 +2,11 @@ from ..accounting import append_accounting_stage, finalize_accounting
 import io
 import os
 import inspect
+import logging
 
 import numpy as np
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _is_pil_image(value):
@@ -96,6 +99,7 @@ def _normalise_detection_item(boxes, classes):
 def _process_split(
     ds,
     *,
+    split_name,
     image_processor,
     image_column,
     task_type,
@@ -107,6 +111,13 @@ def _process_split(
     on_decode_error="skip",
     report_decode_errors=False,
 ):
+    if task_type == "detection":
+        LOGGER.info(
+            "[detection preprocessing] entering _process_split split=%s len=%d training=%s",
+            split_name,
+            len(ds),
+            bool(training),
+        )
     images = []
     labels = []
     decode_errors = []
@@ -177,11 +188,35 @@ def _process_split(
         return image_processor(image_array)
 
     for idx in range(len(ds)):
+        if task_type == "detection" and (idx == 0 or idx % 25 == 0):
+            LOGGER.info(
+                "[detection preprocessing] split=%s progress idx=%d/%d",
+                split_name,
+                idx,
+                len(ds),
+            )
         row = ds[idx]
         try:
+            if task_type == "detection":
+                LOGGER.info("[detection preprocessing] split=%s idx=%d before image decode", split_name, idx)
             image = _to_numpy_rgb(row.get(image_column))
+            if task_type == "detection":
+                LOGGER.info(
+                    "[detection preprocessing] split=%s idx=%d after image decode shape=%s",
+                    split_name,
+                    idx,
+                    tuple(getattr(image, "shape", ())),
+                )
+                LOGGER.info("[detection preprocessing] split=%s idx=%d before processor call", split_name, idx)
             proc = _process_image(image, training_enabled=training)
             pix = proc.get("pixel_values", proc)
+            if task_type == "detection":
+                LOGGER.info("[detection preprocessing] split=%s idx=%d after processor call", split_name, idx)
+                LOGGER.info(
+                    "[detection preprocessing] split=%s idx=%d before np.asarray(pixel_values)",
+                    split_name,
+                    idx,
+                )
             pix = np.asarray(pix, dtype=np.float32)
             if pix.ndim == 4:
                 pix = pix[0]
@@ -195,15 +230,28 @@ def _process_split(
             if task_type == "classification":
                 label = int(row.get(label_column))
             elif task_type == "detection":
+                LOGGER.info(
+                    "[detection preprocessing] split=%s idx=%d before np.asarray(boxes/classes)",
+                    split_name,
+                    idx,
+                )
                 label = _normalise_detection_item(row.get(boxes_column), row.get(classes_column))
             elif task_type == "segmentation":
                 mask = row.get(mask_column)
                 if mask is None:
                     raise ValueError("segmentation mask is missing")
+                if task_type == "detection":
+                    LOGGER.info("[detection preprocessing] split=%s idx=%d before np.asarray(mask)", split_name, idx)
                 label = np.asarray(mask)
             else:
                 label = None
         except Exception as e:
+            if task_type == "detection":
+                LOGGER.exception(
+                    "[detection preprocessing] split=%s idx=%d failed during preprocessing",
+                    split_name,
+                    idx,
+                )
             decode_errors.append({"index": idx, "error": str(e)})
             if on_decode_error == "raise":
                 raise
@@ -216,9 +264,20 @@ def _process_split(
         labels.append(label)
 
     if on_decode_error != "report":
+        if task_type == "detection":
+            LOGGER.info(
+                "[detection preprocessing] split=%s before np.stack(images) count=%d",
+                split_name,
+                len(images),
+            )
         try:
             stacked_images = np.stack(images, axis=0).astype(np.float32, copy=False)
         except ValueError:
+            if task_type == "detection":
+                LOGGER.info(
+                    "[detection preprocessing] split=%s np.stack failed; investigating shapes before recovery",
+                    split_name,
+                )
             unique_shapes = sorted({tuple(np.asarray(img).shape) for img in images})
             channel_counts = {shape[0] for shape in unique_shapes if len(shape) == 3}
             if channel_counts != {3}:
@@ -231,6 +290,8 @@ def _process_split(
             max_w = max(shape[2] for shape in unique_shapes)
             padded_images = []
             for image in images:
+                if task_type == "detection":
+                    LOGGER.info("[detection preprocessing] split=%s before np.asarray(image) for padding", split_name)
                 arr = np.asarray(image, dtype=np.float32)
                 if arr.shape[1] == max_h and arr.shape[2] == max_w:
                     padded_images.append(arr)
@@ -238,6 +299,12 @@ def _process_split(
                 pad_h = max_h - arr.shape[1]
                 pad_w = max_w - arr.shape[2]
                 padded_images.append(np.pad(arr, ((0, 0), (0, pad_h), (0, pad_w)), mode="constant"))
+            if task_type == "detection":
+                LOGGER.info(
+                    "[detection preprocessing] split=%s before np.stack(padded_images) count=%d",
+                    split_name,
+                    len(padded_images),
+                )
             stacked_images = np.stack(padded_images, axis=0).astype(np.float32, copy=False)
         x = {"pixel_values": stacked_images}
     else:
@@ -270,6 +337,8 @@ def preprocess_hf_image(
     on_decode_error="skip",
     report_decode_errors=False,
 ):
+    if (task_type or meta.get("task_type", "classification")).strip().lower() == "detection":
+        LOGGER.info("[detection preprocessing] entering detection preprocessing in preprocess_hf_image")
     try:
         from transformers import AutoImageProcessor
     except Exception as e:
@@ -281,11 +350,18 @@ def preprocess_hf_image(
     ds_train, _ = train
     ds_test, _ = test
     task_type = (task_type or meta.get("task_type", "classification")).strip().lower()
+    if task_type == "detection":
+        LOGGER.info(
+            "[detection preprocessing] split lengths train=%d test=%d",
+            len(ds_train),
+            len(ds_test),
+        )
 
     processor = AutoImageProcessor.from_pretrained(hf_model_id)
 
     x_train, y_train, train_report = _process_split(
         ds_train,
+        split_name="train",
         image_processor=processor,
         image_column=image_column,
         task_type=task_type,
@@ -299,6 +375,7 @@ def preprocess_hf_image(
     )
     x_test, y_test, test_report = _process_split(
         ds_test,
+        split_name="test",
         image_processor=processor,
         image_column=image_column,
         task_type=task_type,
