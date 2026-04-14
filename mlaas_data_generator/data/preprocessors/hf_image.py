@@ -462,11 +462,18 @@ def preprocess_hf_image(
             feature_num_classes = None
 
     resolved_num_classes = meta.get("num_classes")
-    if resolved_num_classes is None:
-        if feature_num_classes is not None and inferred_num_classes is not None:
-            resolved_num_classes = int(max(feature_num_classes, inferred_num_classes))
-        else:
-            resolved_num_classes = feature_num_classes if feature_num_classes is not None else inferred_num_classes
+    if task_type == "classification":
+        candidates = []
+        for candidate in (resolved_num_classes, feature_num_classes, inferred_num_classes):
+            if candidate is None:
+                continue
+            try:
+                value = int(candidate)
+            except Exception:
+                continue
+            if value > 0:
+                candidates.append(value)
+        resolved_num_classes = int(max(candidates)) if candidates else None
     meta.update(
         {
             "input_shape": inferred_input_shape,

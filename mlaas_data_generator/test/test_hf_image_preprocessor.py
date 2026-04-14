@@ -7,9 +7,10 @@ from mlaas_data_generator.data.preprocessors.hf import preprocess_hf
 
 
 class DummySplit:
-    def __init__(self, rows):
+    def __init__(self, rows, *, features=None):
         self._rows = rows
         self.column_names = list(rows[0].keys()) if rows else []
+        self.features = features or {}
 
     def __len__(self):
         return len(self._rows)
@@ -60,6 +61,11 @@ class FakeImageProcessorCallKwargsButStrictPreprocess:
         if do_normalize and arr.max() > 1:
             arr = arr / 255.0
         return {"pixel_values": arr}
+
+
+class FakeClassLabel:
+    def __init__(self, names):
+        self.names = list(names)
 
 
 def _install_fake_transformers():
@@ -188,6 +194,23 @@ def test_image_classification_preserves_existing_num_classes_metadata():
         (DummySplit(test_rows), None),
         {"hf_task": "image_classification", "modality": "image", "task_type": "classification", "num_classes": 3, "hf_id": "dummy"},
         hf_model_id="dummy/vision",
+    )
+
+    assert meta["num_classes"] == 3
+
+
+def test_image_classification_uses_feature_classes_when_meta_is_too_small():
+    _install_fake_transformers()
+    label_feature = FakeClassLabel(["healthy", "angular_leaf_spot", "bean_rust"])
+    train_rows = [{"image": np.zeros((3, 3, 3), dtype=np.uint8), "label": 0}]
+    test_rows = [{"image": np.ones((3, 3, 3), dtype=np.uint8), "label": 1}]
+
+    _, _, meta = preprocess_hf(
+        (DummySplit(train_rows, features={"label": label_feature}), None),
+        (DummySplit(test_rows, features={"label": label_feature}), None),
+        {"hf_task": "image_classification", "modality": "image", "task_type": "classification", "num_classes": 1, "hf_id": "dummy"},
+        hf_model_id="dummy/vision",
+        label_column="label",
     )
 
     assert meta["num_classes"] == 3
