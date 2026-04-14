@@ -699,7 +699,6 @@ class HFCore:
         m_stats = self.task_spec.metrics_from_statistics(stats_accum) if stats_accum else None
         if isinstance(m_stats, dict) and m_stats:
             print("[HFCore.eval] metric computation starts")
-            print("[HFCore.eval] metric computation starts")
             primary = float(m_stats.get("primary", np.nan))
             secondary = float(m_stats.get("secondary", np.nan))
             named_metrics = m_stats.get("named_metrics") if isinstance(m_stats, dict) else None
@@ -707,7 +706,6 @@ class HFCore:
             primary = np.nan
             secondary = np.nan
         else:
-            print("[HFCore.eval] metric computation starts")
             print("[HFCore.eval] metric computation starts")
             metrics_extra = dict(last_extra or {})
             metrics_extra["task_tag"] = self.task_tag

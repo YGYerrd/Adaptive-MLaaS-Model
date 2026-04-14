@@ -98,6 +98,8 @@ def canonical_label_format(task_family: str) -> str:
 
 def canonical_metric_names(task_family: str, metric_key: str, *, hf_task: str | None = None, task_tag: str | None = None) -> tuple[str, str | None]:
     if task_family == "classification":
+        if normalize_hf_task(hf_task) == "image_classification":
+            return ("accuracy", "top5_accuracy")
         return ("accuracy", "f1")
     if task_family == "token_classification":
         return ("f1", "accuracy")

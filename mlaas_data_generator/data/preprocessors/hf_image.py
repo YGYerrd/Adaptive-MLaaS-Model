@@ -446,9 +446,27 @@ def preprocess_hf_image(
     inferred_num_classes = None
     if task_type == "classification" and len(y_train) > 0:
         inferred_num_classes = int(np.unique(np.asarray(y_train)).size)
+    feature_num_classes = None
+    if task_type == "classification":
+        try:
+            label_feature = (getattr(ds_train, "features", None) or {}).get(label_column)
+            if label_feature is not None:
+                class_names = getattr(label_feature, "names", None)
+                if class_names:
+                    feature_num_classes = int(len(class_names))
+                else:
+                    num_classes_attr = getattr(label_feature, "num_classes", None)
+                    if num_classes_attr is not None:
+                        feature_num_classes = int(num_classes_attr)
+        except Exception:
+            feature_num_classes = None
+
     resolved_num_classes = meta.get("num_classes")
     if resolved_num_classes is None:
-        resolved_num_classes = inferred_num_classes
+        if feature_num_classes is not None and inferred_num_classes is not None:
+            resolved_num_classes = int(max(feature_num_classes, inferred_num_classes))
+        else:
+            resolved_num_classes = feature_num_classes if feature_num_classes is not None else inferred_num_classes
     meta.update(
         {
             "input_shape": inferred_input_shape,
