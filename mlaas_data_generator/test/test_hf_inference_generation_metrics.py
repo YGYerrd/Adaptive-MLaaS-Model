@@ -74,6 +74,15 @@ class DummyGenerationModel:
         return type("Out", (), {"logits": FakeTensor(logits), "loss": FakeTensor(np.asarray(0.5, dtype=np.float32))})
 
 
+class DummyDetectionModel:
+    def eval(self):
+        return self
+
+    def __call__(self, **kwargs):
+        logits = np.asarray([[0.1, 0.9]], dtype=np.float32)
+        return type("Out", (), {"logits": FakeTensor(logits), "pred_boxes": FakeTensor(np.zeros((1, 1, 4), dtype=np.float32))})
+
+
 class DummyGenerationSpec:
     name = "seq2seq_generation"
     supports_generation = True
@@ -115,6 +124,37 @@ class DummyGenerationSpec:
         common = min(y_true.shape[-1], y_pred.shape[-1])
         score = float((y_true[:, :common] == y_pred[:, :common]).mean())
         return {"primary": score, "secondary": 0.25, "named_metrics": {"token_accuracy": score}}
+
+
+class DummyDetectionSpec:
+    name = "image_detection"
+    supports_generation = False
+
+    def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
+        enc = {"pixel_values": torch.tensor(xb["pixel_values"], dtype=torch.long, device=device)}
+        labels = None if yb is None else [{"classes": torch.tensor([0], dtype=torch.long, device=device)}]
+        return enc, labels, {}
+
+    def build_forward_inputs(self, enc, labels_t=None, inference_only=False):
+        return dict(enc)
+
+    def preds_from_logits(self, torch, logits, extra):
+        return logits
+
+    def batch_metric_statistics(self, torch, logits, labels_t, extra):
+        return {"tp": 1.0} if labels_t is not None else None
+
+    def batch_metric_statistics_from_outputs(self, torch, outputs, labels_t, extra):
+        return {"gt": 1.0} if labels_t is not None else None
+
+    def metrics_from_statistics(self, stats):
+        tp = float(stats.get("tp", 0.0))
+        gt = float(stats.get("gt", 0.0))
+        score = tp / gt if gt > 0 else np.nan
+        return {"primary": score, "secondary": score, "named_metrics": {"map": score}}
+
+    def metrics(self, y_true, y_pred, y_extra=None):
+        return {"primary": np.nan, "secondary": np.nan}
 
 
 def test_causal_lm_inference_only_strips_supervised_suffix_from_prompt_tokens():
@@ -201,3 +241,32 @@ def test_causal_lm_encode_batch_left_pads_dict_inputs_even_without_labels():
     assert enc["input_ids"].numpy().tolist() == [[0, 0, 10, 11], [0, 20, 21, 22]]
     assert enc["attention_mask"].numpy().tolist() == [[0, 0, 1, 1], [0, 1, 1, 1]]
     assert labels_t is None
+
+
+def test_hfcore_eval_inference_only_non_generation_uses_label_stats_for_metrics():
+    core = HFCore.__new__(HFCore)
+    core.torch = FakeTorch()
+    core.task_spec = DummyDetectionSpec()
+    core.tokenizer = None
+    core.model = DummyDetectionModel()
+    core.generation_config = {}
+    core.batch_size = 1
+    core.device = "cpu"
+    core.label_pad_value = -100
+    core.max_length = 4
+    core.model_id = "dummy-det"
+    core.weight_format = None
+    core.task_tag = None
+    core.tokenizer_load_s = 0.0
+    core.model_load_s = 0.0
+    core.tokenizer_cache_hit = True
+    core.model_cache_hit = True
+
+    xs = {"pixel_values": np.asarray([[[[1.0]]]], dtype=np.float32)}
+    ys = [{"classes": np.asarray([0], dtype=np.int64), "boxes": np.asarray([[0, 0, 1, 1]], dtype=np.float32)}]
+
+    _, primary, secondary, qos = core.eval(xs, ys, inference_only=True)
+
+    assert np.isclose(primary, 1.0)
+    assert np.isclose(secondary, 1.0)
+    assert np.isclose(qos["map"], 1.0)
