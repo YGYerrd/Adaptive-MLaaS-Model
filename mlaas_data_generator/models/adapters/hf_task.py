@@ -451,10 +451,41 @@ class ObjectDetectionSpec(HFTaskSpec):
             **kwargs,
         )
 
+    @staticmethod
+    def _normalise_pixel_array(sample):
+        arr = np.asarray(sample, dtype=np.float32)
+        if arr.ndim != 3:
+            raise ValueError(f"object detection expects 3D image tensors, got shape={arr.shape}")
+        if arr.shape[0] == 3:
+            return arr
+        if arr.shape[-1] == 3:
+            return np.transpose(arr, (2, 0, 1))
+        raise ValueError(
+            "object detection expects image tensors with 3 channels in CHW or HWC layout, "
+            f"got shape={arr.shape}"
+        )
+
     def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
         if not isinstance(xb, dict) or "pixel_values" not in xb:
             raise ValueError("object detection expects dict input with 'pixel_values'")
-        enc = {"pixel_values": torch.tensor(xb["pixel_values"], dtype=torch.float32, device=device)}
+        pixel_values = xb["pixel_values"]
+        pixel_arrays = [self._normalise_pixel_array(sample) for sample in pixel_values]
+        if not pixel_arrays:
+            enc = {"pixel_values": torch.empty((0, 3, 0, 0), dtype=torch.float32, device=device)}
+        else:
+            shapes = {arr.shape for arr in pixel_arrays}
+            if len(shapes) == 1:
+                batch_pixels = np.stack(pixel_arrays, axis=0)
+            else:
+                max_h = max(arr.shape[1] for arr in pixel_arrays)
+                max_w = max(arr.shape[2] for arr in pixel_arrays)
+                padded = []
+                for arr in pixel_arrays:
+                    pad_h = max_h - arr.shape[1]
+                    pad_w = max_w - arr.shape[2]
+                    padded.append(np.pad(arr, ((0, 0), (0, pad_h), (0, pad_w)), mode="constant"))
+                batch_pixels = np.stack(padded, axis=0)
+            enc = {"pixel_values": torch.tensor(batch_pixels, dtype=torch.float32, device=device)}
         labels_t = None
         if yb is not None:
             labels_t = []
