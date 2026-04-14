@@ -493,6 +493,25 @@ class ObjectDetectionSpec(HFTaskSpec):
             return mapped
         return class_ids
 
+    def _remap_predicted_class_indices_if_needed(self, class_indices, num_pred_classes):
+        class_ids = np.asarray(class_indices, dtype=np.int64)
+        valid_ids = self._model_valid_class_ids
+        if class_ids.size == 0 or not valid_ids:
+            return class_ids
+
+        # Some checkpoints expose contiguous prediction logits over only the
+        # valid classes while still publishing sparse COCO ids in id2label
+        # (e.g. valid ids start at 1). Detect that layout from the logits
+        # dimensionality and remap only in that case.
+        if (
+            valid_ids[0] == 1
+            and int(num_pred_classes) == int(len(valid_ids))
+            and int(np.min(class_ids)) >= 0
+            and int(np.max(class_ids)) < int(len(valid_ids))
+        ):
+            return np.asarray([int(valid_ids[int(cid)]) for cid in class_ids], dtype=np.int64)
+        return class_ids
+
     @staticmethod
     def _normalise_pixel_array(sample):
         arr = np.asarray(sample, dtype=np.float32)
@@ -646,8 +665,11 @@ class ObjectDetectionSpec(HFTaskSpec):
 
             p_scores = probs[bidx, :, :-1].max(axis=-1)
             p_cls = probs[bidx, :, :-1].argmax(axis=-1)
-            p_cls = self._remap_contiguous_classes_if_needed(p_cls, force=True)
+            p_cls = self._remap_predicted_class_indices_if_needed(p_cls, num_pred_classes=probs.shape[-1] - 1)
             keep = p_scores >= float(extra.get("score_threshold", self.score_threshold))
+            if self._model_valid_class_ids:
+                valid_set = set(int(v) for v in self._model_valid_class_ids)
+                keep = keep & np.asarray([int(cid) in valid_set for cid in p_cls], dtype=bool)
             p_scores = p_scores[keep]
             p_cls = p_cls[keep]
             p_boxes = boxes[bidx][keep]
