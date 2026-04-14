@@ -56,6 +56,34 @@ def _first_sample_shape(x_train):
     return tuple()
 
 
+def _can_compute_numeric_range(values) -> bool:
+    """Return True when values can be safely reduced via numeric min/max."""
+    if values is None:
+        return False
+    try:
+        arr = np.asarray(values)
+    except Exception:
+        return False
+    if arr.size == 0:
+        return False
+    if arr.dtype.kind in {"b", "i", "u", "f"}:
+        return True
+    try:
+        flat = arr.reshape(-1)
+    except Exception:
+        return False
+    for item in flat:
+        if item is None:
+            continue
+        if isinstance(item, Number):
+            continue
+        try:
+            float(item)
+        except Exception:
+            return False
+    return True
+
+
 class FederatedDataGenerator:
     """Generate MLaaS client records using a simple federated-learning loop."""
     def __init__(
@@ -116,15 +144,17 @@ class FederatedDataGenerator:
 
         # Regression: set value range for distribution summaries
         if self.task_type == "regression" or self.num_classes is None:
-            if len(self.y_train) > 0:
+            if _can_compute_numeric_range(self.y_train):
                 y_min = float(np.min(self.y_train))
                 y_max = float(np.max(self.y_train))
                 if y_min == y_max:
                     y_min -= 0.5
                     y_max += 0.5
                 self.distribution_range = (y_min, y_max)
-            else:
+            elif self.task_type == "regression":
                 self.distribution_range = (0.0, 1.0)
+            else:
+                self.distribution_range = None
         else:
             self.distribution_range = None
 
