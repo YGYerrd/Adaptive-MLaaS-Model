@@ -47,3 +47,22 @@ def test_image_specs_do_not_require_tokenizer():
     assert ImageClassificationSpec.requires_tokenizer is False
     assert ObjectDetectionSpec.requires_tokenizer is False
     assert ImageSegmentationSpec.requires_tokenizer is False
+
+
+def test_object_detection_does_not_require_num_labels_and_builds_without_it():
+    class _AutoModelForObjectDetection:
+        called_kwargs = None
+
+        @classmethod
+        def from_pretrained(cls, model_id, **kwargs):
+            cls.called_kwargs = kwargs
+            return {"model_id": model_id, "kwargs": kwargs}
+
+    class _Transformers:
+        AutoModelForObjectDetection = _AutoModelForObjectDetection
+
+    spec = ObjectDetectionSpec()
+    assert spec.requires_num_labels is False
+    model = spec.build_model(_Transformers, "fake/model", num_labels=None)
+    assert model["model_id"] == "fake/model"
+    assert "num_labels" not in _AutoModelForObjectDetection.called_kwargs
