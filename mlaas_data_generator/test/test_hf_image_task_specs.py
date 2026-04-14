@@ -106,3 +106,22 @@ def test_object_detection_batch_metric_statistics_from_outputs_counts_true_posit
     assert np.isclose(stats["tp_0.5"], 1.0)
     assert np.isclose(stats["tp_0.75"], 1.0)
     assert np.isclose(stats["tp_0.95"], 1.0)
+
+
+def test_object_detection_encode_batch_remaps_contiguous_coco_ids_when_model_uses_na_zero_slot():
+    spec = ObjectDetectionSpec()
+    # Mimic COCO-style id2label where index 0 is "N/A" and real classes start at 1.
+    spec._model_valid_class_ids = list(range(1, 91))
+    xb = {"pixel_values": [np.zeros((3, 8, 8), dtype=np.float32)]}
+    yb = [{"boxes": [[0, 0, 1, 1]], "classes": [0, 2]}]
+
+    _, labels_t, _ = spec.encode_batch(
+        tokenizer=None,
+        xb=xb,
+        yb=yb,
+        max_length=0,
+        torch=torch,
+        device=torch.device("cpu"),
+    )
+
+    assert labels_t[0]["class_labels"].detach().cpu().numpy().tolist() == [1, 3]

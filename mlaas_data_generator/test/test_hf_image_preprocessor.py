@@ -178,6 +178,21 @@ def test_image_task_dispatch_uses_hf_task_when_modality_missing():
     assert y_test.tolist() == [0]
 
 
+def test_image_classification_preserves_existing_num_classes_metadata():
+    _install_fake_transformers()
+    train_rows = [{"image": np.zeros((3, 3, 3), dtype=np.uint8), "label": 0}]
+    test_rows = [{"image": np.ones((3, 3, 3), dtype=np.uint8), "label": 0}]
+
+    _, _, meta = preprocess_hf(
+        (DummySplit(train_rows), None),
+        (DummySplit(test_rows), None),
+        {"hf_task": "image_classification", "modality": "image", "task_type": "classification", "num_classes": 3, "hf_id": "dummy"},
+        hf_model_id="dummy/vision",
+    )
+
+    assert meta["num_classes"] == 3
+
+
 def test_image_task_dispatch_normalizes_detection_alias_with_wrong_modality():
     _install_fake_transformers()
     train_rows = [{"image": np.zeros((2, 2, 3), dtype=np.uint8), "boxes": [[0, 0, 1, 1]], "classes": [2]}]

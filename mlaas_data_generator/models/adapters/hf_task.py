@@ -441,15 +441,56 @@ class ObjectDetectionSpec(HFTaskSpec):
 
     def __init__(self, score_threshold=0.05):
         self.score_threshold = float(score_threshold)
+        self._model_valid_class_ids = None
 
     def build_model(self, transformers, model_id, num_labels):
         kwargs = {"ignore_mismatched_sizes": True}
         if num_labels is not None:
             kwargs["num_labels"] = int(num_labels)
-        return transformers.AutoModelForObjectDetection.from_pretrained(
+        model = transformers.AutoModelForObjectDetection.from_pretrained(
             model_id,
             **kwargs,
         )
+        self._model_valid_class_ids = self._extract_valid_class_ids_from_model(model)
+        return model
+
+    @staticmethod
+    def _extract_valid_class_ids_from_model(model):
+        config = getattr(model, "config", None)
+        id2label = getattr(config, "id2label", None)
+        if not isinstance(id2label, dict) or not id2label:
+            return None
+        cleaned = {}
+        for k, v in id2label.items():
+            try:
+                kid = int(k)
+            except Exception:
+                continue
+            cleaned[kid] = str(v)
+        if not cleaned:
+            return None
+        valid = [k for k in sorted(cleaned) if cleaned[k].strip().lower() != "n/a"]
+        return valid or None
+
+    def _remap_contiguous_classes_if_needed(self, classes):
+        class_ids = np.asarray(classes, dtype=np.int64)
+        valid_ids = self._model_valid_class_ids
+        if class_ids.size == 0 or not valid_ids:
+            return class_ids
+
+        # COCO-style HF checkpoints (e.g. DETR/YOLOS) frequently expose id2label
+        # with index 0 reserved for "N/A". Some datasets provide contiguous
+        # category ids in [0, 79], where 0 means "person". In that case we need
+        # to remap contiguous ids -> model ids before metric matching.
+        if (
+            valid_ids
+            and valid_ids[0] == 1
+            and 0 in set(class_ids.tolist())
+            and int(np.max(class_ids)) < len(valid_ids)
+        ):
+            mapped = np.asarray([int(valid_ids[int(cid)]) for cid in class_ids], dtype=np.int64)
+            return mapped
+        return class_ids
 
     @staticmethod
     def _normalise_pixel_array(sample):
@@ -494,9 +535,10 @@ class ObjectDetectionSpec(HFTaskSpec):
                 image_w = int(pixel_arrays[idx].shape[2]) if idx < len(pixel_arrays) else 1
                 boxes_xyxy_norm = self._to_xyxy_normalized(item.get("boxes", []), image_h=image_h, image_w=image_w)
                 boxes_cxcywh_norm = self._xyxy_to_cxcywh(boxes_xyxy_norm)
+                class_labels = self._remap_contiguous_classes_if_needed(item.get("classes", []))
                 labels_t.append(
                     {
-                        "class_labels": torch.tensor(item.get("classes", []), dtype=torch.long, device=device),
+                        "class_labels": torch.tensor(class_labels, dtype=torch.long, device=device),
                         "boxes": torch.tensor(boxes_cxcywh_norm, dtype=torch.float32, device=device),
                     }
                 )
