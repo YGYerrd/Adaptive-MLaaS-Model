@@ -76,6 +76,10 @@ def load_huggingface_source(**kwargs):
 
     if max_samples:
         n = int(max_samples)
+        if len(ds_train) > 1:
+            ds_train = ds_train.shuffle(seed=seed)
+        if len(ds_test) > 1:
+            ds_test = ds_test.shuffle(seed=seed + 1)
         ds_train = ds_train.select(range(min(n, len(ds_train))))
         ds_test = ds_test.select(range(min(max(1, n // 5), len(ds_test))))
 
