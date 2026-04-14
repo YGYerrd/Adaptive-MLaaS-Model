@@ -489,11 +489,15 @@ class ObjectDetectionSpec(HFTaskSpec):
         labels_t = None
         if yb is not None:
             labels_t = []
-            for item in yb:
+            for idx, item in enumerate(yb):
+                image_h = int(pixel_arrays[idx].shape[1]) if idx < len(pixel_arrays) else 1
+                image_w = int(pixel_arrays[idx].shape[2]) if idx < len(pixel_arrays) else 1
+                boxes_xyxy_norm = self._to_xyxy_normalized(item.get("boxes", []), image_h=image_h, image_w=image_w)
+                boxes_cxcywh_norm = self._xyxy_to_cxcywh(boxes_xyxy_norm)
                 labels_t.append(
                     {
                         "class_labels": torch.tensor(item.get("classes", []), dtype=torch.long, device=device),
-                        "boxes": torch.tensor(item.get("boxes", []), dtype=torch.float32, device=device),
+                        "boxes": torch.tensor(boxes_cxcywh_norm, dtype=torch.float32, device=device),
                     }
                 )
         return enc, labels_t, {"score_threshold": self.score_threshold}
@@ -525,6 +529,60 @@ class ObjectDetectionSpec(HFTaskSpec):
         union = np.clip(area_a[:, None] + area_b[None, :] - inter, a_min=1e-9, a_max=None)
         return inter / union
 
+    @staticmethod
+    def _xyxy_to_cxcywh(boxes_xyxy):
+        if boxes_xyxy.size == 0:
+            return np.zeros((0, 4), dtype=np.float32)
+        x1, y1, x2, y2 = boxes_xyxy.T
+        w = np.clip(x2 - x1, a_min=0.0, a_max=None)
+        h = np.clip(y2 - y1, a_min=0.0, a_max=None)
+        cx = x1 + (w / 2.0)
+        cy = y1 + (h / 2.0)
+        return np.column_stack([cx, cy, w, h]).astype(np.float32, copy=False)
+
+    @staticmethod
+    def _cxcywh_to_xyxy(boxes_cxcywh):
+        if boxes_cxcywh.size == 0:
+            return np.zeros((0, 4), dtype=np.float32)
+        cx, cy, w, h = boxes_cxcywh.T
+        return np.column_stack([
+            cx - w / 2.0,
+            cy - h / 2.0,
+            cx + w / 2.0,
+            cy + h / 2.0,
+        ]).astype(np.float32, copy=False)
+
+    def _to_xyxy_normalized(self, boxes, image_h, image_w):
+        out_boxes = np.asarray(boxes, dtype=np.float32)
+        if out_boxes.size == 0:
+            return np.zeros((0, 4), dtype=np.float32)
+        if out_boxes.ndim == 1:
+            out_boxes = out_boxes.reshape(1, 4)
+        if out_boxes.ndim != 2 or out_boxes.shape[1] != 4:
+            raise ValueError(f"object detection boxes must be Nx4, got shape={out_boxes.shape}")
+
+        max_val = float(np.max(out_boxes))
+        monotonic_xyxy = bool(np.all(out_boxes[:, 2] >= out_boxes[:, 0]) and np.all(out_boxes[:, 3] >= out_boxes[:, 1]))
+        if max_val <= 1.5:
+            boxes_xyxy = out_boxes if monotonic_xyxy else self._cxcywh_to_xyxy(out_boxes)
+        else:
+            bounded_xyxy = (
+                monotonic_xyxy
+                and np.all(out_boxes[:, 0] <= float(image_w) * 1.05)
+                and np.all(out_boxes[:, 2] <= float(image_w) * 1.05)
+                and np.all(out_boxes[:, 1] <= float(image_h) * 1.05)
+                and np.all(out_boxes[:, 3] <= float(image_h) * 1.05)
+            )
+            if bounded_xyxy:
+                boxes_xyxy = out_boxes
+            else:
+                x, y, w, h = out_boxes.T
+                boxes_xyxy = np.column_stack([x, y, x + w, y + h])
+            boxes_xyxy[:, [0, 2]] /= max(float(image_w), 1e-9)
+            boxes_xyxy[:, [1, 3]] /= max(float(image_h), 1e-9)
+
+        return np.clip(boxes_xyxy, a_min=0.0, a_max=1.0).astype(np.float32, copy=False)
+
     def batch_metric_statistics_from_outputs(self, torch, outputs, labels_t, extra):
         if labels_t is None or outputs is None or not hasattr(outputs, "pred_boxes"):
             return None
@@ -539,6 +597,7 @@ class ObjectDetectionSpec(HFTaskSpec):
 
         for bidx, gt in enumerate(labels_t):
             gt_boxes = gt["boxes"].detach().cpu().numpy()
+            gt_boxes = self._cxcywh_to_xyxy(gt_boxes)
             gt_classes = gt["class_labels"].detach().cpu().numpy()
             stats["gt"] += float(len(gt_classes))
 
@@ -548,12 +607,7 @@ class ObjectDetectionSpec(HFTaskSpec):
             p_scores = p_scores[keep]
             p_cls = p_cls[keep]
             p_boxes = boxes[bidx][keep]
-            p_boxes = np.column_stack([
-                p_boxes[:, 0] - p_boxes[:, 2] / 2.0,
-                p_boxes[:, 1] - p_boxes[:, 3] / 2.0,
-                p_boxes[:, 0] + p_boxes[:, 2] / 2.0,
-                p_boxes[:, 1] + p_boxes[:, 3] / 2.0,
-            ]) if p_boxes.size else np.zeros((0, 4), dtype=np.float32)
+            p_boxes = self._cxcywh_to_xyxy(p_boxes)
 
             for thr in thresholds:
                 matched_gt = set()
