@@ -472,7 +472,7 @@ class ObjectDetectionSpec(HFTaskSpec):
         valid = [k for k in sorted(cleaned) if cleaned[k].strip().lower() != "n/a"]
         return valid or None
 
-    def _remap_contiguous_classes_if_needed(self, classes):
+    def _remap_contiguous_classes_if_needed(self, classes, *, force=False):
         class_ids = np.asarray(classes, dtype=np.int64)
         valid_ids = self._model_valid_class_ids
         if class_ids.size == 0 or not valid_ids:
@@ -485,8 +485,9 @@ class ObjectDetectionSpec(HFTaskSpec):
         if (
             valid_ids
             and valid_ids[0] == 1
-            and 0 in set(class_ids.tolist())
+            and int(np.min(class_ids)) >= 0
             and int(np.max(class_ids)) < len(valid_ids)
+            and (force or 0 in set(class_ids.tolist()))
         ):
             mapped = np.asarray([int(valid_ids[int(cid)]) for cid in class_ids], dtype=np.int64)
             return mapped
@@ -645,6 +646,7 @@ class ObjectDetectionSpec(HFTaskSpec):
 
             p_scores = probs[bidx, :, :-1].max(axis=-1)
             p_cls = probs[bidx, :, :-1].argmax(axis=-1)
+            p_cls = self._remap_contiguous_classes_if_needed(p_cls, force=True)
             keep = p_scores >= float(extra.get("score_threshold", self.score_threshold))
             p_scores = p_scores[keep]
             p_cls = p_cls[keep]
