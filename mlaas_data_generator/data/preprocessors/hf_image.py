@@ -446,6 +446,9 @@ def preprocess_hf_image(
     inferred_num_classes = None
     if task_type == "classification" and len(y_train) > 0:
         inferred_num_classes = int(np.unique(np.asarray(y_train)).size)
+    resolved_num_classes = meta.get("num_classes")
+    if resolved_num_classes is None:
+        resolved_num_classes = inferred_num_classes
     meta.update(
         {
             "input_shape": inferred_input_shape,
@@ -458,7 +461,7 @@ def preprocess_hf_image(
             "modality": "image",
             "hf_processor": hf_model_id,
             "channel_order": "CHW",
-            "num_classes": inferred_num_classes,
+            "num_classes": resolved_num_classes,
             "training_augmentations": bool(training_augmentations),
             "eval_augmentations": bool(eval_augmentations),
             "decode_error_policy": on_decode_error,
