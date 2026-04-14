@@ -191,6 +191,18 @@ def _process_split(
                 pix = np.transpose(pix, (2, 0, 1))
             if pix.shape[0] != 3:
                 raise ValueError(f"processor output must have 3 channels, got {pix.shape}")
+
+            if task_type == "classification":
+                label = int(row.get(label_column))
+            elif task_type == "detection":
+                label = _normalise_detection_item(row.get(boxes_column), row.get(classes_column))
+            elif task_type == "segmentation":
+                mask = row.get(mask_column)
+                if mask is None:
+                    raise ValueError("segmentation mask is missing")
+                label = np.asarray(mask)
+            else:
+                label = None
         except Exception as e:
             decode_errors.append({"index": idx, "error": str(e)})
             if on_decode_error == "raise":
@@ -201,28 +213,32 @@ def _process_split(
             continue
 
         images.append(pix)
-
-        if task_type == "classification":
-            labels.append(int(row.get(label_column)))
-        elif task_type == "detection":
-            labels.append(_normalise_detection_item(row.get(boxes_column), row.get(classes_column)))
-        elif task_type == "segmentation":
-            mask = row.get(mask_column)
-            if mask is None:
-                raise ValueError("segmentation mask is missing")
-            labels.append(np.asarray(mask))
-        else:
-            labels.append(None)
+        labels.append(label)
 
     if on_decode_error != "report":
         try:
             stacked_images = np.stack(images, axis=0).astype(np.float32, copy=False)
-        except ValueError as e:
+        except ValueError:
             unique_shapes = sorted({tuple(np.asarray(img).shape) for img in images})
-            raise ValueError(
-                "pixel values have inconsistent shapes after preprocessing; this usually means resizing "
-                f"was not applied consistently. observed shapes={unique_shapes}"
-            ) from e
+            channel_counts = {shape[0] for shape in unique_shapes if len(shape) == 3}
+            if channel_counts != {3}:
+                raise ValueError(
+                    "pixel values have inconsistent non-CHW shapes after preprocessing. "
+                    f"observed shapes={unique_shapes}"
+                )
+
+            max_h = max(shape[1] for shape in unique_shapes)
+            max_w = max(shape[2] for shape in unique_shapes)
+            padded_images = []
+            for image in images:
+                arr = np.asarray(image, dtype=np.float32)
+                if arr.shape[1] == max_h and arr.shape[2] == max_w:
+                    padded_images.append(arr)
+                    continue
+                pad_h = max_h - arr.shape[1]
+                pad_w = max_w - arr.shape[2]
+                padded_images.append(np.pad(arr, ((0, 0), (0, pad_h), (0, pad_w)), mode="constant"))
+            stacked_images = np.stack(padded_images, axis=0).astype(np.float32, copy=False)
         x = {"pixel_values": stacked_images}
     else:
         x = {"pixel_values": images}
