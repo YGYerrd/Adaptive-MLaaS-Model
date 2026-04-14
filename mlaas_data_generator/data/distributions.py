@@ -1,5 +1,63 @@
 import numpy as np
 
+def _maybe_detection_distribution(y):
+    """Return object-detection summary stats when labels are structured dicts."""
+    if y is None:
+        return None
+    if not isinstance(y, (list, tuple, np.ndarray)):
+        return None
+
+    samples = 0
+    total_boxes = 0
+    class_counts = {}
+    saw_detection_schema = False
+
+    for item in y:
+        if item is None:
+            continue
+        if not isinstance(item, dict):
+            return None
+        if "boxes" not in item and "labels" not in item:
+            return None
+        saw_detection_schema = True
+        samples += 1
+
+        boxes = item.get("boxes")
+        labels = item.get("labels")
+
+        if boxes is not None:
+            try:
+                total_boxes += int(len(boxes))
+            except Exception:
+                pass
+
+        if labels is None:
+            continue
+        try:
+            label_values = np.asarray(labels).reshape(-1)
+        except Exception:
+            label_values = labels if isinstance(labels, (list, tuple)) else []
+        for label in label_values:
+            if label is None:
+                continue
+            try:
+                label_id = int(label)
+            except Exception:
+                continue
+            class_counts[label_id] = class_counts.get(label_id, 0) + 1
+
+    if not saw_detection_schema:
+        return None
+
+    avg_boxes = float(total_boxes / max(1, samples))
+    return {
+        "samples": int(samples),
+        "total_boxes": int(total_boxes),
+        "avg_boxes_per_sample": avg_boxes,
+        "class_counts": dict(sorted(class_counts.items())),
+    }
+
+
 def get_mlm_masked_token_stats(y, *, ignore_index=-100, top_k=10):
     """Return MLM masking-oriented stats instead of class histograms."""
     if y is None:
@@ -136,6 +194,10 @@ def get_data_distribution(
     value_range=None,
     label_pad_value=-100,
 ):
+    detection_summary = _maybe_detection_distribution(y)
+    if detection_summary is not None:
+        return detection_summary
+
     # -------------------------
     # Regression path
     # -------------------------
