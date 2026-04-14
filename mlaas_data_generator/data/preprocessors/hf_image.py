@@ -96,6 +96,41 @@ def _normalise_detection_item(boxes, classes):
     return {"boxes": out_boxes, "classes": out_classes}
 
 
+def _extract_detection_annotations(row, *, label_column=None, boxes_column=None, classes_column=None):
+    boxes = row.get(boxes_column) if boxes_column else None
+    classes = row.get(classes_column) if classes_column else None
+
+    if boxes is not None or classes is not None:
+        return _normalise_detection_item(boxes, classes)
+
+    annotation = row.get(label_column) if label_column else None
+    if not isinstance(annotation, dict):
+        return _normalise_detection_item([], [])
+
+    for container_key in ("objects", "annotations", "targets"):
+        nested = annotation.get(container_key)
+        if isinstance(nested, dict):
+            annotation = nested
+            break
+
+    candidate_boxes_keys = ("boxes", "bbox", "bboxes")
+    candidate_classes_keys = ("classes", "class_labels", "labels", "category", "category_id", "category_ids")
+
+    extracted_boxes = None
+    for key in candidate_boxes_keys:
+        if key in annotation:
+            extracted_boxes = annotation.get(key)
+            break
+
+    extracted_classes = None
+    for key in candidate_classes_keys:
+        if key in annotation:
+            extracted_classes = annotation.get(key)
+            break
+
+    return _normalise_detection_item(extracted_boxes, extracted_classes)
+
+
 def _process_split(
     ds,
     *,
@@ -235,7 +270,12 @@ def _process_split(
                     split_name,
                     idx,
                 )
-                label = _normalise_detection_item(row.get(boxes_column), row.get(classes_column))
+                label = _extract_detection_annotations(
+                    row,
+                    label_column=label_column,
+                    boxes_column=boxes_column,
+                    classes_column=classes_column,
+                )
             elif task_type == "segmentation":
                 mask = row.get(mask_column)
                 if mask is None:

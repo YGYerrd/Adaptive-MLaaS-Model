@@ -1,5 +1,53 @@
 import numpy as np
 
+
+def _first_present(mapping, keys):
+    if not isinstance(mapping, dict):
+        return None
+    for key in keys:
+        if key in mapping:
+            return mapping.get(key)
+    return None
+
+
+def _extract_detection_fields(item):
+    if not isinstance(item, dict):
+        return None, None, False
+
+    box_keys = ("boxes", "bbox", "bboxes")
+    class_keys = ("labels", "classes", "class_labels", "category", "category_id", "category_ids")
+
+    boxes = None
+    labels = None
+    saw_schema = False
+    stack = [item]
+    visited = set()
+    while stack:
+        current = stack.pop()
+        if not isinstance(current, dict):
+            continue
+        current_id = id(current)
+        if current_id in visited:
+            continue
+        visited.add(current_id)
+
+        current_boxes = _first_present(current, box_keys)
+        current_labels = _first_present(current, class_keys)
+        if current_boxes is not None:
+            boxes = current_boxes
+            saw_schema = True
+        if current_labels is not None:
+            labels = current_labels
+            saw_schema = True
+
+        for container_key in ("annotation", "objects", "annotations", "targets"):
+            nested = current.get(container_key)
+            if isinstance(nested, dict):
+                stack.append(nested)
+
+    return boxes, labels, saw_schema
+
+
 def _maybe_detection_distribution(y):
     """Return object-detection summary stats when labels are structured dicts."""
     if y is None:
@@ -15,15 +63,11 @@ def _maybe_detection_distribution(y):
     for item in y:
         if item is None:
             continue
-        if not isinstance(item, dict):
-            return None
-        if "boxes" not in item and "labels" not in item:
+        boxes, labels, saw_schema = _extract_detection_fields(item)
+        if not saw_schema:
             return None
         saw_detection_schema = True
         samples += 1
-
-        boxes = item.get("boxes")
-        labels = item.get("labels")
 
         if boxes is not None:
             try:
@@ -36,7 +80,7 @@ def _maybe_detection_distribution(y):
         try:
             label_values = np.asarray(labels).reshape(-1)
         except Exception:
-            label_values = labels if isinstance(labels, (list, tuple)) else []
+            label_values = labels if isinstance(labels, (list, tuple, np.ndarray)) else [labels]
         for label in label_values:
             if label is None:
                 continue
