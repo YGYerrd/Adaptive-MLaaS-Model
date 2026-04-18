@@ -57,6 +57,35 @@ def test_hf_source_multimodal_pair_drop(monkeypatch):
     assert meta["accounting"]["post_filter_record_count"] == 1
 
 
+def test_hf_source_multimodal_resolves_numbered_caption_column(monkeypatch):
+    train_ds = DummyDS([
+        {"image": np.zeros((8, 8, 3), dtype=np.uint8), "caption_0": "a cat"},
+        {"image": np.zeros((8, 8, 3), dtype=np.uint8), "caption_0": "a dog"},
+    ])
+    test_ds = DummyDS([
+        {"image": np.zeros((8, 8, 3), dtype=np.uint8), "caption_0": "a bird"},
+    ])
+    fake_mod = types.SimpleNamespace(
+        load_dataset=lambda *args, **kwargs: train_ds if kwargs.get("split") == "train" else test_ds
+    )
+    monkeypatch.setitem(sys.modules, "datasets", fake_mod)
+
+    (train, _), (test, _), meta = load_huggingface_source(
+        dataset_name="jxie/flickr8k",
+        modality="multimodal",
+        hf_task="image_captioning",
+        image_column="image",
+        text_column="caption",
+        label_column="caption",
+        missing_pair_handling="drop",
+    )
+
+    assert len(train) == 2
+    assert len(test) == 1
+    assert meta["schema"]["text_column"] == "caption_0"
+    assert meta["schema"]["label_column"] == "caption_0"
+
+
 def test_hf_multimodal_preprocessor_contract(monkeypatch):
     train = DummyDS([
         {"image": np.ones((8, 8, 3), dtype=np.uint8), "text": "hello", "label": 1},
@@ -249,3 +278,81 @@ def test_hf_multimodal_caption_fallback_and_image_dict_payload(monkeypatch):
     assert x_train["pixel_values"].shape[0] == 1
     assert x_test["pixel_values"].shape[0] == 1
     assert meta["text_column"] == "caption"
+
+
+def test_hf_multimodal_numbered_caption_fallback_and_token_labels(monkeypatch):
+    train = DummyDS([
+        {"image": {"array": np.ones((8, 8, 3), dtype=np.uint8)}, "caption_0": "a cat"},
+    ])
+    test = DummyDS([
+        {"image": {"array": np.ones((8, 8, 3), dtype=np.uint8)}, "caption_0": "a dog"},
+    ])
+
+    class DummyTokenizer:
+        def __call__(self, text, **kwargs):
+            return {"input_ids": [1, 2, 0], "attention_mask": [1, 1, 0]}
+
+    class DummyImageProcessor:
+        def __call__(self, image, **kwargs):
+            chw = np.transpose(np.asarray(image, dtype=np.float32), (2, 0, 1))
+            return {"pixel_values": chw}
+
+    fake_tr = types.SimpleNamespace(
+        AutoTokenizer=types.SimpleNamespace(from_pretrained=lambda *a, **k: DummyTokenizer()),
+        AutoImageProcessor=types.SimpleNamespace(from_pretrained=lambda *a, **k: DummyImageProcessor()),
+    )
+    monkeypatch.setitem(sys.modules, "transformers", fake_tr)
+
+    (_, y_train), (_, y_test), meta = preprocess_hf_multimodal(
+        (train, None),
+        (test, None),
+        {},
+        hf_model_id="dummy/model",
+        hf_task="image_captioning",
+        text_column="caption",
+        label_column="caption",
+    )
+
+    assert meta["text_column"] == "caption_0"
+    assert meta["label_column"] == "caption_0"
+    assert y_train.tolist() == [[1, 2, -100]]
+    assert y_test.tolist() == [[1, 2, -100]]
+
+
+def test_hf_multimodal_retrieval_ignores_caption_label_column(monkeypatch):
+    train = DummyDS([
+        {"image": np.ones((8, 8, 3), dtype=np.uint8), "caption_0": "a cat"},
+    ])
+    test = DummyDS([
+        {"image": np.ones((8, 8, 3), dtype=np.uint8), "caption_0": "a dog"},
+    ])
+
+    class DummyTokenizer:
+        def __call__(self, text, **kwargs):
+            return {"input_ids": [1, 2, 0], "attention_mask": [1, 1, 0]}
+
+    class DummyImageProcessor:
+        def __call__(self, image, **kwargs):
+            chw = np.transpose(np.asarray(image, dtype=np.float32), (2, 0, 1))
+            return {"pixel_values": chw}
+
+    fake_tr = types.SimpleNamespace(
+        AutoTokenizer=types.SimpleNamespace(from_pretrained=lambda *a, **k: DummyTokenizer()),
+        AutoImageProcessor=types.SimpleNamespace(from_pretrained=lambda *a, **k: DummyImageProcessor()),
+    )
+    monkeypatch.setitem(sys.modules, "transformers", fake_tr)
+
+    (_, y_train), (_, y_test), meta = preprocess_hf_multimodal(
+        (train, None),
+        (test, None),
+        {},
+        hf_model_id="dummy/model",
+        hf_task="text_image_retrieval",
+        text_column="caption",
+        label_column="caption",
+    )
+
+    assert meta["text_column"] == "caption_0"
+    assert meta["label_column"] is None
+    assert y_train.tolist() == [0]
+    assert y_test.tolist() == [0]

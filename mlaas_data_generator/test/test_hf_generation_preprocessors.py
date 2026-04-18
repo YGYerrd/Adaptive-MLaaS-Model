@@ -52,8 +52,18 @@ class FakeTokenizer:
         return out
 
 
+class EmptyPreservingFakeTokenizer(FakeTokenizer):
+    def _encode_one(self, text):
+        return [min(50, max(3, len(tok))) for tok in str(text).split()]
+
+
 def _install_fake_transformers():
     fake_mod = types.SimpleNamespace(AutoTokenizer=FakeTokenizer)
+    sys.modules["transformers"] = fake_mod
+
+
+def _install_empty_preserving_fake_transformers():
+    fake_mod = types.SimpleNamespace(AutoTokenizer=EmptyPreservingFakeTokenizer)
     sys.modules["transformers"] = fake_mod
 
 
@@ -227,3 +237,25 @@ def test_causal_lm_generation_preprocessor_sets_left_padding_and_meta():
 
     assert meta["padding_side"] == "left"
     assert meta["pad_token_id"] == 0
+
+
+def test_causal_lm_generation_preprocessor_keeps_blank_wikitext_rows_nonempty():
+    _install_empty_preserving_fake_transformers()
+    train_rows = [{"text": ""}, {"text": "   "}]
+    test_rows = [{"text": ""}]
+
+    train, test, meta = preprocess_hf(
+        (DummySplit(train_rows), None),
+        (DummySplit(test_rows), None),
+        {"hf_task": "causal_lm_generation", "modality": "text", "max_length": 8, "hf_id": "dummy"},
+        hf_model_id="dummy/model",
+        dynamic_padding=True,
+    )
+
+    x_train, y_train = train
+    x_test, y_test = test
+    assert x_train["input_ids"].shape[1] >= 1
+    assert x_test["input_ids"].shape[1] >= 1
+    assert np.all(x_train["attention_mask"].sum(axis=1) >= 1)
+    assert np.all(x_test["attention_mask"].sum(axis=1) >= 1)
+    assert meta["accounting"]["supervised_token_count"] == int(np.count_nonzero(y_train != -100))

@@ -1,4 +1,18 @@
 from ..accounting import append_accounting_stage, update_accounting
+from ..multimodal_columns import resolve_existing_column
+
+
+_IMAGE_COLUMN_ALIASES = ("image", "img", "images", "pixel_values")
+_TEXT_COLUMN_ALIASES = (
+    "text",
+    "caption",
+    "captions",
+    "sentence",
+    "sentences",
+    "description",
+    "descriptions",
+    "question",
+)
 
 
 def load_huggingface_source(**kwargs):
@@ -35,6 +49,8 @@ def load_huggingface_source(**kwargs):
         return load_dataset(dataset_name, dataset_config, split=split_name)
 
     def _is_unlabelled(ds):
+        if modality == "multimodal":
+            return False
         label_column = kwargs.get("label_column", "label")
         try:
             ys = ds[label_column]
@@ -133,6 +149,8 @@ def load_huggingface_source(**kwargs):
         boxes_column = kwargs.get("boxes_column")
         classes_column = kwargs.get("classes_column")
         mask_column = kwargs.get("mask_column")
+        if task_type == "segmentation" and not mask_column:
+            mask_column = label_column
 
         train_cols = set(getattr(ds_train, "column_names", []) or [])
         if image_column not in train_cols:
@@ -164,8 +182,14 @@ def load_huggingface_source(**kwargs):
             if missing:
                 raise ValueError(f"HF image detection requested columns not found: {missing}")
 
-        if task_type == "segmentation" and mask_column and mask_column not in train_cols:
-            raise ValueError(f"HF image segmentation mask_column '{mask_column}' not found in dataset")
+        if task_type == "segmentation":
+            if not mask_column:
+                raise ValueError(
+                    f"HF image segmentation requires a mask column. "
+                    f"Tried mask_column={kwargs.get('mask_column')} and label_column={label_column}."
+                )
+            if mask_column not in train_cols:
+                raise ValueError(f"HF image segmentation mask_column '{mask_column}' not found in dataset")
 
     if modality == "multimodal":
         image_column = kwargs.get("image_column", "image")
@@ -173,13 +197,32 @@ def load_huggingface_source(**kwargs):
         label_column = kwargs.get("label_column")
         missing_pair_handling = str(kwargs.get("missing_pair_handling", "drop")).strip().lower()
 
-        train_cols = set(getattr(ds_train, "column_names", []) or [])
+        train_columns = list(getattr(ds_train, "column_names", []) or [])
+        train_cols = set(train_columns)
+        image_column = resolve_existing_column(
+            image_column,
+            train_columns,
+            aliases=_IMAGE_COLUMN_ALIASES,
+        )
+        text_column = resolve_existing_column(
+            text_column,
+            train_columns,
+            aliases=_TEXT_COLUMN_ALIASES,
+            numbered_alias_bases=("caption", "captions", "sentence", "sentences", "description", "descriptions"),
+        )
         for required_col, name in ((image_column, "image_column"), (text_column, "text_column")):
             if required_col not in train_cols:
                 raise ValueError(
                     f"HF multimodal modality requires {name} '{required_col}' to exist in dataset '{dataset_name}'. "
                     f"Available columns: {sorted(train_cols)}"
                 )
+
+        resolved_label_column = label_column
+        if resolved_label_column not in train_cols:
+            if str(hf_task).strip().lower().replace("-", "_") == "image_captioning":
+                resolved_label_column = text_column
+            else:
+                resolved_label_column = None
 
         ds_train, train_pair_report = _apply_pair_integrity(
             ds_train,
@@ -199,7 +242,7 @@ def load_huggingface_source(**kwargs):
         schema = {
             "image_column": image_column,
             "text_column": text_column,
-            "label_column": label_column if label_column in train_cols else None,
+            "label_column": resolved_label_column,
             "pair_validation": {
                 "missing_pair_handling": missing_pair_handling,
                 "train": train_pair_report,

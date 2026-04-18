@@ -3,6 +3,8 @@ from numpy.random import default_rng, Generator
 
 
 def _take(x, idx):
+    if x is None:
+        return None
     if isinstance(x, dict):
         return {k: _take(v, idx) for k, v in x.items()}
     if isinstance(x, np.ndarray):
@@ -44,6 +46,41 @@ def _build_clients_from_indices(x, y, indices_by_client: dict):
 
 def _seed(rng):
     return rng if isinstance(rng, Generator) else default_rng()
+
+
+def _resize_clients_to_sample_size(clients, x, y, sample_size, rng=None):
+    """Ensure a configured sample size is a per-client count, not a shared pool."""
+    if sample_size is None:
+        return clients
+
+    target = max(0, int(sample_size))
+    seed = _seed(rng)
+    global_n = _num_samples(x)
+
+    resized = {}
+    for cid, data in clients.items():
+        local_x = data.get("x")
+        local_y = data.get("y")
+        local_n = _num_samples(local_x)
+
+        source_x = local_x
+        source_y = local_y
+        source_n = local_n
+        if source_n == 0 and global_n > 0:
+            source_x = x
+            source_y = y
+            source_n = global_n
+
+        if target == 0 or source_n == 0:
+            idx = np.asarray([], dtype=int)
+        elif source_n == target:
+            idx = np.arange(source_n, dtype=int)
+        else:
+            idx = seed.choice(source_n, size=target, replace=source_n < target)
+
+        resized[cid] = {"x": _take(source_x, idx), "y": _take(source_y, idx)}
+
+    return resized
 
 
 def _split_iid(x, y, num_clients, rng=None):
@@ -200,10 +237,24 @@ def _shrink_dataset(x, y, sample_size=None, sample_frac=None, rng=None):
 
 def split_data(x, y, num_clients, strategy = "iid", distribution_param = None, custom_distributions=None, sample_size=None, sample_frac=None, rng=None):
     strategy = strategy.lower()
-    if sample_size or sample_frac:
-        x,y = _shrink_dataset(x=x, y=y, sample_frac=sample_frac, sample_size=sample_size, rng=rng)
-    
+    num_clients = int(num_clients)
+    if num_clients <= 0:
+        raise ValueError("num_clients must be positive.")
+
     resolved = {"strategy": strategy, "distribution_param": None}
+    if sample_size is not None or sample_frac is not None:
+        requested_sample_size = None if sample_size is None else int(sample_size)
+        effective_sample_size = None
+        effective_sample_frac = sample_frac
+        if requested_sample_size is not None:
+            effective_sample_size = max(0, requested_sample_size) * int(num_clients)
+            effective_sample_frac = None
+            resolved["requested_sample_size_per_client"] = requested_sample_size
+            resolved["effective_sample_size_total"] = effective_sample_size
+            if sample_frac is not None:
+                resolved["ignored_sample_frac"] = sample_frac
+        x,y = _shrink_dataset(x=x, y=y, sample_frac=effective_sample_frac, sample_size=effective_sample_size, rng=rng)
+
     requires_scalar_labels = {"dirichlet", "shard", "label_per_client", "custom"}
     if strategy in requires_scalar_labels and not _is_scalar_label_vector(y):
         resolved["strategy"] = "iid"
@@ -211,47 +262,51 @@ def split_data(x, y, num_clients, strategy = "iid", distribution_param = None, c
             f"strategy='{strategy}' requires scalar class labels; "
             "falling back to iid split for structured/token labels"
         )
-        return _split_iid(x, y, num_clients, rng=rng), resolved
-
-    if num_clients <= 0:
-        raise ValueError("num_clients must be positive.")
+        clients = _split_iid(x, y, num_clients, rng=rng)
+        return _resize_clients_to_sample_size(clients, x, y, sample_size, rng=rng), resolved
 
     if strategy == "iid":
-        return _split_iid(x, y, num_clients, rng=rng), resolved
+        clients = _split_iid(x, y, num_clients, rng=rng)
+        return _resize_clients_to_sample_size(clients, x, y, sample_size, rng=rng), resolved
 
     if strategy == "quantity_skew":
         alpha = float(distribution_param) if distribution_param is not None else 1.0
         if alpha <= 0:
             raise ValueError("alpha must be > 0 for quantity_skew.")
         resolved["distribution_param"] = alpha
-        return _split_quantity_skew(x, y, num_clients, alpha, rng=rng), resolved
+        clients = _split_quantity_skew(x, y, num_clients, alpha, rng=rng)
+        return _resize_clients_to_sample_size(clients, x, y, sample_size, rng=rng), resolved
 
     if strategy == "dirichlet":
         alpha = float(distribution_param) if distribution_param is not None else 0.5
         if alpha <= 0:
             raise ValueError("alpha must be > 0 for dirichlet.")
         resolved["distribution_param"] = alpha
-        return _split_dirichlet_label_skew(x, y, num_clients, alpha, rng=rng), resolved
+        clients = _split_dirichlet_label_skew(x, y, num_clients, alpha, rng=rng)
+        return _resize_clients_to_sample_size(clients, x, y, sample_size, rng=rng), resolved
 
     if strategy == "shard":
         shards_per_client = int(distribution_param) if distribution_param is not None else 2
         if shards_per_client <= 0:
             raise ValueError("shards_per_client must be > 0 for shard.")
         resolved["distribution_param"] = shards_per_client
-        return _split_shard_based(x, y, num_clients, shards_per_client, rng=rng), resolved
+        clients = _split_shard_based(x, y, num_clients, shards_per_client, rng=rng)
+        return _resize_clients_to_sample_size(clients, x, y, sample_size, rng=rng), resolved
 
     if strategy == "label_per_client":
         k = int(distribution_param) if distribution_param is not None else 1
         if not (1 <= k <= int(np.max(y)) + 1):
             raise ValueError("k must be in [1, num_classes] for label_per_client.")
         resolved["distribution_param"] = k
-        return _split_label_per_client(x, y, num_clients, k, rng=rng), resolved
+        clients = _split_label_per_client(x, y, num_clients, k, rng=rng)
+        return _resize_clients_to_sample_size(clients, x, y, sample_size, rng=rng), resolved
 
     if strategy == "custom":
         from .distributions import prepare_client_distributions
         if not custom_distributions:
                 raise ValueError("custom_distributions must be provided for 'custom' strategy.'")
         adjusted = prepare_client_distributions(custom_distributions, num_clients)
-        return _split_custom_data(x, y, adjusted, rng=rng), resolved
+        clients = _split_custom_data(x, y, adjusted, rng=rng)
+        return _resize_clients_to_sample_size(clients, x, y, sample_size, rng=rng), resolved
 
     raise ValueError(f"Unknown data split strategy: {strategy}")

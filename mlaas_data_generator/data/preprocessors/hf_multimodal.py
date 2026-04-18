@@ -1,6 +1,19 @@
 from ..accounting import append_accounting_stage, finalize_accounting
+from ..multimodal_columns import resolve_existing_column
 import numpy as np
 
+
+_IMAGE_COLUMN_ALIASES = ("image", "img", "images", "pixel_values")
+_TEXT_COLUMN_ALIASES = (
+    "text",
+    "caption",
+    "captions",
+    "sentence",
+    "sentences",
+    "description",
+    "descriptions",
+    "question",
+)
 
 _TASK_COLUMN_DEFAULTS = {
     "visual_question_answering": {"text_column": "question", "label_column": "answer"},
@@ -72,6 +85,7 @@ def _validate_pair_alignment(ds, *, image_column, text_column, split_name, missi
 def _encode_split(
     ds,
     *,
+    hf_task,
     tokenizer,
     image_processor,
     image_column,
@@ -142,7 +156,28 @@ def _encode_split(
         input_ids.append(ids)
         attention_masks.append(mask)
         pixel_values.append(pix)
-        if label_column is not None:
+        if hf_task == "image_captioning":
+            label_text = row.get(label_column) if label_column is not None else text_val
+            if not _has_value(label_text):
+                label_text = text_val
+            label_enc = tokenizer(
+                str(label_text),
+                truncation=True,
+                padding="max_length",
+                max_length=int(max_length),
+                return_attention_mask=True,
+                return_tensors=None,
+            )
+            label_ids = np.asarray(label_enc["input_ids"], dtype=np.int64)
+            label_mask = np.asarray(label_enc["attention_mask"], dtype=np.int64)
+            if label_ids.ndim == 2:
+                label_ids = label_ids[0]
+            if label_mask.ndim == 2:
+                label_mask = label_mask[0]
+            label_ids = label_ids.copy()
+            label_ids[label_mask == 0] = -100
+            labels.append(label_ids)
+        elif label_column is not None:
             labels.append(row.get(label_column))
 
     x = {
@@ -150,7 +185,7 @@ def _encode_split(
         "attention_mask": np.asarray(attention_masks, dtype=np.int64),
         "pixel_values": np.asarray(pixel_values, dtype=np.float32),
     }
-    y = np.asarray(labels) if label_column is not None else np.zeros((len(input_ids),), dtype=np.int64)
+    y = np.asarray(labels) if labels else np.zeros((len(input_ids),), dtype=np.int64)
 
     if len(x["input_ids"]) != len(x["pixel_values"]):
         raise ValueError("Multimodal alignment check failed: token and image batch lengths differ")
@@ -185,21 +220,12 @@ def _resolve_multimodal_columns(
         )
     elif task == "text_image_retrieval":
         resolved_text_column = text_column or defaults.get("text_column", "text")
-        resolved_label_column = ranking_label_column if ranking_label_column is not None else label_column
+        resolved_label_column = ranking_label_column
     elif task == "image_captioning":
         resolved_text_column = text_column or defaults.get("text_column", "text")
         resolved_label_column = label_column
 
     return task, image_column, resolved_text_column, resolved_label_column
-
-
-def _pick_existing_column(preferred, available_columns, *, aliases):
-    if preferred in available_columns:
-        return preferred
-    for name in aliases:
-        if name in available_columns:
-            return name
-    return preferred
 
 
 def preprocess_hf_multimodal(
@@ -239,14 +265,29 @@ def preprocess_hf_multimodal(
         answer_column,
         ranking_label_column,
     )
-    train_columns = set(getattr(ds_train, "column_names", []) or [])
+    train_columns = list(getattr(ds_train, "column_names", []) or [])
+    train_column_set = set(train_columns)
     if train_columns:
-        text_column = _pick_existing_column(
+        text_column = resolve_existing_column(
             text_column,
             train_columns,
-            aliases=("text", "caption", "captions", "sentence", "sentences", "description", "descriptions", "question"),
+            aliases=_TEXT_COLUMN_ALIASES,
+            numbered_alias_bases=("caption", "captions", "sentence", "sentences", "description", "descriptions"),
         )
-        image_column = _pick_existing_column(image_column, train_columns, aliases=("image", "img", "images", "pixel_values"))
+        image_column = resolve_existing_column(image_column, train_columns, aliases=_IMAGE_COLUMN_ALIASES)
+        if hf_task == "image_captioning":
+            label_column = resolve_existing_column(
+                label_column,
+                train_columns,
+                aliases=(text_column,),
+                numbered_alias_bases=("caption", "captions", "sentence", "sentences", "description", "descriptions"),
+            )
+            if label_column not in train_column_set:
+                label_column = text_column
+        elif label_column is not None:
+            label_column = resolve_existing_column(label_column, train_columns)
+            if label_column not in train_column_set:
+                label_column = None
 
     tokenizer = AutoTokenizer.from_pretrained(hf_model_id, use_fast=True)
     image_processor = AutoImageProcessor.from_pretrained(hf_model_id)
@@ -268,6 +309,7 @@ def preprocess_hf_multimodal(
 
     x_train, y_train, train_survived = _encode_split(
         ds_train,
+        hf_task=hf_task,
         tokenizer=tokenizer,
         image_processor=image_processor,
         image_column=image_column,
@@ -277,6 +319,7 @@ def preprocess_hf_multimodal(
     )
     x_test, y_test, test_survived = _encode_split(
         ds_test,
+        hf_task=hf_task,
         tokenizer=tokenizer,
         image_processor=image_processor,
         image_column=image_column,

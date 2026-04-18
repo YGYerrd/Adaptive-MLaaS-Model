@@ -363,6 +363,50 @@ class HFCore:
         self.model.load_state_dict(new_sd, strict=False)
         self.model.to(self.device)
 
+    def _init_metric_accumulator(self):
+        init_fn = getattr(self.task_spec, "init_metric_accumulator", None)
+        if callable(init_fn):
+            return init_fn()
+        return {}
+
+    def _accumulate_metric_statistics(self, accumulator, batch_stats):
+        if not batch_stats:
+            return accumulator
+        update_fn = getattr(self.task_spec, "accumulate_metric_statistics", None)
+        if callable(update_fn):
+            return update_fn(accumulator, batch_stats)
+        if accumulator is None:
+            accumulator = {}
+        for k, v in batch_stats.items():
+            accumulator[k] = float(accumulator.get(k, 0.0)) + float(v)
+        return accumulator
+
+    def _has_metric_statistics(self, accumulator):
+        has_fn = getattr(self.task_spec, "has_metric_statistics", None)
+        if callable(has_fn):
+            return bool(has_fn(accumulator))
+        return bool(accumulator)
+
+    def _metric_statistics_summary(self, accumulator):
+        summary_fn = getattr(self.task_spec, "metric_statistics_summary", None)
+        if callable(summary_fn):
+            return summary_fn(accumulator)
+        if not isinstance(accumulator, dict):
+            return {}
+        summary = {}
+        for key, value in accumulator.items():
+            try:
+                summary[str(key)] = float(value)
+            except Exception:
+                continue
+        return summary
+
+    def _extract_logits(self, outputs):
+        extract_fn = getattr(self.task_spec, "extract_logits", None)
+        if callable(extract_fn):
+            return extract_fn(outputs)
+        return outputs.logits
+
     def _training_timed_out(self, train_start_ts, max_train_time_s):
         if max_train_time_s is None:
             return False
@@ -414,7 +458,7 @@ class HFCore:
                 optimizer.zero_grad(set_to_none=True)
                 model_inputs = self.task_spec.build_forward_inputs(enc, labels_t=labels_t, inference_only=False)
                 outputs = self.model(**model_inputs)
-                logits = outputs.logits
+                logits = self._extract_logits(outputs)
                 loss = self.task_spec.extract_loss(torch, outputs, logits, labels_t, extra)
                 if loss is None:
                     raise ValueError("Supervised fine-tune mode requires labels/loss-capable batch")
@@ -509,7 +553,7 @@ class HFCore:
 
         preds_all = []
         labels_all = []
-        stats_accum = {}
+        stats_accum = self._init_metric_accumulator()
 
         if isinstance(xs, dict):
             eval_sequence_count = len(next(iter(xs.values())))
@@ -600,16 +644,14 @@ class HFCore:
                             inference_only=False,
                         )
                         outputs = self.model(**teacher_inputs)
-                        logits = outputs.logits
+                        logits = self._extract_logits(outputs)
                         stat = self.task_spec.batch_metric_statistics(torch, logits, teacher_labels_t, teacher_extra)
                         if stat:
-                            for k, v in stat.items():
-                                stats_accum[k] = float(stats_accum.get(k, 0.0)) + float(v)
+                            stats_accum = self._accumulate_metric_statistics(stats_accum, stat)
 
                         stat_out = self.task_spec.batch_metric_statistics_from_outputs(torch, outputs, teacher_labels_t, teacher_extra)
                         if stat_out:
-                            for k, v in stat_out.items():
-                                stats_accum[k] = float(stats_accum.get(k, 0.0)) + float(v)
+                            stats_accum = self._accumulate_metric_statistics(stats_accum, stat_out)
 
                         loss = self.task_spec.extract_loss(torch, outputs, logits, teacher_labels_t, teacher_extra)
                         if loss is not None:
@@ -627,22 +669,21 @@ class HFCore:
                     if not first_batch_logged:
                         print("[HFCore.eval] model forward starts")
                     outputs = self.model(**model_inputs)
-                    logits = outputs.logits
+                    logits = self._extract_logits(outputs)
                     pred_t = self.task_spec.preds_from_logits(torch, logits, extra)
                     if not first_batch_logged:
                         print("[HFCore.eval] first batch forward ends")
                     preds_all.append(pred_t.detach().cpu().numpy())
                     
-                    if labels_t is not None:
+                    collect_unlabeled_stats = bool(getattr(self.task_spec, "supports_unlabeled_metric_statistics", False))
+                    if labels_t is not None or collect_unlabeled_stats:
                         stat = self.task_spec.batch_metric_statistics(torch, logits, labels_t, extra)
                         if stat:
-                            for k, v in stat.items():
-                                stats_accum[k] = float(stats_accum.get(k, 0.0)) + float(v)
+                            stats_accum = self._accumulate_metric_statistics(stats_accum, stat)
 
                         stat_out = self.task_spec.batch_metric_statistics_from_outputs(torch, outputs, labels_t, extra)
                         if stat_out:
-                            for k, v in stat_out.items():
-                                stats_accum[k] = float(stats_accum.get(k, 0.0)) + float(v)
+                            stats_accum = self._accumulate_metric_statistics(stats_accum, stat_out)
 
                     if not bool(inference_only):
                         loss = self.task_spec.extract_loss(torch, outputs, logits, labels_t, extra)
@@ -672,7 +713,9 @@ class HFCore:
                     or batch_idx % progress_log_every == 0
                 ):
                     progress_units_done = min(batch_idx * self.batch_size, eval_sequence_count)
-                    progress_units_label = "examples_done" if stats_accum else "sequences_done"
+                    progress_units_label = (
+                        "examples_done" if self._has_metric_statistics(stats_accum) else "sequences_done"
+                    )
                     print(
                         "[HFCore.eval] progress | "
                         f"batch={batch_idx}/{eval_batch_count} | "
@@ -688,6 +731,43 @@ class HFCore:
         except Exception:
             y_true_np = np.asarray(labels_all, dtype=object) if labels_all else np.asarray([], dtype=object)
         y_pred_np = np.concatenate(preds_all, axis=0) if preds_all else np.asarray([], dtype="int64")
+        label_space_warning = None
+        label_space_mismatch = False
+        model_num_labels = None
+        dataset_label_count = None
+        pred_label_overlap_count = None
+        if bool(inference_only) and getattr(self.task_spec, "name", None) == "image_classification":
+            try:
+                cfg = getattr(self.model, "config", None)
+                model_num_labels_raw = getattr(cfg, "num_labels", None)
+                if model_num_labels_raw is not None:
+                    model_num_labels = int(model_num_labels_raw)
+
+                y_true_flat = np.asarray(y_true_np).reshape(-1)
+                y_pred_flat = np.asarray(y_pred_np).reshape(-1)
+                if y_true_flat.size and y_pred_flat.size:
+                    true_unique = np.unique(y_true_flat)
+                    pred_unique = np.unique(y_pred_flat)
+                    dataset_label_count = int(true_unique.size)
+                    pred_label_overlap_count = int(np.intersect1d(pred_unique, true_unique).size)
+                    max_true = int(np.max(true_unique))
+                    contiguous_small_label_ids = max_true < max(1, dataset_label_count * 2)
+                    if (
+                        model_num_labels is not None
+                        and model_num_labels >= max(32, dataset_label_count * 10)
+                        and contiguous_small_label_ids
+                        and pred_label_overlap_count == 0
+                    ):
+                        label_space_mismatch = True
+                        label_space_warning = (
+                            "HF image-classification inference likely has incompatible label spaces: "
+                            f"dataset_labels={dataset_label_count}, model_num_labels={model_num_labels}, "
+                            "predicted IDs do not overlap dataset IDs. "
+                            "Use a checkpoint fine-tuned for this dataset/task or run with model_type=hf_finetune."
+                        )
+            except Exception:
+                label_space_warning = None
+                label_space_mismatch = False
 
         named_metrics = None
         loss_mean = (
@@ -696,7 +776,8 @@ class HFCore:
             else np.nan
         )
 
-        m_stats = self.task_spec.metrics_from_statistics(stats_accum) if stats_accum else None
+        stats_summary = self._metric_statistics_summary(stats_accum)
+        m_stats = self.task_spec.metrics_from_statistics(stats_accum) if self._has_metric_statistics(stats_accum) else None
         if isinstance(m_stats, dict) and m_stats:
             print("[HFCore.eval] metric computation starts")
             primary = float(m_stats.get("primary", np.nan))
@@ -734,9 +815,9 @@ class HFCore:
         )
 
         metric_instance_count = None
-        if stats_accum:
+        if stats_summary:
             for metric_count_key in ("metric_instance_count", "total"):
-                metric_count_value = stats_accum.get(metric_count_key)
+                metric_count_value = stats_summary.get(metric_count_key)
                 if metric_count_value is not None:
                     metric_instance_count = int(metric_count_value)
                     break
@@ -767,14 +848,24 @@ class HFCore:
         }
         if metric_instance_count is not None:
             qos["metric_instance_count"] = int(metric_instance_count)
+        if model_num_labels is not None:
+            qos["model_num_labels"] = int(model_num_labels)
+        if dataset_label_count is not None:
+            qos["dataset_label_count"] = int(dataset_label_count)
+        if pred_label_overlap_count is not None:
+            qos["pred_label_overlap_count"] = int(pred_label_overlap_count)
+        if label_space_mismatch:
+            qos["label_space_mismatch"] = bool(label_space_mismatch)
+        if label_space_warning:
+            qos["label_space_warning"] = str(label_space_warning)
 
         if named_metrics and isinstance(named_metrics, dict):
             for mk, mv in named_metrics.items():
                 if mv is not None and not (isinstance(mv, float) and np.isnan(mv)):
                     qos[str(mk).lower()] = float(mv)
 
-        if stats_accum:
-            for sk, sv in stats_accum.items():
+        if stats_summary:
+            for sk, sv in stats_summary.items():
                 qos[f"metric_stat_{sk}"] = float(sv)
 
         if getattr(self.task_spec, "supports_generation", False):

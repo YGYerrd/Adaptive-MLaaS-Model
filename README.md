@@ -352,3 +352,19 @@ Paired integrity checks enforce image/text alignment per split. With `drop`, row
 All experiments are fully parameterised via the CLI. Re-running a command with the same configuration yields identical dataset schemas and comparable metrics, enabling controlled experimental evaluation.
 
 ---
+text_classification
+token_classification
+sentence_similarity
+fill_mask
+text_generation
+text2text_generation
+image_classification
+object_detection
+image_segmentation
+image_captioning
+text_image_retrieval
+visual_question_answering
+keras_image_classification
+sklearn_image_classification
+tabular_regression
+clustering

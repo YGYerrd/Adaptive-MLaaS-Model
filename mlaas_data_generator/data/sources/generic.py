@@ -1,6 +1,7 @@
 import importlib
 import numpy as np
 from sklearn.model_selection import train_test_split
+from sklearn.datasets import make_blobs, make_regression
 
 KERAS_DATASETS = {
     "mnist": "tensorflow.keras.datasets.mnist.load_data",
@@ -14,6 +15,8 @@ SKLEARN_DATASETS = {
     "digits": "sklearn.datasets.load_digits",
     "california_housing": "sklearn.datasets.fetch_california_housing",
     "diabetes": "sklearn.datasets.load_diabetes",
+    "synthetic": "__synthetic__",
+    "uci_wine_quality": "__uci_wine_quality__",
 }
 
 SKLEARN_DEFAULT_TASK = {
@@ -22,9 +25,11 @@ SKLEARN_DEFAULT_TASK = {
     "digits": "classification",
     "california_housing": "regression",
     "diabetes": "regression",
+    "synthetic": "regression",
+    "uci_wine_quality": "regression",
 }
 
-REGRESSION_DATASETS = {"california_housing", "diabetes"}
+REGRESSION_DATASETS = {"california_housing", "diabetes", "synthetic", "uci_wine_quality"}
 CLASSIFICATION_DATASETS = {"iris", "wine", "digits"}
 
 
@@ -71,6 +76,83 @@ def load_keras_source(name):
 def load_sklearn_source(name, task, test_size=0.2, seed=42):
     if name not in SKLEARN_DATASETS:
         raise ValueError(f"Unknown sklearn dataset: {name}")
+
+    if name == "synthetic":
+        if task == "regression":
+            X, y = make_regression(
+                n_samples=2000,
+                n_features=20,
+                n_informative=12,
+                noise=0.2,
+                random_state=seed,
+            )
+            x_train, x_test, y_train, y_test = train_test_split(
+                X.astype("float32"),
+                y.astype("float32"),
+                test_size=test_size,
+                random_state=seed,
+                stratify=None,
+            )
+            meta = _meta(
+                "regression",
+                (x_train.shape[1],),
+                num_classes=None,
+                feature_names=[f"feature_{i}" for i in range(x_train.shape[1])],
+            )
+            meta.update({"dataset_name": name, "source": "sklearn", "synthetic_generator": "make_regression"})
+            return (x_train, y_train), (x_test, y_test), meta
+
+        if task == "clustering":
+            X, y = make_blobs(
+                n_samples=2000,
+                n_features=12,
+                centers=5,
+                cluster_std=1.4,
+                random_state=seed,
+            )
+            x_train, x_test, y_train, y_test = train_test_split(
+                X.astype("float32"),
+                y.astype("int32"),
+                test_size=test_size,
+                random_state=seed,
+                stratify=None,
+            )
+            meta = _meta(
+                "clustering",
+                (x_train.shape[1],),
+                num_classes=int(np.unique(y).size),
+                feature_names=[f"feature_{i}" for i in range(x_train.shape[1])],
+            )
+            meta.update({"dataset_name": name, "source": "sklearn", "synthetic_generator": "make_blobs"})
+            return (x_train, y_train), (x_test, y_test), meta
+
+        raise ValueError("Synthetic dataset supports task='regression' or task='clustering'.")
+
+    if name == "uci_wine_quality":
+        if task != "regression":
+            raise ValueError("UCI wine quality supports task='regression'.")
+        import pandas as pd
+
+        url = "https://archive.ics.uci.edu/ml/machine-learning-databases/wine-quality/winequality-red.csv"
+        df = pd.read_csv(url, sep=";")
+        target = "quality"
+        X = df.drop(columns=[target]).to_numpy(dtype="float32")
+        y = df[target].to_numpy(dtype="float32")
+        x_train, x_test, y_train, y_test = train_test_split(
+            X,
+            y,
+            test_size=test_size,
+            random_state=seed,
+            stratify=None,
+        )
+        meta = _meta(
+            "regression",
+            (x_train.shape[1],),
+            num_classes=None,
+            feature_names=list(df.drop(columns=[target]).columns),
+        )
+        meta.update({"dataset_name": name, "source": "uci", "target_column": target})
+        return (x_train, y_train), (x_test, y_test), meta
 
     loader = _import(SKLEARN_DATASETS[name])
     bunch = loader()

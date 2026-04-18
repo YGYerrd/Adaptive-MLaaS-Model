@@ -5,6 +5,7 @@ from .cmd_generate import register_generate
 from .cmd_merge import register_merge
 from .cmd_wizard import register_wizard
 from .cmd_autogen import register_autogen
+from .cmd_dynamics import register_dynamics
 from .run_manifest import run_manifest
 from .manifest.cmd_hf_manifest import register_hf_manifest
 
@@ -19,6 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
     register_wizard(sub)
     register_autogen(sub)
     register_hf_manifest(sub)
+    register_dynamics(sub)
     return p
 
 def main() -> None:
@@ -32,7 +34,7 @@ def main() -> None:
         run_manifest(file=args.file, sheet=args.sheet, dry_run=args.dry_run)
         return
     parser = build_parser()
-    if len(sys.argv) > 1 and sys.argv[1] not in {"generate", "merge", "wizard", "autogen", "hf-manifest"}:
+    if len(sys.argv) > 1 and sys.argv[1] not in {"generate", "merge", "wizard", "autogen", "hf-manifest", "evaluate-dynamics"}:
         sys.argv.insert(1, "generate")
     args = parser.parse_args()
     if not hasattr(args, "_handler"):

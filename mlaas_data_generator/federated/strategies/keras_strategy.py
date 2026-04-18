@@ -9,6 +9,15 @@ import numpy as np
 class ClassificationStrategy(TaskStrategy):
     def task_type(self) -> str: return "classification"
 
+    def loggable_run_params(self):
+        params = super().loggable_run_params()
+        mt = (self.config.get("model_type") or "").lower()
+        params["aggregator"] = {
+            "strategy": "client_metric_average_no_weight_updates" if mt == "randomforest" else "fedavg_uniform",
+            "aggregation_weight_unit": "client_uniform",
+        }
+        return params
+
     def train_client(self, client_id, x, y, global_model, round_idx, rounds_so_far, comm_down) -> ClientOutcome:
         local_model = self.build_model()
         samples_count = len(y)
@@ -38,6 +47,8 @@ class ClassificationStrategy(TaskStrategy):
                 with open(f"weights/{client_id}_round_{round_idx}.json", "w") as f:
                     json.dump({k: v.tolist() for k, v in weights.items()}, f, indent=4)
 
+            extras = self.perturbation_metrics(local_model, client_id=client_id, round_idx=round_idx)
+
             return ClientOutcome(
                 participated=True, fail_reason="", samples_count=samples_count, duration=duration,
                 loss=loss, metric_value=metric_value, metric_score=mscore, extra_metric=extra_metric,
@@ -50,7 +61,7 @@ class ClassificationStrategy(TaskStrategy):
                 avg_vram_mb=usage.avg_vram_mb,
                 peak_host_ram_mb=usage.peak_host_ram_mb,
                 avg_host_ram_mb=usage.avg_host_ram_mb,
-                payload=weights, extras={},  # accuracy/f1 added in records builder
+                payload=weights, extras=extras,  # accuracy/f1 added in records builder
             )
         except Exception as e:
             duration = time.time() - start
@@ -96,6 +107,15 @@ class ClassificationStrategy(TaskStrategy):
 class RegressionStrategy(TaskStrategy):
     def task_type(self) -> str: return "regression"
 
+    def loggable_run_params(self):
+        params = super().loggable_run_params()
+        mt = (self.config.get("model_type") or "").lower()
+        params["aggregator"] = {
+            "strategy": "client_metric_average_no_weight_updates" if mt == "randomforest" else "fedavg_uniform",
+            "aggregation_weight_unit": "client_uniform",
+        }
+        return params
+
     def train_client(self, client_id, x, y, global_model, round_idx, rounds_so_far, comm_down) -> ClientOutcome:
         local_model = self.build_model()
         samples_count = len(y)
@@ -122,6 +142,8 @@ class RegressionStrategy(TaskStrategy):
                 with open(f"weights/{client_id}_round_{round_idx}.json", "w") as f:
                     json.dump({k: np.asarray(v).tolist() for k, v in weights.items()}, f, indent=4)
 
+            extras = self.perturbation_metrics(local_model, client_id=client_id, round_idx=round_idx)
+
             return ClientOutcome(
                 participated=True, fail_reason="", samples_count=samples_count, duration=duration,
                 loss=loss, metric_value=metric_value, metric_score=mscore, extra_metric=extra_metric,
@@ -134,7 +156,7 @@ class RegressionStrategy(TaskStrategy):
                 avg_vram_mb=usage.avg_vram_mb,
                 peak_host_ram_mb=usage.peak_host_ram_mb,
                 avg_host_ram_mb=usage.avg_host_ram_mb,
-                payload=weights, extras={},
+                payload=weights, extras=extras,
             )
         except Exception:
             duration = time.time() - start

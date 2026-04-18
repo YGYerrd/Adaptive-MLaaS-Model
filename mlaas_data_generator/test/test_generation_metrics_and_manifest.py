@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
+import sqlite3
 
+import mlaas_data_generator.cli.run_manifest as runner
 from mlaas_data_generator.cli.manifest.hf_manifest_builder import MANIFEST_COLUMNS, build_hf_manifest
 from mlaas_data_generator.cli.run_manifest import _build_dataset_args, _resolve_row
 from mlaas_data_generator.federated.strategies.base import (
@@ -9,15 +11,18 @@ from mlaas_data_generator.federated.strategies.base import (
     canonical_task_family,
     metric_availability,
 )
+from mlaas_data_generator.federated.orchestrator import _resolve_database_run_id
 from mlaas_data_generator.models.adapters.hf_task import CausalLMGenerationSpec
 from mlaas_data_generator.registry import DATASET_REGISTRY, MODEL_REGISTRY
+from mlaas_data_generator.runtime_compat import is_rocm_miopen_runtime_error
+from mlaas_data_generator.storage.writer import make_writer
 
 
 def test_generation_registries_cover_curated_tasks_and_metadata():
     generation_datasets = {
         dataset_id: spec for dataset_id, spec in DATASET_REGISTRY.items() if spec["task_key"] in {"text_generation", "text2text_generation"}
     }
-    assert set(generation_datasets) == {"wikitext2_lm", "cnn_dailymail"}
+    assert set(generation_datasets) == {"wikitext2_lm", "wikitext2_text2text", "cnn_dailymail"}
     assert generation_datasets["wikitext2_lm"]["pipeline_tag"] == "text-generation"
     assert generation_datasets["wikitext2_lm"]["loader_template"] == "hf_causal_lm"
     assert generation_datasets["wikitext2_lm"]["explainability"]["supports_feature_attribution"] is True
@@ -27,6 +32,8 @@ def test_generation_registries_cover_curated_tasks_and_metadata():
     assert generation_datasets["cnn_dailymail"]["dataset_name"] == "cnn_dailymail"
     assert generation_datasets["cnn_dailymail"]["explainability"]["supports_example_level_rationales"] is True
     assert generation_datasets["cnn_dailymail"]["explainability"]["target_type"] == "summary_token"
+    assert generation_datasets["wikitext2_text2text"]["dataset_name"] == "wikitext"
+    assert generation_datasets["wikitext2_text2text"]["task_tag"] == "language-modeling"
 
     generation_models = {
         model_id: spec for model_id, spec in MODEL_REGISTRY.items() if spec["task_key"] in {"text_generation", "text2text_generation"}
@@ -50,8 +57,8 @@ def test_generation_registries_cover_curated_tasks_and_metadata():
     assert "explainability_enabled" in MANIFEST_COLUMNS
     assert "explainability_method" in MANIFEST_COLUMNS
     assert "explainability_target" in MANIFEST_COLUMNS
-    assert not any(spec["task_key"] == "image_classification" for spec in DATASET_REGISTRY.values())
-    assert not any(spec["task_key"] == "visual_question_answering" for spec in MODEL_REGISTRY.values())
+    assert any(spec["task_key"] == "image_classification" for spec in DATASET_REGISTRY.values())
+    assert any(spec["task_key"] == "visual_question_answering" for spec in MODEL_REGISTRY.values())
 
 
 def test_manifest_builder_uses_flat_registries_for_generation_rows():
@@ -96,6 +103,10 @@ def test_generation_metric_availability_by_subtype():
     assert avail_infer_only["eval"] == ("sacrebleu",)
 
 
+def test_image_classification_secondary_metric_is_f1():
+    assert canonical_metric_names("classification", "metric", hf_task="image_classification") == ("accuracy", "f1")
+
+
 def test_run_manifest_preserves_explainability_fields():
     row = pd.Series(
         {
@@ -119,6 +130,59 @@ def test_run_manifest_preserves_explainability_fields():
     assert dataset_args["explainability_enabled"] is True
     assert dataset_args["explainability_method"] == "integrated_gradients"
     assert dataset_args["explainability_target"] == "generated_token"
+
+
+def test_run_manifest_allows_image_finetune_gpu_eligible_rows():
+    row = pd.Series(
+        {
+            "dataset": "hf",
+            "model_type": "hf_finetune",
+            "hf_task": "image_classification",
+            "hf_model_id": "apple/mobilevit-small",
+            "dataset_name": "beans",
+            "modality": "image",
+            "run_regime": "finetune_transfer",
+        }
+    )
+
+    validation = runner._validate_row(_resolve_row(row, {}))
+
+    assert validation.ok
+
+
+def test_database_run_id_prefers_manifest_external_run_id():
+    assert _resolve_database_run_id({"external_run_id": " hf_imgcls_000016 "}, fallback_run_id="generated") == "hf_imgcls_000016"
+    assert _resolve_database_run_id({"external_run_id": ""}, fallback_run_id="generated") == "generated"
+    assert _resolve_database_run_id({}, fallback_run_id="generated") == "generated"
+
+
+def test_rocm_miopen_runtime_error_detection():
+    assert is_rocm_miopen_runtime_error("RuntimeError('miopenStatusUnknownError')")
+    assert is_rocm_miopen_runtime_error("HIPRTC_ERROR_COMPILATION while building MIOpenBatchNorm")
+    assert not is_rocm_miopen_runtime_error("RuntimeError('out of memory')")
+
+
+def test_sqlite_writer_abort_rolls_back_run_rows(tmp_path):
+    db_path = tmp_path / "federated.db"
+    writer = make_writer("sqlite", db_path=str(db_path))
+    writer.start()
+    writer.seed_metrics()
+    writer.write_run(
+        {
+            "run_id": "skip-me",
+            "dataset": "hf",
+            "task_type": "classification",
+            "model_type": "hf_finetune",
+            "num_clients": 1,
+            "num_rounds": 1,
+        }
+    )
+    writer.abort()
+
+    with sqlite3.connect(db_path) as conn:
+        count = conn.execute("SELECT COUNT(*) FROM runs WHERE run_id = ?", ("skip-me",)).fetchone()[0]
+
+    assert count == 0
 
 
 def test_retrieval_and_vqa_metric_availability():

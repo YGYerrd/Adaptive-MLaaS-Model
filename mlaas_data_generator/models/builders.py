@@ -223,6 +223,14 @@ def create_model(
         loss = "sparse_categorical_crossentropy"
         metrics = ["accuracy"]
 
+    if model_choice == "randomforest":
+        rf_kwargs = {
+            "n_estimators": int(kwargs.get("rf_trees", kwargs.get("n_estimators", 100))),
+            "max_depth": kwargs.get("rf_max_depth", kwargs.get("max_depth", None)),
+            "random_state": kwargs.get("seed", kwargs.get("random_state", None)),
+        }
+        return make_random_forest(task_type="regression" if is_regression else "classification", **rf_kwargs)
+
     if rank == 3:
         if model_choice == "mobilenetv2":
             base = MobileNetV2(include_top=False, weights="imagenet", pooling=None)
@@ -258,14 +266,6 @@ def create_model(
             model.add(layers.Dense(out_units, activation=out_activation, kernel_regularizer=l2))
 
     elif rank == 1:
-        if model_choice == "randomforest":
-            rf_kwargs = {
-                "n_estimators": int(kwargs.get("rf_trees", kwargs.get("n_estimators", 100))),
-                "max_depth": kwargs.get("rf_max_depth", kwargs.get("max_depth", None)),
-                "random_state": kwargs.get("seed", kwargs.get("random_state", None)),
-            }
-            return make_random_forest(task_type="regression" if is_regression else "classification", **rf_kwargs)
-
         model_name = "mlaas_logreg" if model_choice == "logreg" else "mlaas_mlp"
         model = models.Sequential(name=model_name)
 

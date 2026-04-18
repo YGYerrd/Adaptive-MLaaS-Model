@@ -164,6 +164,8 @@ def preprocess_hf_text_causal_lm_generation(
 
             for ids in tok["input_ids"]:
                 full_ids = list(ids)[:max_len]
+                if not full_ids:
+                    full_ids = [eos_id]
                 if eos_id is not None and full_ids:
                     if len(full_ids) < max_len and full_ids[-1] != eos_id:
                         full_ids = full_ids + [eos_id]

@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from .hf_manifest_builder import build_hf_manifest, save_manifest
+from .hf_manifest_builder import MANIFEST_PROFILES, build_hf_manifest, save_manifest
 
 
 def _parse_csv_arg(value: str | None) -> list[str] | None:
@@ -23,6 +23,9 @@ def register_hf_manifest(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("--datasets-per-model", type=int, default=1)
     p.add_argument("--run-regimes", help="Comma-separated run regimes")
     p.add_argument("--variants-per-pair", type=int, default=1)
+    p.add_argument("--total-runs", type=int, help="Total rows to emit, split as evenly as possible across requested task keys")
+    p.add_argument("--manifest-profile", choices=sorted(MANIFEST_PROFILES), default="balanced")
+    p.add_argument("--avg-sample-size", type=int, help="Target average max_samples across emitted manifest rows")
     p.add_argument("--seed", type=int, default=42)
 
     def _run(args: argparse.Namespace) -> None:
@@ -33,10 +36,14 @@ def register_hf_manifest(subparsers: argparse._SubParsersAction) -> None:
             datasets_per_model=args.datasets_per_model,
             run_regimes=_parse_csv_arg(args.run_regimes),
             variants_per_pair=args.variants_per_pair,
+            total_runs=args.total_runs,
             seed=args.seed,
+            manifest_profile=args.manifest_profile,
+            avg_sample_size=args.avg_sample_size,
         )
         output_path = Path(args.output)
         save_manifest(df, output_path, sheet_name=args.sheet)
-        print(f"Wrote {len(df)} rows to {output_path}")
+        avg_samples = float(df["max_samples"].mean()) if not df.empty else 0.0
+        print(f"Wrote {len(df)} rows to {output_path} (avg max_samples={avg_samples:.1f})")
 
     p.set_defaults(_handler=_run)

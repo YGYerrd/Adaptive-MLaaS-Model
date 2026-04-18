@@ -182,6 +182,49 @@ class SQLiteWriter:
             ("round_seconds_per_step_steady_p95", "performance", "s/step", "lower_better", "num", "Round p95 steady-state seconds_per_step across participating clients"),
             ("round_inference_latency_s_steady_mean", "performance", "s", "lower_better", "num", "Round mean steady-state inference latency"),
             ("round_inference_latency_s_steady_p95", "performance", "s", "lower_better", "num", "Round p95 steady-state inference latency"),
+            ("federated_update_expected_flag", "federated_dynamics", "bool", "neutral", "bool", "Round is expected to perform model weight updates"),
+            ("aggregation_payload_count", "federated_dynamics", "payloads", "neutral", "int", "Client weight payloads submitted for aggregation"),
+            ("client_update_l2", "federated_dynamics", None, "higher_better", "num", "L2 norm between incoming global weights and client-updated payload"),
+            ("client_update_max_abs", "federated_dynamics", None, "higher_better", "num", "Max absolute element change between incoming global weights and client payload"),
+            ("client_update_changed_flag", "federated_dynamics", "bool", "higher_better", "bool", "Client payload differs from incoming global weights beyond tolerance"),
+            ("client_update_layer_count", "federated_dynamics", "layers", "neutral", "int", "Comparable client payload layers"),
+            ("round_global_weight_delta_l2", "federated_dynamics", None, "higher_better", "num", "L2 norm between pre-aggregation and post-aggregation global weights"),
+            ("round_global_weight_delta_max_abs", "federated_dynamics", None, "higher_better", "num", "Max absolute global weight change after aggregation"),
+            ("round_global_weight_changed_flag", "federated_dynamics", "bool", "higher_better", "bool", "Global weights changed after server aggregation beyond tolerance"),
+            ("round_global_weight_layer_count", "federated_dynamics", "layers", "neutral", "int", "Comparable global model layers"),
+            ("round_start_global_delta_l2", "federated_dynamics", None, "lower_better", "num", "L2 norm between previous round final weights and current round start weights"),
+            ("round_start_global_delta_max_abs", "federated_dynamics", None, "lower_better", "num", "Max absolute difference between previous final and current start weights"),
+            ("global_weights_carried_forward_flag", "federated_dynamics", "bool", "higher_better", "bool", "Current round started from the previous round's final global weights"),
+            ("round_repeated_global_metrics_flag", "federated_dynamics", "bool", "neutral", "bool", "Round global metrics exactly match the previous round within tolerance"),
+            ("round_repetition_expected_flag", "federated_dynamics", "bool", "neutral", "bool", "Repeated global metrics are expected because no model update is expected"),
+            ("round_redundant_flag", "federated_dynamics", "bool", "lower_better", "bool", "Repeated metrics and unchanged global weights in a round expected to update"),
+            ("perturbation_enabled_flag", "quality", "bool", "neutral", "bool", "Post-evaluation perturbation stage was enabled"),
+            ("perturbation_supported_flag", "quality", "bool", "higher_better", "bool", "Perturbation probe produced valid sample-level results"),
+            ("perturbation_sample_count", "quality", "samples", "neutral", "int", "Evaluation samples used by perturbation probe"),
+            ("perturbation_baseline_confidence_mean", "quality", "confidence", "neutral", "num", "Mean baseline prediction confidence across perturbed samples"),
+            ("perturbation_duration_s", "performance", "s", "lower_better", "num", "Runtime of post-evaluation perturbation probe"),
+            ("perturbation_error", "quality", None, "neutral", "text", "Best-effort perturbation probe failure reason"),
+            ("perturbation_samples", "quality", None, "neutral", "json", "Structured per-sample perturbation records"),
+            ("explainability_confidence_drop_mean", "quality", "confidence_delta", "higher_better", "num", "Mean confidence drop after masking influential input units"),
+            ("explainability_confidence_drop_std", "quality", "confidence_delta", "lower_better", "num", "Standard deviation of confidence drop after masking influential input units"),
+            ("explainability_confidence_drop_p50", "quality", "confidence_delta", "higher_better", "num", "Median confidence drop after masking influential input units"),
+            ("explainability_confidence_drop_p10", "quality", "confidence_delta", "higher_better", "num", "P10 confidence drop after masking influential input units"),
+            ("explainability_confidence_drop_p90", "quality", "confidence_delta", "higher_better", "num", "P90 confidence drop after masking influential input units"),
+            ("explainability_prediction_change_rate", "quality", "proportion", "higher_better", "num", "Rate at which targeted perturbations changed predictions"),
+            ("explainability_unit_fraction_mean", "quality", "proportion", "lower_better", "num", "Mean fraction of meaningful input units masked by targeted perturbations"),
+            ("explainability_unit_fraction_p95", "quality", "proportion", "lower_better", "num", "P95 fraction of meaningful input units masked by targeted perturbations"),
+            ("explainability_score", "quality", "score", "higher_better", "num", "Compactness-adjusted targeted perturbation explainability score"),
+            ("explainability_score_p10", "quality", "score", "higher_better", "num", "P10 compactness-adjusted targeted perturbation explainability score"),
+            ("trust_confidence_delta_mean", "reliability", "confidence_delta", "lower_better", "num", "Mean confidence movement under benign perturbations"),
+            ("trust_confidence_delta_std", "reliability", "confidence_delta", "lower_better", "num", "Standard deviation of confidence movement under benign perturbations"),
+            ("trust_confidence_delta_p95", "reliability", "confidence_delta", "lower_better", "num", "P95 confidence movement under benign perturbations"),
+            ("trust_confidence_delta_max", "reliability", "confidence_delta", "lower_better", "num", "Maximum confidence movement under benign perturbations"),
+            ("trust_prediction_stability", "reliability", "proportion", "higher_better", "num", "Prediction stability under benign perturbations"),
+            ("trust_prediction_stability_min", "reliability", "proportion", "higher_better", "num", "Minimum per-sample prediction stability under benign perturbations"),
+            ("trust_confidence_stability", "reliability", "score", "higher_better", "num", "Confidence stability score under benign perturbations"),
+            ("trust_score", "reliability", "score", "higher_better", "num", "Aggregate prediction and confidence stability score"),
+            ("trust_score_p05", "reliability", "score", "higher_better", "num", "P05 per-sample aggregate prediction and confidence stability score"),
+            ("trust_score_min", "reliability", "score", "higher_better", "num", "Minimum per-sample aggregate prediction and confidence stability score"),
         ]
         for name, domain, unit, direction, dtype, desc in core:
             self._ensure_metric(name, domain, unit, direction, dtype, desc)
@@ -225,6 +268,13 @@ class SQLiteWriter:
             self.conn = None
             self._metric_cache = {}
 
+    def abort(self) -> None:
+        if self.conn is not None:
+            self.conn.rollback()
+            self.conn.close()
+            self.conn = None
+            self._metric_cache = {}
+
     def _coerce_measurement_value(self, v):
         out = {
             "value_num": None,
@@ -250,7 +300,18 @@ class SQLiteWriter:
             return out
 
         if isinstance(v, int):
-            out["value_int"] = v
+            if -(2**63) <= int(v) <= (2**63 - 1):
+                out["value_int"] = v
+            else:
+                try:
+                    as_float = float(v)
+                except OverflowError:
+                    out["value_text"] = str(v)
+                else:
+                    if np.isfinite(as_float):
+                        out["value_num"] = as_float
+                    else:
+                        out["value_text"] = str(v)
             return out
 
         if isinstance(v, float):

@@ -21,6 +21,7 @@ BASE_DEFAULTS: dict[str, Any] = {
     "optimizer": "adam",
     "seed": 42,
     "distribution": "iid",
+    "sample_frac": None,
 }
 
 BOOL_COLUMNS = {"enabled", "measure_system_metrics", "mixed_precision", "explainability_enabled"}
@@ -31,6 +32,7 @@ INT_COLUMNS = {
     "local_epochs",
     "batch_size",
     "num_shards",
+    "sample_size",
     "max_samples",
     "max_length",
     "num_workers",
@@ -54,12 +56,14 @@ DATASET_ARG_COLUMNS = {
     "train_split",
     "test_split",
     "label_column",
+    "mask_column",
     "text_column",
     "image_column",
     "modality",
     "missing_pair_handling",
     "max_samples",
     "task_tag",
+    "task",
     "explainability_enabled",
     "explainability_method",
     "explainability_target",
@@ -90,9 +94,11 @@ COLUMN_ALIASES = {
     "train split": "train_split",
     "test split": "test_split",
     "label column": "label_column",
+    "mask column": "mask_column",
     "text column": "text_column",
     "image column": "image_column",
     "task tag": "task_tag",
+    "dataset task": "task",
 }
 
 @dataclass
@@ -144,6 +150,8 @@ def _write_failure_log(
 def _is_blank(value: Any) -> bool:
     if value is None:
         return True
+    if isinstance(value, (list, tuple, dict)):
+        return False
     if pd.isna(value):
         return True
     if isinstance(value, str):
@@ -269,9 +277,6 @@ def _resolve_row(row: pd.Series, manifest_defaults: dict[str, Any]) -> dict[str,
 
     if "distribution" in resolved:
         resolved["distribution_type"] = resolved["distribution"]
-
-    if "client_participation_rate" in resolved:
-        resolved["sample_frac"] = resolved["client_participation_rate"]
 
     return resolved
 
@@ -412,6 +417,22 @@ def run_manifest(file: str, sheet: str = "runs", dry_run: bool = False) -> Path:
                 dataset_args=dataset_args,
             )
             summary = gen.run()
+            if isinstance(summary, dict) and summary.get("status") == "skipped":
+                skip_reason = str(summary.get("skip_reason") or "run skipped")
+                print(f"Run skipped for row {idx}: {skip_reason}")
+                results.append(
+                    {
+                        "external_run_id": external_run_id,
+                        "row_index": int(idx),
+                        "run_group_id": resolved.get("run_group_id"),
+                        "run_id": None,
+                        "case_name": resolved.get("case_name"),
+                        "status": "skipped",
+                        "error_message": skip_reason,
+                        "resolved_config_json": json.dumps(resolved, default=str),
+                    }
+                )
+                continue
             results.append(
                 {
                     "external_run_id": external_run_id,

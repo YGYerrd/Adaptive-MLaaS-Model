@@ -2,7 +2,7 @@ import contextlib
 import numpy as np
 
 from mlaas_data_generator.models.adapters.hf_core import HFCore
-from mlaas_data_generator.models.adapters.hf_task import CausalLMGenerationSpec
+from mlaas_data_generator.models.adapters.hf_task import CausalLMGenerationSpec, TextImageRetrievalSpec
 
 
 class FakeTensor:
@@ -81,6 +81,25 @@ class DummyDetectionModel:
     def __call__(self, **kwargs):
         logits = np.asarray([[0.1, 0.9]], dtype=np.float32)
         return type("Out", (), {"logits": FakeTensor(logits), "pred_boxes": FakeTensor(np.zeros((1, 1, 4), dtype=np.float32))})
+
+
+class DummyClipModel:
+    def eval(self):
+        return self
+
+    def __call__(self, **kwargs):
+        import torch
+
+        device = kwargs["input_ids"].device
+        logits = torch.tensor([[8.0, 1.0], [0.5, 7.0]], dtype=torch.float32, device=device)
+        return type(
+            "CLIPOutput",
+            (),
+            {
+                "logits_per_text": logits,
+                "logits_per_image": logits.transpose(0, 1),
+            },
+        )
 
 
 class DummyGenerationSpec:
@@ -270,3 +289,41 @@ def test_hfcore_eval_inference_only_non_generation_uses_label_stats_for_metrics(
     assert np.isclose(primary, 1.0)
     assert np.isclose(secondary, 1.0)
     assert np.isclose(qos["map"], 1.0)
+
+
+def test_hfcore_eval_clip_retrieval_uses_logits_per_text_for_accuracy():
+    import torch
+
+    core = HFCore.__new__(HFCore)
+    core.torch = torch
+    core.task_spec = TextImageRetrievalSpec()
+    core.tokenizer = None
+    core.model = DummyClipModel()
+    core.generation_config = {}
+    core.batch_size = 2
+    core.device = "cpu"
+    core.label_pad_value = -100
+    core.max_length = 4
+    core.model_id = "dummy-clip"
+    core.weight_format = None
+    core.task_tag = None
+    core.tokenizer_load_s = 0.0
+    core.model_load_s = 0.0
+    core.tokenizer_cache_hit = True
+    core.model_cache_hit = True
+
+    xs = {
+        "input_ids": np.asarray([[1, 2], [3, 4]], dtype=np.int64),
+        "attention_mask": np.asarray([[1, 1], [1, 1]], dtype=np.int64),
+        "pixel_values": np.zeros((2, 3, 2, 2), dtype=np.float32),
+    }
+    ys = np.zeros((2,), dtype=np.int64)
+
+    loss, primary, secondary, qos = core.eval(xs, ys, inference_only=True)
+
+    assert np.isnan(loss)
+    assert np.isclose(primary, 1.0)
+    assert np.isclose(secondary, 1.0)
+    assert np.isclose(qos["accuracy"], 1.0)
+    assert np.isclose(qos["top1_accuracy"], 1.0)
+    assert np.isclose(qos["r@1"], 1.0)

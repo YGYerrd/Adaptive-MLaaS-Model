@@ -20,6 +20,8 @@ def test_image_captioning_metrics_cider_and_bleu():
 def test_retrieval_metrics_from_statistics_recall_at_k():
     spec = TextImageRetrievalSpec()
     out = spec.metrics_from_statistics({"r1_correct": 3, "r5_correct": 7, "r10_correct": 9, "total": 10})
+    assert np.isclose(out["named_metrics"]["accuracy"], 0.3)
+    assert np.isclose(out["named_metrics"]["top1_accuracy"], 0.3)
     assert np.isclose(out["named_metrics"]["r@1"], 0.3)
     assert np.isclose(out["named_metrics"]["r@5"], 0.7)
     assert np.isclose(out["named_metrics"]["r@10"], 0.9)

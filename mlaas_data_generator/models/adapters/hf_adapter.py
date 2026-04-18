@@ -181,6 +181,15 @@ class TransformersTextClassifierAdapter:
         self.resolved_hf_task = task
         self.loader_template = loader_template
 
+    def count_params(self):
+        return self.core.count_params()
+
+    def get_weights(self):
+        return self.core.get_weights()
+
+    def set_weights(self, weights_dict):
+        self.core.set_weights(weights_dict)
+
     def evaluate(self, x, y, inference_only=True, max_eval_time_s=None, progress_log_interval=None):
         loss, primary, secondary, qos = self.core.eval(
             x,

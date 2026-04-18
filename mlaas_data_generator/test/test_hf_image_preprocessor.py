@@ -4,6 +4,7 @@ import types
 import numpy as np
 
 from mlaas_data_generator.data.preprocessors.hf import preprocess_hf
+from mlaas_data_generator.data.preprocessors.hf_image import _build_detection_class_id_map
 
 
 class DummySplit:
@@ -63,6 +64,45 @@ class FakeImageProcessorCallKwargsButStrictPreprocess:
         return {"pixel_values": arr}
 
 
+class FakeSegmentationImageProcessor:
+    last_from_pretrained_kwargs = None
+
+    @classmethod
+    def from_pretrained(cls, *args, **kwargs):
+        cls.last_from_pretrained_kwargs = dict(kwargs)
+        return cls()
+
+    def __init__(self):
+        self.do_reduce_labels = False
+
+    def __call__(self, images, segmentation_maps=None, return_tensors=None, do_resize=True, do_normalize=True, do_augment=False):
+        image = images[0] if isinstance(images, (list, tuple)) else images
+        mask = segmentation_maps[0] if isinstance(segmentation_maps, (list, tuple)) else segmentation_maps
+
+        image_arr = np.asarray(image, dtype=np.float32)
+        if image_arr.ndim == 3 and image_arr.shape[0] != 3 and image_arr.shape[-1] == 3:
+            image_arr = np.transpose(image_arr, (2, 0, 1))
+        if do_resize:
+            fill = 0.1 if do_augment else 0.0
+            image_arr = np.full((1, 3, 4, 4), fill, dtype=np.float32)
+        else:
+            image_arr = image_arr[None, ...]
+
+        mask_arr = np.asarray(mask, dtype=np.int64)
+        if self.do_reduce_labels:
+            mask_arr = mask_arr.copy()
+            mask_arr[mask_arr == 0] = 255
+            valid = mask_arr != 255
+            mask_arr[valid] -= 1
+        if do_resize:
+            mask_fill = int(mask_arr.max()) if mask_arr.size else 0
+            mask_arr = np.full((1, 4, 4), mask_fill, dtype=np.int64)
+        else:
+            mask_arr = mask_arr[None, ...]
+
+        return {"pixel_values": image_arr, "labels": mask_arr}
+
+
 class FakeClassLabel:
     def __init__(self, names):
         self.names = list(names)
@@ -80,6 +120,11 @@ def _install_fake_transformers_no_augment_arg():
 
 def _install_fake_transformers_call_kwargs_strict_preprocess():
     fake_mod = types.SimpleNamespace(AutoImageProcessor=FakeImageProcessorCallKwargsButStrictPreprocess)
+    sys.modules["transformers"] = fake_mod
+
+
+def _install_fake_transformers_segmentation():
+    fake_mod = types.SimpleNamespace(AutoImageProcessor=FakeSegmentationImageProcessor)
     sys.modules["transformers"] = fake_mod
 
 
@@ -159,6 +204,8 @@ def test_image_detection_schema_passthrough():
     assert meta["schema"]["detection"]["boxes_column"] == "boxes"
     assert y_train[0]["boxes"].shape == (1, 4)
     assert y_train[0]["classes"].shape == (1,)
+    assert y_train[0]["image_size"].tolist() == [2, 2]
+    assert y_train[0]["box_format"] in {"xyxy", "xywh"}
 
 
 def test_image_task_dispatch_uses_hf_task_when_modality_missing():
@@ -294,6 +341,27 @@ def test_image_detection_extracts_boxes_and_classes_from_annotation_column():
     assert y_test[0]["classes"].tolist() == [4]
 
 
+def test_image_detection_marks_contiguous_zero_based_label_space_for_forced_remap():
+    _install_fake_transformers()
+    train_rows = [{"image": np.zeros((2, 2, 3), dtype=np.uint8), "boxes": [[0, 0, 1, 1]], "classes": [0, 2, 3]}]
+    test_rows = [{"image": np.zeros((2, 2, 3), dtype=np.uint8), "boxes": [[0, 0, 1, 1]], "classes": [2]}]
+
+    train, test, meta = preprocess_hf(
+        (DummySplit(train_rows), None),
+        (DummySplit(test_rows), None),
+        {"hf_task": "object_detection", "modality": "image", "task_type": "detection", "hf_id": "dummy"},
+        hf_model_id="dummy/vision",
+        boxes_column="boxes",
+        classes_column="classes",
+    )
+
+    _, y_train = train
+    _, y_test = test
+    assert meta["detection_label_id_space"] == "contiguous_zero_based"
+    assert bool(y_train[0]["force_contiguous_label_remap"]) is True
+    assert bool(y_test[0]["force_contiguous_label_remap"]) is True
+
+
 def test_image_preprocessor_filters_kwargs_against_preprocess_signature():
     _install_fake_transformers_call_kwargs_strict_preprocess()
     train_rows = [{"image": np.zeros((2, 2, 3), dtype=np.uint8), "label": 1}]
@@ -311,3 +379,108 @@ def test_image_preprocessor_filters_kwargs_against_preprocess_signature():
     assert y_train.tolist() == [1]
     assert y_test.tolist() == [1]
     assert meta["decode_report"]["train"]["failed"] == 0
+
+
+def test_image_classification_preprocessor_drops_null_ignore_index_metadata():
+    _install_fake_transformers()
+    train_rows = [{"image": np.zeros((2, 2, 3), dtype=np.uint8), "label": 1}]
+    test_rows = [{"image": np.zeros((2, 2, 3), dtype=np.uint8), "label": 1}]
+
+    (_, _), (_, _), meta = preprocess_hf(
+        (DummySplit(train_rows), None),
+        (DummySplit(test_rows), None),
+        {
+            "hf_task": "image_classification",
+            "modality": "image",
+            "hf_id": "dummy",
+            "label_pad_value": None,
+            "ignore_index": None,
+        },
+        hf_model_id="dummy/vision",
+    )
+
+    assert "label_pad_value" not in meta
+    assert "ignore_index" not in meta
+
+
+def test_image_segmentation_uses_label_column_as_mask_fallback_and_slow_processor():
+    _install_fake_transformers_segmentation()
+    train_rows = [{"image": np.zeros((2, 2, 3), dtype=np.uint8), "annotation": np.asarray([[0, 1], [2, 3]], dtype=np.uint8)}]
+    test_rows = [{"image": np.zeros((2, 2, 3), dtype=np.uint8), "annotation": np.asarray([[1, 1], [1, 1]], dtype=np.uint8)}]
+
+    (x_train, y_train), (x_test, y_test), meta = preprocess_hf(
+        (DummySplit(train_rows), None),
+        (DummySplit(test_rows), None),
+        {"hf_task": "image_segmentation", "modality": "image", "task_type": "segmentation", "hf_id": "dummy"},
+        hf_model_id="dummy/segmentation",
+        label_column="annotation",
+    )
+
+    assert FakeSegmentationImageProcessor.last_from_pretrained_kwargs == {"use_fast": False}
+    assert meta["mask_column"] == "annotation"
+    assert meta["schema"]["segmentation"]["mask_column"] == "annotation"
+    assert x_train["pixel_values"].shape == (1, 3, 4, 4)
+    assert x_test["pixel_values"].shape == (1, 3, 4, 4)
+    assert y_train[0].shape == (4, 4)
+    assert y_test[0].shape == (4, 4)
+    assert meta["num_classes"] == 4
+    assert meta["num_labels"] == 4
+    assert meta["decode_report"]["train"]["failed"] == 0
+
+
+def test_image_segmentation_reduce_labels_scans_beyond_small_prefix():
+    class _AutoConfig:
+        @classmethod
+        def from_pretrained(cls, *args, **kwargs):
+            return types.SimpleNamespace(num_labels=3, semantic_loss_ignore_index=255)
+
+    fake_mod = types.SimpleNamespace(
+        AutoImageProcessor=FakeSegmentationImageProcessor,
+        AutoConfig=_AutoConfig,
+    )
+    sys.modules["transformers"] = fake_mod
+
+    train_rows = []
+    for _ in range(16):
+        train_rows.append(
+            {"image": np.zeros((2, 2, 3), dtype=np.uint8), "annotation": np.asarray([[0, 1], [1, 1]], dtype=np.uint8)}
+        )
+    train_rows.append(
+        {"image": np.zeros((2, 2, 3), dtype=np.uint8), "annotation": np.asarray([[0, 3], [1, 2]], dtype=np.uint8)}
+    )
+    test_rows = [{"image": np.zeros((2, 2, 3), dtype=np.uint8), "annotation": np.asarray([[0, 1], [2, 3]], dtype=np.uint8)}]
+
+    (_, _), (_, _), meta = preprocess_hf(
+        (DummySplit(train_rows), None),
+        (DummySplit(test_rows), None),
+        {"hf_task": "image_segmentation", "modality": "image", "task_type": "segmentation", "hf_id": "dummy"},
+        hf_model_id="dummy/segmentation",
+        label_column="annotation",
+    )
+
+    assert meta["segmentation_reduce_labels"] is True
+    assert meta["num_labels"] == 3
+
+
+def test_detection_class_id_map_matches_names_to_model_ids():
+    class _AutoConfig:
+        @classmethod
+        def from_pretrained(cls, *args, **kwargs):
+            return types.SimpleNamespace(
+                id2label={
+                    0: "N/A",
+                    1: "person",
+                    2: "bicycle",
+                    12: "street sign",
+                    13: "stop sign",
+                }
+            )
+
+    sys.modules["transformers"] = types.SimpleNamespace(AutoConfig=_AutoConfig)
+
+    mapping = _build_detection_class_id_map(
+        hf_model_id="dummy/model",
+        category_names=["person", "stop sign"],
+    )
+
+    assert mapping.tolist() == [1, 13]

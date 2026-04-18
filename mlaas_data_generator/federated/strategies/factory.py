@@ -10,7 +10,17 @@ def make_task_strategy(task_type: str, meta: dict, knobs: dict, config: dict, x_
     hf_task = (config.get("hf_task") or (config.get("dataset_args", {}) or {}).get("hf_task"))
     task_family = canonical_task_family(task_type, hf_task)
 
-    if is_hf_model and task_family in {"classification", "detection", "segmentation", "generation", "retrieval", "vqa"}:
+    if is_hf_model and task_family in {
+        "classification",
+        "regression",
+        "token_classification",
+        "fill_mask",
+        "detection",
+        "segmentation",
+        "generation",
+        "retrieval",
+        "vqa",
+    }:
         return HFStrategy(meta, knobs, config, x_test, y_test, metric_key, save_weights)
 
     if task_type == "classification":

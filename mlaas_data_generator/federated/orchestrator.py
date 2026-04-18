@@ -11,11 +11,25 @@ from ..data.master_loader import load_dataset
 from ..data.accounting import finalize_accounting
 from ..data.splitters import split_data
 from ..data.distributions import get_data_distribution, get_mlm_masked_token_stats, get_token_label_stats
+from ..data.sources.hf_meta import fetch_hf_model_meta
 from ..storage.writer import make_writer
 from .strategies.factory import make_task_strategy
 from .strategies.base import canonical_task_family, canonical_label_format, canonical_metric_names, normalize_hf_task, metric_availability
 from .system_metrics import capture_hardware_snapshot, summarize_round_usage
-from ..models.label_schema import infer_label_format, infer_num_labels
+from .dynamics import (
+    DEFAULT_TOLERANCE,
+    carry_forward_metrics,
+    client_update_metrics,
+    global_update_metrics,
+    repeated_round_metrics,
+    snapshot_model_weights,
+)
+from ..models.label_schema import infer_ignore_index, infer_label_format, infer_num_labels
+from ..runtime_compat import is_rocm_miopen_runtime_error
+
+
+class _RunSkipped(RuntimeError):
+    pass
 
 
 class _StageTimer:
@@ -54,6 +68,110 @@ def _first_sample_shape(x_train):
         return tuple(arr.shape)
 
     return tuple()
+
+
+def _sample_count(x, y=None):
+    """Best-effort sample count for arrays, lists, and dict-backed HF batches."""
+    source = y if y is not None else x
+    if source is None:
+        return 0
+
+    if isinstance(source, dict):
+        preferred_keys = ("pixel_values", "input_ids", "attention_mask", "features")
+        for key in preferred_keys:
+            value = source.get(key)
+            if value is not None:
+                try:
+                    return int(len(value))
+                except Exception:
+                    pass
+        for value in source.values():
+            try:
+                return int(len(value))
+            except Exception:
+                continue
+        return 0
+
+    try:
+        return int(len(source))
+    except Exception:
+        return 0
+
+
+def _count_model_params(model) -> int:
+    """Best-effort trainable parameter count across adapter shapes."""
+    if model is None:
+        return 0
+
+    candidates = []
+    candidate_ids = set()
+    for candidate in (model, getattr(model, "core", None)):
+        if candidate is not None and id(candidate) not in candidate_ids:
+            candidates.append(candidate)
+            candidate_ids.add(id(candidate))
+
+    for candidate in candidates:
+        count_params = getattr(candidate, "count_params", None)
+        if callable(count_params):
+            try:
+                count = int(count_params())
+                if count > 0:
+                    return count
+            except Exception:
+                pass
+
+    nested_models = []
+    nested_model_ids = set()
+    for candidate in candidates:
+        for nested in (candidate, getattr(candidate, "model", None)):
+            if nested is not None and id(nested) not in nested_model_ids:
+                nested_models.append(nested)
+                nested_model_ids.add(id(nested))
+
+    for candidate in nested_models:
+        parameters = getattr(candidate, "parameters", None)
+        if callable(parameters):
+            try:
+                return int(sum(p.numel() for p in parameters()))
+            except Exception:
+                pass
+
+    return 0
+
+
+def _resolve_database_run_id(config: dict, fallback_run_id: str | None = None) -> str:
+    external_run_id = config.get("external_run_id")
+    if external_run_id is not None:
+        external_run_id = str(external_run_id).strip()
+        if external_run_id and external_run_id.lower() not in {"na", "nan", "null", "none"}:
+            return external_run_id
+
+    return fallback_run_id or str(uuid.uuid4())
+
+
+def _per_client_total_cap(value, num_clients):
+    """Convert a per-client sample cap into the total rows needed for a split."""
+    if value in (None, ""):
+        return None
+    try:
+        cap = int(value)
+    except (TypeError, ValueError):
+        return None
+    try:
+        clients = max(1, int(num_clients))
+    except (TypeError, ValueError):
+        clients = 1
+    return max(0, cap) * clients
+
+
+def _format_summary_value(value):
+    if isinstance(value, float):
+        return f"{value:.6g}"
+    if isinstance(value, dict):
+        return json.dumps(value, sort_keys=True, default=str)
+    if isinstance(value, list):
+        return json.dumps(value, default=str)
+    return value
 
 
 def _can_compute_numeric_range(values) -> bool:
@@ -120,7 +238,16 @@ class FederatedDataGenerator:
 
         # load data
         dataset_load_timer = _StageTimer()
-        train, test, meta = load_dataset(self.dataset, **self.dataset_args)
+        loader_dataset_args = dict(self.dataset_args)
+        total_loader_max_samples = _per_client_total_cap(
+            loader_dataset_args.get("max_samples"),
+            self.config.get("num_clients", 1),
+        )
+        if total_loader_max_samples is not None:
+            loader_dataset_args["max_samples"] = total_loader_max_samples
+            loader_dataset_args["requested_max_samples_per_client"] = self.dataset_args.get("max_samples")
+        self.loader_dataset_args = loader_dataset_args
+        train, test, meta = load_dataset(self.dataset, **loader_dataset_args)
         self._run_stage_measurements["stage_dataset_load_s"] = dataset_load_timer.elapsed_s()
         (self.x_train, self.y_train), (self.x_test, self.y_test) = train, test
         self.meta = meta
@@ -275,7 +402,8 @@ class FederatedDataGenerator:
         task_family = canonical_task_family(self.task_type, hf_task)
         label_format = infer_label_format(self.meta, task_type=self.task_type) or canonical_label_format(task_family)
         accounting = self.meta.get("accounting", {}) if isinstance(self.meta, dict) else {}
-        task_tag = str(self.config.get("task_tag") or self.config.get("dataset_args", {}).get("task_tag") or "").strip().lower() or None
+        config_dataset_args = self.config.get("dataset_args") or {}
+        task_tag = str(self.config.get("task_tag") or config_dataset_args.get("task_tag") or "").strip().lower() or None
         metric_primary_name, metric_secondary_name = canonical_metric_names(
             task_family,
             self.metric_key,
@@ -457,6 +585,18 @@ class FederatedDataGenerator:
             rollups[f"round_{metric_name}_mean"] = float(np.mean(vals))
             rollups[f"round_{metric_name}_p95"] = float(np.percentile(vals, 95))
         return rollups
+
+    def _round_expects_weight_update(self, client_payloads):
+        if bool(getattr(self.strategy, "inference_only", False)):
+            return False
+        if self.task_type == "clustering" or (self.model_type or "").lower() == "randomforest":
+            return False
+        try:
+            if int(self.knobs.get("local_epochs", 1)) <= 0:
+                return False
+        except Exception:
+            pass
+        return bool(client_payloads)
     
     def run(self):
         run_start_epoch = time.time()
@@ -494,12 +634,25 @@ class FederatedDataGenerator:
         run_stage_measurements["stage_global_model_build_s"] = model_build_timer.elapsed_s()
         execution_device = self._resolve_execution_device(global_model)
 
+        loaded_train_samples = _sample_count(self.x_train, self.y_train)
+        loaded_test_samples = _sample_count(self.x_test, self.y_test)
+        split_train_samples = int(sum(_sample_count(data.get("x"), data.get("y")) for data in clients.values()))
+        client_sample_counts = [int(_sample_count(data.get("x"), data.get("y"))) for data in clients.values()]
+        resolved_split_strategy = (split_info or {}).get("strategy", self.knobs.get("distribution_type"))
+        resolved_split_param = (split_info or {}).get("distribution_param", self.knobs.get("distribution_param"))
+        requested_split_strategy = self.knobs.get("distribution_type")
+        requested_split_param = self.knobs.get("distribution_param")
+
         print("\n========== RUN SUMMARY ==========")
 
         # Universal info (runner-ish)
         base = [
-            ("dataset", self.dataset),
+            ("external_run_id", self.config.get("external_run_id")),
+            ("case_name", self.config.get("case_name")),
+            ("run_group_id", self.config.get("run_group_id")),
+            ("dataset_source", self.dataset),
             ("task_type", self.task_type),
+            ("hf_task", self.hf_task if self.hf_task != "unknown" else None),
             ("model_type", self.model_type),
             ("num_clients", self.knobs["num_clients"]),
             ("num_rounds", self.knobs["num_rounds"]),
@@ -508,15 +661,28 @@ class FederatedDataGenerator:
             ("save_weights", self.save_weights),
             ("input_shape", self.input_shape),
             ("num_classes", self.num_classes),
+            ("loaded_train_samples", loaded_train_samples),
+            ("loaded_test_samples", loaded_test_samples),
+            ("timeout_s", self.config.get("timeout_s")),
+            ("requested_device", self.config.get("device")),
             ("execution_device", execution_device),
         ]
 
-        # Splitter info (always relevant)
+        # Splitter info (always relevant). Requested values are kept distinct
+        # from resolved/effective values because split_data can shrink samples
+        # or fall back to iid for structured labels.
         splitter = [
-            ("split.strategy", self.knobs.get("distribution_type")),
-            ("split.param", self.knobs.get("distribution_param")),
-            ("split.sample_size", self.knobs.get("sample_size")),
-            ("split.sample_frac", self.knobs.get("sample_frac")),
+            ("split.requested_strategy", requested_split_strategy),
+            ("split.resolved_strategy", resolved_split_strategy),
+            ("split.fallback_reason", (split_info or {}).get("fallback_reason")),
+            ("split.requested_param", requested_split_param),
+            ("split.resolved_param", resolved_split_param),
+            ("split.requested_sample_size", self.knobs.get("sample_size")),
+            ("split.effective_sample_size_total", (split_info or {}).get("effective_sample_size_total")),
+            ("split.requested_sample_frac", self.knobs.get("sample_frac")),
+            ("split.effective_train_samples", split_train_samples),
+            ("split.client_samples_min", min(client_sample_counts) if client_sample_counts else None),
+            ("split.client_samples_max", max(client_sample_counts) if client_sample_counts else None),
             ("split.distribution_bins", self.knobs.get("distribution_bins")),
         ]
 
@@ -524,7 +690,7 @@ class FederatedDataGenerator:
             for k, v in items:
                 if v is None:
                     continue
-                print(f"{k:>{width}} : {v}")
+                print(f"{k:>{width}} : {_format_summary_value(v)}")
 
         _print_kv(base)
         print("------------------------------------------------")
@@ -540,7 +706,7 @@ class FederatedDataGenerator:
                     continue
                 if v is None:
                     continue
-                print(f"{k:>26} : {v}")
+                print(f"{k:>26} : {_format_summary_value(v)}")
 
         print("================================================\n")
 
@@ -554,7 +720,7 @@ class FederatedDataGenerator:
         client_distributions = {}
         is_fill_mask = self.task_family == "fill_mask"
         is_generation = self.task_family == "generation"
-        ignore_index = int(self.meta.get("label_pad_value", self.meta.get("ignore_index", -100)))
+        ignore_index = infer_ignore_index(self.meta if isinstance(self.meta, dict) else None, default=-100)
         pad_token_id = self.meta.get("pad_token_id")
         for client_id, data in clients.items():
             if is_fill_mask:
@@ -583,20 +749,29 @@ class FederatedDataGenerator:
 
         hardware_snapshot = capture_hardware_snapshot()
 
-        try:
-            params_count = int(global_model.count_params())
-        except Exception:
-            try:
-                params_count = int(sum(p.numel() for p in global_model.model.parameters()))
-            except Exception:
-                params_count = 0
+        params_count = _count_model_params(global_model)
 
-        run_id = str(uuid.uuid4())
+        run_id = _resolve_database_run_id(self.config)
 
         hf_model_meta = {}
         hf_model_id = (self.dataset_args.get("hf_model_id") or "").strip()
         is_hf_run = ("hf" in (self.dataset or "").lower()) and bool(hf_model_id)
         if is_hf_run:
+            try:
+                hf_model_meta = fetch_hf_model_meta(hf_model_id) or {}
+            except Exception as exc:
+                hf_model_meta = {
+                    "hf_model_id": hf_model_id,
+                    "hf_service_meta_json": json.dumps(
+                        {
+                            "hf_model_id": hf_model_id,
+                            "provider": "huggingface_hub",
+                            "error": str(exc),
+                        },
+                        default=str,
+                    ),
+                }
+
             user_hf_task = self.dataset_args.get("hf_task") or self.config.get("hf_task")
             if not user_hf_task:
                 pipeline_task = (
@@ -617,6 +792,7 @@ class FederatedDataGenerator:
 
         db_path = self.config.get("db_path", "federated2.db")
         writer = make_writer("sqlite", db_path=db_path)
+        skip_reason = None
         writer.start()
         try:
             # Seed metric dictionary (recommended)
@@ -642,6 +818,12 @@ class FederatedDataGenerator:
                 writer.write_run_param(run_id, "runner", "seed", self.config.get("seed", 42))
                 writer.write_run_param(run_id, "runner", "client_dropout_rate", self.config.get("client_dropout_rate", 0.0))
                 writer.write_run_param(run_id, "runner", "save_weights", self.save_weights)
+                writer.write_run_param(run_id, "runner", "enable_perturbation_metrics", self.config.get("enable_perturbation_metrics", True))
+                writer.write_run_param(run_id, "runner", "perturbation_sample_count", self.config.get("perturbation_sample_count", 1))
+                writer.write_run_param(run_id, "runner", "perturbation_trust_trials", self.config.get("perturbation_trust_trials", 2))
+                writer.write_run_param(run_id, "runner", "perturbation_target_units", self.config.get("perturbation_target_units", 1))
+                writer.write_run_param(run_id, "runner", "perturbation_candidate_units", self.config.get("perturbation_candidate_units", 4))
+                writer.write_run_param(run_id, "runner", "perturbation_random_strength", self.config.get("perturbation_random_strength", 0.02))
 
                 # benchmark identity for cross-run comparisons
                 benchmark_identity = {
@@ -661,6 +843,7 @@ class FederatedDataGenerator:
                 writer.write_run_param(run_id, "splitter", "distribution_param", self.knobs.get("distribution_param"))
                 writer.write_run_param(run_id, "splitter", "distribution_bins", self.knobs.get("distribution_bins"))
                 writer.write_run_param(run_id, "splitter", "sample_size", self.knobs.get("sample_size"))
+                writer.write_run_param(run_id, "splitter", "effective_sample_size_total", (split_info or {}).get("effective_sample_size_total"))
                 writer.write_run_param(run_id, "splitter", "sample_frac", self.knobs.get("sample_frac"))
 
                 params_by_scope = self.strategy.loggable_run_params()
@@ -676,12 +859,6 @@ class FederatedDataGenerator:
                 if is_hf_run:
                     if self.hf_task and self.hf_task != "unknown":
                         writer.write_run_param(run_id, "dataset", "hf_task", self.hf_task)
-                    def _pick_hf_value(key):
-                        for source in (self.dataset_args, self.config, self.meta, hf_model_meta):
-                            if isinstance(source, dict) and key in source:
-                                return source.get(key)
-                        return None
-
                     def _is_present(value):
                         if value is None:
                             return False
@@ -690,6 +867,14 @@ class FederatedDataGenerator:
                         if isinstance(value, (dict, list, tuple, set)):
                             return len(value) > 0
                         return True
+
+                    def _pick_hf_value(key):
+                        for source in (self.dataset_args, self.config, self.meta, hf_model_meta):
+                            if isinstance(source, dict) and key in source:
+                                value = source.get(key)
+                                if _is_present(value):
+                                    return value
+                        return None
 
                     hf_metadata_keys = [
                         "hf_model_id",
@@ -735,6 +920,9 @@ class FederatedDataGenerator:
                 )
 
             participated_counts = {cid: 0 for cid in clients.keys()}
+            dynamics_tolerance = float(self.config.get("federated_dynamics_tolerance", DEFAULT_TOLERANCE))
+            previous_round_global_weights = None
+            previous_global_metrics = None
 
             for round_num in range(self.knobs["num_rounds"]):
                 round_idx = round_num + 1
@@ -750,6 +938,12 @@ class FederatedDataGenerator:
                 skipped_clients = 0
 
                 down_bytes = self.strategy.comm_down_bytes(global_model)
+                round_start_weights = snapshot_model_weights(global_model)
+                carry_forward_values = carry_forward_metrics(
+                    previous_round_global_weights,
+                    round_start_weights,
+                    tolerance=dynamics_tolerance,
+                )
                 if verbose_progress:
                     print(
                         f"Round {round_idx}: scheduled_clients={len(clients)}, "
@@ -824,6 +1018,12 @@ class FederatedDataGenerator:
                         comm_down=down_bytes,
                     )
 
+                    if not outcome.participated and is_rocm_miopen_runtime_error(outcome.fail_reason):
+                        raise _RunSkipped(
+                            "skipped_rocm_miopen_runtime_error: "
+                            f"{outcome.fail_reason or 'MIOpen/HIPRTC runtime failure'}"
+                        )
+
                     if verbose_progress:
                         status = "participated" if outcome.participated else f"skipped ({outcome.fail_reason or 'unknown reason'})"
                         print(
@@ -874,6 +1074,13 @@ class FederatedDataGenerator:
                         "memory_used_mb": float(outcome.memory_used_mb) if outcome.memory_used_mb is not None else None,
                         "gpu_memory_used_mb": float(outcome.gpu_memory_used_mb) if outcome.gpu_memory_used_mb is not None else None,
                     }
+                    client_values.update(
+                        client_update_metrics(
+                            round_start_weights,
+                            outcome.payload,
+                            tolerance=dynamics_tolerance,
+                        )
+                    )
                     client_values.update(self._extract_dynamic_metrics(outcome))
                     client_values.update(self._normalize_outcome_extras(outcome))
 
@@ -923,6 +1130,7 @@ class FederatedDataGenerator:
                         f"{sum(1 for o in client_outcomes if getattr(o, 'participated', False))} participating client(s)."
                     )
                 aggregation_timer = _StageTimer()
+                global_weights_before_aggregation = snapshot_model_weights(global_model)
                 loss, global_metric, global_score, global_extra = self.strategy.aggregate_and_eval(
                     global_model=global_model,
                     client_payloads=client_payloads,
@@ -932,6 +1140,28 @@ class FederatedDataGenerator:
                     x_test=self.x_test,
                     y_test=self.y_test,
                 )
+                global_weights_after_aggregation = snapshot_model_weights(global_model)
+                global_update_values = global_update_metrics(
+                    global_weights_before_aggregation,
+                    global_weights_after_aggregation,
+                    tolerance=dynamics_tolerance,
+                )
+                expected_weight_update = self._round_expects_weight_update(client_payloads)
+                current_global_metrics = {
+                    "loss": loss,
+                    "metric": global_metric,
+                    "score": global_score,
+                    "extra": global_extra,
+                }
+                repeated_values = repeated_round_metrics(
+                    previous_global_metrics,
+                    current_global_metrics,
+                    expected_update=expected_weight_update,
+                    global_weights_changed=global_update_values.get("round_global_weight_changed_flag"),
+                    tolerance=dynamics_tolerance,
+                )
+                previous_global_metrics = current_global_metrics
+                previous_round_global_weights = global_weights_after_aggregation
                 round_aggregation_s = aggregation_timer.elapsed_s()
 
                 round_usage_summary = summarize_round_usage(
@@ -979,6 +1209,11 @@ class FederatedDataGenerator:
                         "round_overhead_s": round_overhead_s,
                         "round_overhead_pre_client_loop_s": round_pre_overhead_s,
                         "round_resource_summary": round_usage_summary,
+                        "federated_update_expected_flag": expected_weight_update,
+                        "aggregation_payload_count": int(len(client_payloads)),
+                        **carry_forward_values,
+                        **global_update_values,
+                        **repeated_values,
                         **self._round_qos_rollups(round_qos_records),
                     },
                 )
@@ -1003,19 +1238,35 @@ class FederatedDataGenerator:
                     )
                     print("----------------------------------------")
 
+        except _RunSkipped as exc:
+            skip_reason = str(exc)
+            print(f"Run skipped before database commit: {skip_reason}")
+            if hasattr(writer, "abort"):
+                writer.abort()
+            else:
+                writer.finish()
+            return {
+                "run_id": None,
+                "db_path": db_path,
+                "rounds": self.knobs["num_rounds"],
+                "clients": self.knobs["num_clients"],
+                "status": "skipped",
+                "skip_reason": skip_reason,
+            }
         finally:
-            run_end_epoch = time.time()
-            run_end_ts = datetime.now(timezone.utc).isoformat()
-            writer.write_measurements(
-                run_id=run_id,
-                round=None,
-                client_id=None,
-                values={
-                    "run_end_ts": run_end_ts,
-                    "run_total_runtime_s": float(run_end_epoch - run_start_epoch),
-                },
-            )
-            writer.finish()
+            if skip_reason is None:
+                run_end_epoch = time.time()
+                run_end_ts = datetime.now(timezone.utc).isoformat()
+                writer.write_measurements(
+                    run_id=run_id,
+                    round=None,
+                    client_id=None,
+                    values={
+                        "run_end_ts": run_end_ts,
+                        "run_total_runtime_s": float(run_end_epoch - run_start_epoch),
+                    },
+                )
+                writer.finish()
 
         print("Federated Learning Process Complete!\n")
         return {

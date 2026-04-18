@@ -86,6 +86,10 @@ class ClusteringStrategy(TaskStrategy):
 
         return {
             "adapter": adapter,
+            "aggregator": {
+                "strategy": "local_only_metric_average_no_weight_updates",
+                "aggregation_weight_unit": "client_uniform",
+            },
         }
     
     def aggregate_and_eval(self, global_model, client_payloads, client_outcomes, round_idx, x_train, x_test, y_test):

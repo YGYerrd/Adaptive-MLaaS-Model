@@ -1,5 +1,6 @@
 import numpy as np
 import re
+import importlib.util
 
 # ----------------------------
 # HF Task Specs
@@ -33,6 +34,9 @@ class HFTaskSpec:
     def loss_fn(self, torch, logits, labels_t, extra):
         raise NotImplementedError
 
+    def extract_logits(self, outputs):
+        return outputs.logits
+
     def preds_from_logits(self, torch, logits, extra):
         raise NotImplementedError
 
@@ -49,6 +53,32 @@ class HFTaskSpec:
 
     def batch_metric_statistics_from_outputs(self, torch, outputs, labels_t, extra):
         return None
+
+    def init_metric_accumulator(self):
+        return {}
+
+    def accumulate_metric_statistics(self, accumulator, batch_stats):
+        if accumulator is None:
+            accumulator = {}
+        if not batch_stats:
+            return accumulator
+        for k, v in batch_stats.items():
+            accumulator[k] = float(accumulator.get(k, 0.0)) + float(v)
+        return accumulator
+
+    def has_metric_statistics(self, accumulator):
+        return bool(accumulator)
+
+    def metric_statistics_summary(self, accumulator):
+        if not isinstance(accumulator, dict):
+            return {}
+        summary = {}
+        for key, value in accumulator.items():
+            try:
+                summary[str(key)] = float(value)
+            except Exception:
+                continue
+        return summary
 
     def metrics_from_statistics(self, stats):
         return None
@@ -381,6 +411,47 @@ class ImageClassificationSpec(HFTaskSpec):
     name = "image_classification"
     requires_tokenizer = False
 
+    @staticmethod
+    def _macro_f1_from_counts(stats):
+        labels = set()
+        for key in stats:
+            key = str(key)
+            for suffix in ("_tp", "_pred_total", "_target_total"):
+                if key.startswith("class_") and key.endswith(suffix):
+                    labels.add(key[len("class_"):-len(suffix)])
+
+        scores = []
+        for label in sorted(labels):
+            tp = float(stats.get(f"class_{label}_tp", 0.0))
+            pred_total = float(stats.get(f"class_{label}_pred_total", 0.0))
+            target_total = float(stats.get(f"class_{label}_target_total", 0.0))
+            if pred_total <= 0 and target_total <= 0:
+                continue
+            precision = tp / pred_total if pred_total > 0 else 0.0
+            recall = tp / target_total if target_total > 0 else 0.0
+            scores.append(0.0 if (precision + recall) == 0 else (2.0 * precision * recall) / (precision + recall))
+
+        return float(np.mean(scores)) if scores else np.nan
+
+    @classmethod
+    def _macro_f1_from_arrays(cls, y_true, y_pred):
+        y_true = np.asarray(y_true).reshape(-1)
+        y_pred = np.asarray(y_pred).reshape(-1)
+        if y_true.size == 0 or y_pred.size == 0:
+            return np.nan
+        n = min(int(y_true.size), int(y_pred.size))
+        y_true = y_true[:n]
+        y_pred = y_pred[:n]
+        stats = {}
+        for label in np.unique(np.concatenate([y_true, y_pred], axis=0)):
+            label_key = str(int(label))
+            true_mask = y_true == label
+            pred_mask = y_pred == label
+            stats[f"class_{label_key}_tp"] = float(np.count_nonzero(true_mask & pred_mask))
+            stats[f"class_{label_key}_pred_total"] = float(np.count_nonzero(pred_mask))
+            stats[f"class_{label_key}_target_total"] = float(np.count_nonzero(true_mask))
+        return cls._macro_f1_from_counts(stats)
+
     def build_model(self, transformers, model_id, num_labels):
         return transformers.AutoModelForImageClassification.from_pretrained(
             model_id,
@@ -411,7 +482,18 @@ class ImageClassificationSpec(HFTaskSpec):
         top1_correct = int((top1 == labels_t).sum().detach().cpu().item())
         topk_correct = int((topk == labels_t.unsqueeze(-1)).any(dim=-1).sum().detach().cpu().item())
         total = int(labels_t.shape[0])
-        return {"top1_correct": top1_correct, "top5_correct": topk_correct, "total": total}
+        stats = {"top1_correct": top1_correct, "top5_correct": topk_correct, "total": total}
+
+        labels_np = labels_t.detach().cpu().numpy().reshape(-1)
+        preds_np = top1.detach().cpu().numpy().reshape(-1)
+        for label in np.unique(np.concatenate([labels_np, preds_np], axis=0)):
+            label_key = str(int(label))
+            true_mask = labels_np == label
+            pred_mask = preds_np == label
+            stats[f"class_{label_key}_tp"] = int(np.count_nonzero(true_mask & pred_mask))
+            stats[f"class_{label_key}_pred_total"] = int(np.count_nonzero(pred_mask))
+            stats[f"class_{label_key}_target_total"] = int(np.count_nonzero(true_mask))
+        return stats
 
     def metrics_from_statistics(self, stats):
         total = float(stats.get("total", 0.0))
@@ -419,19 +501,25 @@ class ImageClassificationSpec(HFTaskSpec):
             return {"primary": np.nan, "secondary": np.nan, "named_metrics": {}}
         top1 = float(stats.get("top1_correct", 0.0)) / total
         top5 = float(stats.get("top5_correct", 0.0)) / total
+        f1 = self._macro_f1_from_counts(stats)
         return {
             "primary": top1,
-            "secondary": top5,
-            "named_metrics": {"top1_accuracy": top1, "top5_accuracy": top5},
+            "secondary": f1,
+            "named_metrics": {"accuracy": top1, "top1_accuracy": top1, "f1": f1, "macro_f1": f1, "top5_accuracy": top5},
         }
 
     def metrics(self, y_true, y_pred, y_extra=None):
         y_true = np.asarray(y_true)
         y_pred = np.asarray(y_pred)
         if y_true.size == 0:
-            return {"primary": np.nan, "secondary": np.nan}
+            return {"primary": np.nan, "secondary": np.nan, "named_metrics": {}}
         acc = float((y_true == y_pred).mean())
-        return {"primary": acc, "secondary": acc}
+        f1 = self._macro_f1_from_arrays(y_true, y_pred)
+        return {
+            "primary": acc,
+            "secondary": f1,
+            "named_metrics": {"accuracy": acc, "top1_accuracy": acc, "f1": f1, "macro_f1": f1},
+        }
 
 
 class ObjectDetectionSpec(HFTaskSpec):
@@ -442,6 +530,7 @@ class ObjectDetectionSpec(HFTaskSpec):
     def __init__(self, score_threshold=0.05):
         self.score_threshold = float(score_threshold)
         self._model_valid_class_ids = None
+        self._image_processor = None
 
     def build_model(self, transformers, model_id, num_labels):
         kwargs = {"ignore_mismatched_sizes": True}
@@ -452,6 +541,10 @@ class ObjectDetectionSpec(HFTaskSpec):
             **kwargs,
         )
         self._model_valid_class_ids = self._extract_valid_class_ids_from_model(model)
+        try:
+            self._image_processor = transformers.AutoImageProcessor.from_pretrained(model_id)
+        except Exception:
+            self._image_processor = None
         return model
 
     @staticmethod
@@ -526,40 +619,128 @@ class ObjectDetectionSpec(HFTaskSpec):
             f"got shape={arr.shape}"
         )
 
+    @staticmethod
+    def _resolve_label_image_size(item, fallback_h, fallback_w):
+        image_h = int(fallback_h)
+        image_w = int(fallback_w)
+        if not isinstance(item, dict):
+            return image_h, image_w
+
+        raw_size = item.get("image_size")
+        if raw_size is None:
+            return image_h, image_w
+
+        try:
+            size_arr = np.asarray(raw_size, dtype=np.int64).reshape(-1)
+            if size_arr.size >= 2 and int(size_arr[0]) > 0 and int(size_arr[1]) > 0:
+                return int(size_arr[0]), int(size_arr[1])
+        except Exception:
+            pass
+        return image_h, image_w
+
+    @staticmethod
+    def _extract_orig_size_from_label_tensor(label_item, fallback_h=1, fallback_w=1):
+        image_h = int(fallback_h)
+        image_w = int(fallback_w)
+        if not isinstance(label_item, dict):
+            return image_h, image_w
+
+        raw_size = label_item.get("orig_size")
+        if raw_size is None:
+            return image_h, image_w
+
+        try:
+            if hasattr(raw_size, "detach"):
+                size_arr = raw_size.detach().cpu().numpy().reshape(-1)
+            else:
+                size_arr = np.asarray(raw_size, dtype=np.int64).reshape(-1)
+            if size_arr.size >= 2 and int(size_arr[0]) > 0 and int(size_arr[1]) > 0:
+                return int(size_arr[0]), int(size_arr[1])
+        except Exception:
+            pass
+        return image_h, image_w
+
+    @staticmethod
+    def _remap_classes_with_explicit_map(classes, class_id_map):
+        class_ids = np.asarray(classes, dtype=np.int64)
+        if class_ids.size == 0 or class_id_map is None:
+            return class_ids
+        mapping = np.asarray(class_id_map, dtype=np.int64).reshape(-1)
+        if mapping.size == 0:
+            return class_ids
+        min_cls = int(np.min(class_ids))
+        max_cls = int(np.max(class_ids))
+        if min_cls < 0 or max_cls >= int(mapping.size):
+            return class_ids
+        return mapping[class_ids]
+
     def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
         if not isinstance(xb, dict) or "pixel_values" not in xb:
             raise ValueError("object detection expects dict input with 'pixel_values'")
         pixel_values = xb["pixel_values"]
         pixel_arrays = [self._normalise_pixel_array(sample) for sample in pixel_values]
         if not pixel_arrays:
-            enc = {"pixel_values": torch.empty((0, 3, 0, 0), dtype=torch.float32, device=device)}
+            enc = {
+                "pixel_values": torch.empty((0, 3, 0, 0), dtype=torch.float32, device=device),
+                "pixel_mask": torch.empty((0, 0, 0), dtype=torch.long, device=device),
+            }
         else:
             shapes = {arr.shape for arr in pixel_arrays}
             if len(shapes) == 1:
                 batch_pixels = np.stack(pixel_arrays, axis=0)
+                batch_mask = np.ones(
+                    (batch_pixels.shape[0], batch_pixels.shape[2], batch_pixels.shape[3]),
+                    dtype=np.int64,
+                )
             else:
                 max_h = max(arr.shape[1] for arr in pixel_arrays)
                 max_w = max(arr.shape[2] for arr in pixel_arrays)
                 padded = []
+                masks = []
                 for arr in pixel_arrays:
                     pad_h = max_h - arr.shape[1]
                     pad_w = max_w - arr.shape[2]
                     padded.append(np.pad(arr, ((0, 0), (0, pad_h), (0, pad_w)), mode="constant"))
+                    mask = np.zeros((max_h, max_w), dtype=np.int64)
+                    mask[: arr.shape[1], : arr.shape[2]] = 1
+                    masks.append(mask)
                 batch_pixels = np.stack(padded, axis=0)
-            enc = {"pixel_values": torch.tensor(batch_pixels, dtype=torch.float32, device=device)}
+                batch_mask = np.stack(masks, axis=0)
+            enc = {
+                "pixel_values": torch.tensor(batch_pixels, dtype=torch.float32, device=device),
+                "pixel_mask": torch.tensor(batch_mask, dtype=torch.long, device=device),
+            }
         labels_t = None
         if yb is not None:
             labels_t = []
             for idx, item in enumerate(yb):
-                image_h = int(pixel_arrays[idx].shape[1]) if idx < len(pixel_arrays) else 1
-                image_w = int(pixel_arrays[idx].shape[2]) if idx < len(pixel_arrays) else 1
-                boxes_xyxy_norm = self._to_xyxy_normalized(item.get("boxes", []), image_h=image_h, image_w=image_w)
+                fallback_h = int(pixel_arrays[idx].shape[1]) if idx < len(pixel_arrays) else 1
+                fallback_w = int(pixel_arrays[idx].shape[2]) if idx < len(pixel_arrays) else 1
+                image_h, image_w = self._resolve_label_image_size(item, fallback_h, fallback_w)
+                boxes_xyxy_norm = self._to_xyxy_normalized(
+                    item.get("boxes", []),
+                    image_h=image_h,
+                    image_w=image_w,
+                    box_format=item.get("box_format"),
+                )
                 boxes_cxcywh_norm = self._xyxy_to_cxcywh(boxes_xyxy_norm)
-                class_labels = self._remap_contiguous_classes_if_needed(item.get("classes", []))
+                class_labels = self._remap_classes_with_explicit_map(
+                    item.get("classes", []),
+                    item.get("class_id_map"),
+                )
+                if class_labels.size == 0 and item.get("classes") is not None:
+                    class_labels = np.asarray(item.get("classes", []), dtype=np.int64)
+                if item.get("class_id_map") is None:
+                    force_contiguous_remap = bool(item.get("force_contiguous_label_remap", False))
+                    class_labels = self._remap_contiguous_classes_if_needed(
+                        class_labels,
+                        force=force_contiguous_remap,
+                    )
                 labels_t.append(
                     {
                         "class_labels": torch.tensor(class_labels, dtype=torch.long, device=device),
                         "boxes": torch.tensor(boxes_cxcywh_norm, dtype=torch.float32, device=device),
+                        "orig_size": torch.tensor([image_h, image_w], dtype=torch.long, device=device),
                     }
                 )
         return enc, labels_t, {"score_threshold": self.score_threshold}
@@ -614,7 +795,7 @@ class ObjectDetectionSpec(HFTaskSpec):
             cy + h / 2.0,
         ]).astype(np.float32, copy=False)
 
-    def _to_xyxy_normalized(self, boxes, image_h, image_w):
+    def _to_xyxy_normalized(self, boxes, image_h, image_w, box_format=None):
         out_boxes = np.asarray(boxes, dtype=np.float32)
         if out_boxes.size == 0:
             return np.zeros((0, 4), dtype=np.float32)
@@ -622,6 +803,25 @@ class ObjectDetectionSpec(HFTaskSpec):
             out_boxes = out_boxes.reshape(1, 4)
         if out_boxes.ndim != 2 or out_boxes.shape[1] != 4:
             raise ValueError(f"object detection boxes must be Nx4, got shape={out_boxes.shape}")
+
+        fmt = str(box_format or "").strip().lower().replace("-", "_")
+        if fmt:
+            if fmt in {"xyxy", "pascal_voc"}:
+                boxes_xyxy = out_boxes
+            elif fmt in {"xywh", "coco"}:
+                x, y, w, h = out_boxes.T
+                boxes_xyxy = np.column_stack([x, y, x + w, y + h])
+            elif fmt in {"cxcywh", "center"}:
+                boxes_xyxy = self._cxcywh_to_xyxy(out_boxes)
+            else:
+                raise ValueError(f"unsupported box_format='{box_format}'")
+
+            max_val = float(np.max(boxes_xyxy)) if boxes_xyxy.size else 0.0
+            if max_val > 1.5:
+                boxes_xyxy = boxes_xyxy.copy()
+                boxes_xyxy[:, [0, 2]] /= max(float(image_w), 1e-9)
+                boxes_xyxy[:, [1, 3]] /= max(float(image_h), 1e-9)
+            return np.clip(boxes_xyxy, a_min=0.0, a_max=1.0).astype(np.float32, copy=False)
 
         max_val = float(np.max(out_boxes))
         monotonic_xyxy = bool(np.all(out_boxes[:, 2] >= out_boxes[:, 0]) and np.all(out_boxes[:, 3] >= out_boxes[:, 1]))
@@ -645,76 +845,338 @@ class ObjectDetectionSpec(HFTaskSpec):
 
         return np.clip(boxes_xyxy, a_min=0.0, a_max=1.0).astype(np.float32, copy=False)
 
-    def batch_metric_statistics_from_outputs(self, torch, outputs, labels_t, extra):
-        if labels_t is None or outputs is None or not hasattr(outputs, "pred_boxes"):
-            return None
-        probs = torch.softmax(outputs.logits, dim=-1).detach().cpu().numpy()
-        boxes = outputs.pred_boxes.detach().cpu().numpy()
+    @staticmethod
+    def _coerce_metric_scalar(value):
+        if hasattr(value, "detach"):
+            value = value.detach().cpu()
+        if hasattr(value, "numel") and int(value.numel()) == 1:
+            value = value.item()
+        try:
+            parsed = float(value)
+        except Exception:
+            return np.nan
+        if parsed < 0:
+            return np.nan
+        return parsed
 
+    def _resolve_map_backend(self):
+        candidates = (
+            ("faster_coco_eval", "faster_coco_eval"),
+            ("pycocotools", "pycocotools"),
+        )
+        for module_name, backend_name in candidates:
+            if importlib.util.find_spec(module_name) is not None:
+                return backend_name
+        raise ImportError(
+            "Object detection evaluation requires a COCO metric backend. "
+            "Install either 'faster-coco-eval' or 'pycocotools'."
+        )
+
+    def _build_map_metric(self):
+        try:
+            from torchmetrics.detection.mean_ap import MeanAveragePrecision
+        except Exception as e:
+            raise ImportError(
+                "Object detection evaluation requires 'torchmetrics'. "
+                "Install it with: pip install torchmetrics"
+            ) from e
+
+        backend = self._resolve_map_backend()
+        kwargs = {
+            "box_format": "xyxy",
+            "iou_type": "bbox",
+            "class_metrics": False,
+            "backend": backend,
+        }
+        try:
+            metric = MeanAveragePrecision(**kwargs)
+        except TypeError:
+            kwargs.pop("backend", None)
+            metric = MeanAveragePrecision(**kwargs)
+        return metric, backend
+
+    def init_metric_accumulator(self):
+        metric, backend = self._build_map_metric()
+        return {
+            "__kind__": "torchmetrics_map",
+            "metric": metric,
+            "backend": backend,
+            "metric_instance_count": 0.0,
+            "num_updates": 0.0,
+        }
+
+    def accumulate_metric_statistics(self, accumulator, batch_stats):
+        if batch_stats and "__map_batch__" in batch_stats:
+            if not accumulator or accumulator.get("__kind__") != "torchmetrics_map":
+                accumulator = self.init_metric_accumulator()
+            payload = batch_stats["__map_batch__"] or {}
+            preds = payload.get("preds") or []
+            targets = payload.get("targets") or []
+            fallback_stats = payload.get("fallback_stats") or {}
+            try:
+                accumulator["metric"].update(preds, targets)
+                accumulator["num_updates"] = float(accumulator.get("num_updates", 0.0)) + 1.0
+            except (OverflowError, RuntimeError, ValueError) as exc:
+                if "overflow" not in str(exc).lower():
+                    raise
+                accumulator["map_backend_error"] = str(exc)
+                accumulator["fallback_updates"] = float(accumulator.get("fallback_updates", 0.0)) + 1.0
+                for key, value in fallback_stats.items():
+                    accumulator[key] = float(accumulator.get(key, 0.0)) + float(value)
+            accumulator["metric_instance_count"] = float(accumulator.get("metric_instance_count", 0.0)) + float(
+                payload.get("metric_instance_count", 0.0)
+            )
+            return accumulator
+        return super().accumulate_metric_statistics(accumulator, batch_stats)
+
+    def has_metric_statistics(self, accumulator):
+        if isinstance(accumulator, dict) and accumulator.get("__kind__") == "torchmetrics_map":
+            return (
+                float(accumulator.get("num_updates", 0.0)) > 0.0
+                or float(accumulator.get("fallback_updates", 0.0)) > 0.0
+            )
+        return super().has_metric_statistics(accumulator)
+
+    def metric_statistics_summary(self, accumulator):
+        if isinstance(accumulator, dict) and accumulator.get("__kind__") == "torchmetrics_map":
+            summary = {
+                "metric_instance_count": float(accumulator.get("metric_instance_count", 0.0)),
+                "num_updates": float(accumulator.get("num_updates", 0.0)),
+            }
+            for key in ("fallback_updates", "gt", "tp_0.5", "fp_0.5", "tp_0.75", "fp_0.75", "tp_0.95", "fp_0.95"):
+                if key in accumulator:
+                    summary[key] = float(accumulator.get(key, 0.0))
+            return summary
+        return super().metric_statistics_summary(accumulator)
+
+    @staticmethod
+    def _sanitize_metric_boxes_labels(boxes, labels, *, max_size=None):
+        out_boxes = np.asarray(boxes, dtype=np.float32)
+        out_labels = np.asarray(labels, dtype=np.int64).reshape(-1)
+        if out_boxes.size == 0 or out_labels.size == 0:
+            return np.zeros((0, 4), dtype=np.float32), np.zeros((0,), dtype=np.int64)
+        if out_boxes.ndim == 1:
+            out_boxes = out_boxes.reshape(1, 4)
+        n = min(int(out_boxes.shape[0]), int(out_labels.shape[0]))
+        out_boxes = out_boxes[:n]
+        out_labels = out_labels[:n]
+        out_boxes = np.nan_to_num(out_boxes, nan=0.0, posinf=0.0, neginf=0.0)
+        clip_max = float(max_size) if max_size is not None else float(np.iinfo(np.int32).max - 1)
+        clip_max = max(1.0, min(clip_max, float(np.iinfo(np.int32).max - 1)))
+        out_boxes = np.clip(out_boxes, a_min=0.0, a_max=clip_max)
+        x1 = np.minimum(out_boxes[:, 0], out_boxes[:, 2])
+        y1 = np.minimum(out_boxes[:, 1], out_boxes[:, 3])
+        x2 = np.maximum(out_boxes[:, 0], out_boxes[:, 2])
+        y2 = np.maximum(out_boxes[:, 1], out_boxes[:, 3])
+        out_boxes = np.column_stack([x1, y1, x2, y2]).astype(np.float32, copy=False)
+        valid = (
+            np.isfinite(out_boxes).all(axis=1)
+            & (out_boxes[:, 2] > out_boxes[:, 0])
+            & (out_boxes[:, 3] > out_boxes[:, 1])
+            & (out_labels >= 0)
+            & (out_labels <= int(np.iinfo(np.int32).max - 1))
+        )
+        return out_boxes[valid], out_labels[valid].astype(np.int64, copy=False)
+
+    def _simple_detection_stats(self, preds, targets):
         stats = {"gt": 0.0}
-        thresholds = [0.5, 0.75, 0.95]
-        for thr in thresholds:
+        for thr in (0.5, 0.75, 0.95):
             stats[f"tp_{thr}"] = 0.0
             stats[f"fp_{thr}"] = 0.0
 
-        for bidx, gt in enumerate(labels_t):
-            gt_boxes = gt["boxes"].detach().cpu().numpy()
-            gt_boxes = self._cxcywh_to_xyxy(gt_boxes)
-            gt_classes = gt["class_labels"].detach().cpu().numpy()
-            stats["gt"] += float(len(gt_classes))
+        for pred, target in zip(preds or [], targets or []):
+            p_boxes = pred.get("boxes")
+            p_scores = pred.get("scores")
+            p_labels = pred.get("labels")
+            t_boxes = target.get("boxes")
+            t_labels = target.get("labels")
+            if hasattr(p_boxes, "detach"):
+                p_boxes = p_boxes.detach().cpu().numpy()
+            if hasattr(p_scores, "detach"):
+                p_scores = p_scores.detach().cpu().numpy()
+            if hasattr(p_labels, "detach"):
+                p_labels = p_labels.detach().cpu().numpy()
+            if hasattr(t_boxes, "detach"):
+                t_boxes = t_boxes.detach().cpu().numpy()
+            if hasattr(t_labels, "detach"):
+                t_labels = t_labels.detach().cpu().numpy()
 
-            p_scores = probs[bidx, :, :-1].max(axis=-1)
-            p_cls = probs[bidx, :, :-1].argmax(axis=-1)
-            p_cls = self._remap_predicted_class_indices_if_needed(p_cls, num_pred_classes=probs.shape[-1] - 1)
-            keep = p_scores >= float(extra.get("score_threshold", self.score_threshold))
-            if self._model_valid_class_ids:
-                valid_set = set(int(v) for v in self._model_valid_class_ids)
-                keep = keep & np.asarray([int(cid) in valid_set for cid in p_cls], dtype=bool)
-            p_scores = p_scores[keep]
-            p_cls = p_cls[keep]
-            p_boxes = boxes[bidx][keep]
-            p_boxes = self._cxcywh_to_xyxy(p_boxes)
+            p_boxes, p_labels = self._sanitize_metric_boxes_labels(p_boxes, p_labels)
+            t_boxes, t_labels = self._sanitize_metric_boxes_labels(t_boxes, t_labels)
+            p_scores = np.asarray(p_scores, dtype=np.float32).reshape(-1)[: len(p_labels)]
+            stats["gt"] += float(len(t_labels))
+            if len(p_labels) == 0:
+                continue
 
-            for thr in thresholds:
-                matched_gt = set()
-                tp = 0
-                fp = 0
-                for pb, pc in zip(p_boxes, p_cls):
-                    cand_idx = np.where(gt_classes == pc)[0]
-                    if cand_idx.size == 0:
-                        fp += 1
+            order = np.argsort(-p_scores) if p_scores.size else np.arange(len(p_labels))
+            p_boxes = p_boxes[order]
+            p_labels = p_labels[order]
+            for thr in (0.5, 0.75, 0.95):
+                matched = set()
+                for box, label in zip(p_boxes, p_labels):
+                    candidate_idx = np.where(t_labels == int(label))[0]
+                    if candidate_idx.size == 0:
+                        stats[f"fp_{thr}"] += 1.0
                         continue
-                    ious = self._box_iou(np.asarray([pb]), gt_boxes[cand_idx])[0]
-                    best = int(np.argmax(ious)) if ious.size else -1
-                    if best >= 0 and ious[best] >= thr:
-                        gt_id = int(cand_idx[best])
-                        if gt_id not in matched_gt:
-                            matched_gt.add(gt_id)
-                            tp += 1
-                        else:
-                            fp += 1
+                    ious = self._box_iou(np.asarray([box], dtype=np.float32), t_boxes[candidate_idx]).reshape(-1)
+                    if ious.size == 0:
+                        stats[f"fp_{thr}"] += 1.0
+                        continue
+                    best_local = int(np.argmax(ious))
+                    best_idx = int(candidate_idx[best_local])
+                    if float(ious[best_local]) >= float(thr) and best_idx not in matched:
+                        matched.add(best_idx)
+                        stats[f"tp_{thr}"] += 1.0
                     else:
-                        fp += 1
-                stats[f"tp_{thr}"] += float(tp)
-                stats[f"fp_{thr}"] += float(fp)
+                        stats[f"fp_{thr}"] += 1.0
         return stats
 
-    def metrics_from_statistics(self, stats):
+    def batch_metric_statistics_from_outputs(self, torch, outputs, labels_t, extra):
+        if labels_t is None or outputs is None or not hasattr(outputs, "pred_boxes") or not hasattr(outputs, "logits"):
+            return None
+
+        probs = torch.softmax(outputs.logits, dim=-1).detach().cpu().numpy()
+        boxes = outputs.pred_boxes.detach().cpu().numpy()
+        valid_set = set(int(v) for v in self._model_valid_class_ids) if self._model_valid_class_ids else None
+
+        post_processed = None
+        if self._image_processor is not None and hasattr(self._image_processor, "post_process_object_detection"):
+            try:
+                target_sizes = []
+                for gt in labels_t:
+                    image_h, image_w = self._extract_orig_size_from_label_tensor(gt, fallback_h=1, fallback_w=1)
+                    target_sizes.append([image_h, image_w])
+                target_sizes_t = torch.tensor(target_sizes, dtype=torch.long)
+                post_processed = self._image_processor.post_process_object_detection(
+                    outputs,
+                    threshold=0.0,
+                    target_sizes=target_sizes_t,
+                )
+            except Exception:
+                post_processed = None
+
+        preds = []
+        targets = []
+        metric_instance_count = 0.0
+
+        for bidx, gt in enumerate(labels_t):
+            image_h, image_w = self._extract_orig_size_from_label_tensor(gt, fallback_h=1, fallback_w=1)
+            gt_boxes = gt["boxes"].detach().cpu().numpy()
+            gt_boxes = self._cxcywh_to_xyxy(gt_boxes)
+            gt_boxes[:, [0, 2]] *= max(float(image_w), 1e-9)
+            gt_boxes[:, [1, 3]] *= max(float(image_h), 1e-9)
+            gt_classes = gt["class_labels"].detach().cpu().numpy()
+            metric_instance_count += float(len(gt_classes))
+
+            if post_processed is not None and bidx < len(post_processed):
+                pred = post_processed[bidx]
+                p_scores = pred["scores"].detach().cpu().numpy()
+                p_cls = pred["labels"].detach().cpu().numpy()
+                p_boxes = pred["boxes"].detach().cpu().numpy()
+            else:
+                p_scores = probs[bidx, :, :-1].max(axis=-1)
+                p_cls = probs[bidx, :, :-1].argmax(axis=-1)
+                p_boxes = self._cxcywh_to_xyxy(boxes[bidx])
+                p_boxes[:, [0, 2]] *= max(float(image_w), 1e-9)
+                p_boxes[:, [1, 3]] *= max(float(image_h), 1e-9)
+
+            p_cls = self._remap_predicted_class_indices_if_needed(p_cls, num_pred_classes=probs.shape[-1] - 1)
+            if valid_set is not None:
+                valid_mask = np.asarray([int(cid) in valid_set for cid in p_cls], dtype=bool)
+            else:
+                valid_mask = np.ones_like(p_scores, dtype=bool)
+            keep_idx = np.where(valid_mask)[0]
+
+            p_boxes, p_cls = self._sanitize_metric_boxes_labels(
+                p_boxes[keep_idx],
+                p_cls[keep_idx],
+                max_size=max(float(image_h), float(image_w), 1.0),
+            )
+            p_scores = np.asarray(p_scores[keep_idx], dtype=np.float32).reshape(-1)[: len(p_cls)]
+            gt_boxes, gt_classes = self._sanitize_metric_boxes_labels(
+                gt_boxes,
+                gt_classes,
+                max_size=max(float(image_h), float(image_w), 1.0),
+            )
+
+            preds.append(
+                {
+                    "boxes": torch.tensor(p_boxes, dtype=torch.float32),
+                    "scores": torch.tensor(p_scores, dtype=torch.float32),
+                    "labels": torch.tensor(p_cls, dtype=torch.int64),
+                }
+            )
+            targets.append(
+                {
+                    "boxes": torch.tensor(gt_boxes, dtype=torch.float32),
+                    "labels": torch.tensor(gt_classes, dtype=torch.int64),
+                }
+            )
+
+        return {
+            "__map_batch__": {
+                "preds": preds,
+                "targets": targets,
+                "metric_instance_count": metric_instance_count,
+                "fallback_stats": self._simple_detection_stats(preds, targets),
+            }
+        }
+
+    @staticmethod
+    def _fallback_metrics_from_statistics(stats):
         gt = float(stats.get("gt", 0.0))
         if gt <= 0:
-            return {"primary": np.nan, "secondary": np.nan, "named_metrics": {}}
-        maps = []
+            return None
+        vals = []
         named = {}
-        for thr in [0.5, 0.75, 0.95]:
+        for thr in (0.5, 0.75, 0.95):
             tp = float(stats.get(f"tp_{thr}", 0.0))
             fp = float(stats.get(f"fp_{thr}", 0.0))
-            denom = max(gt + fp, 1e-9)
-            ap = tp / denom
-            maps.append(ap)
-            named[f"map@{thr}"] = ap
-        m_ap = float(np.mean(maps)) if maps else np.nan
-        named["map"] = m_ap
-        return {"primary": m_ap, "secondary": float(named.get("map@0.5", np.nan)), "named_metrics": named}
+            value = tp / max(gt + fp, 1e-9)
+            vals.append(value)
+            named[f"map@{thr}"] = value
+        mean_map = float(np.mean(vals)) if vals else np.nan
+        named["map"] = mean_map
+        return {
+            "primary": mean_map,
+            "secondary": float(named.get("map@0.5", np.nan)),
+            "named_metrics": named,
+        }
+
+    def metrics_from_statistics(self, stats):
+        if not isinstance(stats, dict):
+            return {"primary": np.nan, "secondary": np.nan, "named_metrics": {}}
+        if stats.get("__kind__") != "torchmetrics_map":
+            return {"primary": np.nan, "secondary": np.nan, "named_metrics": {}}
+
+        fallback = self._fallback_metrics_from_statistics(stats)
+        metric = stats.get("metric")
+        if metric is None or float(stats.get("num_updates", 0.0)) <= 0.0:
+            return fallback or {"primary": np.nan, "secondary": np.nan, "named_metrics": {}}
+
+        try:
+            raw = metric.compute()
+        except (OverflowError, RuntimeError, ValueError) as exc:
+            if "overflow" not in str(exc).lower():
+                raise
+            return fallback or {"primary": np.nan, "secondary": np.nan, "named_metrics": {}}
+        named = {
+            "map": self._coerce_metric_scalar(raw.get("map")),
+            "map@0.5": self._coerce_metric_scalar(raw.get("map_50")),
+            "map@0.75": self._coerce_metric_scalar(raw.get("map_75")),
+            "mar@1": self._coerce_metric_scalar(raw.get("mar_1")),
+            "mar@10": self._coerce_metric_scalar(raw.get("mar_10")),
+            "mar@100": self._coerce_metric_scalar(raw.get("mar_100")),
+        }
+        try:
+            metric.reset()
+        except Exception:
+            pass
+        return {
+            "primary": float(named.get("map", np.nan)),
+            "secondary": float(named.get("map@0.5", np.nan)),
+            "named_metrics": named,
+        }
 
     def metrics(self, y_true, y_pred, y_extra=None):
         return {"primary": np.nan, "secondary": np.nan}
@@ -724,12 +1186,108 @@ class ImageSegmentationSpec(HFTaskSpec):
     name = "image_segmentation"
     requires_tokenizer = False
 
+    @staticmethod
+    def _segmentation_class_statistics(pred, tgt):
+        pred_np = np.asarray(pred, dtype=np.int64).reshape(-1)
+        tgt_np = np.asarray(tgt, dtype=np.int64).reshape(-1)
+        if pred_np.size == 0 or tgt_np.size == 0:
+            return {}
+
+        stats = {}
+        for cls in np.union1d(pred_np, tgt_np):
+            cls_id = int(cls)
+            pred_mask = pred_np == cls_id
+            tgt_mask = tgt_np == cls_id
+            intersection = float(np.count_nonzero(pred_mask & tgt_mask))
+            pred_total = float(np.count_nonzero(pred_mask))
+            target_total = float(np.count_nonzero(tgt_mask))
+            stats[f"class_{cls_id}_intersection"] = intersection
+            stats[f"class_{cls_id}_pred_total"] = pred_total
+            stats[f"class_{cls_id}_target_total"] = target_total
+        return stats
+
+    @classmethod
+    def _segmentation_metrics_from_stats(cls, stats):
+        if not isinstance(stats, dict):
+            return None
+
+        per_class_iou = []
+        per_class_dice = []
+        pixel_correct = 0.0
+        pixel_total = 0.0
+        found_class_stats = False
+
+        class_prefix = "class_"
+        intersection_suffix = "_intersection"
+        pred_total_suffix = "_pred_total"
+        target_total_suffix = "_target_total"
+
+        for key, raw_intersection in stats.items():
+            key = str(key)
+            if not (key.startswith(class_prefix) and key.endswith(intersection_suffix)):
+                continue
+
+            label_token = key[len(class_prefix):-len(intersection_suffix)]
+            pred_key = f"{class_prefix}{label_token}{pred_total_suffix}"
+            target_key = f"{class_prefix}{label_token}{target_total_suffix}"
+
+            try:
+                intersection = float(raw_intersection)
+                pred_total = float(stats.get(pred_key, 0.0))
+                target_total = float(stats.get(target_key, 0.0))
+            except Exception:
+                continue
+
+            union = pred_total + target_total - intersection
+            denom = pred_total + target_total
+            if union > 0:
+                per_class_iou.append(intersection / union)
+            if denom > 0:
+                per_class_dice.append((2.0 * intersection) / denom)
+            pixel_correct += intersection
+            pixel_total += target_total
+            found_class_stats = True
+
+        if not found_class_stats:
+            return None
+
+        mean_iou = float(np.mean(per_class_iou)) if per_class_iou else np.nan
+        mean_dice = float(np.mean(per_class_dice)) if per_class_dice else np.nan
+        pixel_accuracy = pixel_correct / pixel_total if pixel_total > 0 else np.nan
+        return {
+            "primary": mean_iou,
+            "secondary": mean_dice,
+            "named_metrics": {
+                "iou": mean_iou,
+                "dice": mean_dice,
+                "pixel_accuracy": pixel_accuracy,
+            },
+        }
+
     def build_model(self, transformers, model_id, num_labels):
         return transformers.AutoModelForSemanticSegmentation.from_pretrained(
             model_id,
             num_labels=int(num_labels),
             ignore_mismatched_sizes=True,
         )
+
+    def build_forward_inputs(self, enc, labels_t=None, inference_only=False):
+        # SegFormer-style models upsample logits to full mask resolution when
+        # labels are passed directly. On consumer GPUs this can allocate many
+        # GiB for ADE-style 150-class masks, so this spec computes the loss
+        # against labels downsampled to the model's logits resolution instead.
+        return dict(enc)
+
+    @staticmethod
+    def _resize_labels_to_logits(torch, labels_t, target_size):
+        if labels_t is None or labels_t.shape[-2:] == target_size:
+            return labels_t
+        resized = torch.nn.functional.interpolate(
+            labels_t.unsqueeze(1).float(),
+            size=target_size,
+            mode="nearest",
+        )
+        return resized.squeeze(1).long()
 
     def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
         if not isinstance(xb, dict) or "pixel_values" not in xb:
@@ -741,8 +1299,7 @@ class ImageSegmentationSpec(HFTaskSpec):
         return enc, labels_t, {"ignore_index": int(ignore_index)}
 
     def loss_fn(self, torch, logits, labels_t, extra):
-        if logits.shape[-2:] != labels_t.shape[-2:]:
-            logits = torch.nn.functional.interpolate(logits, size=labels_t.shape[-2:], mode="bilinear", align_corners=False)
+        labels_t = self._resize_labels_to_logits(torch, labels_t, logits.shape[-2:])
         return torch.nn.functional.cross_entropy(logits, labels_t, ignore_index=int(extra.get("ignore_index", -100)))
 
     def preds_from_logits(self, torch, logits, extra):
@@ -751,22 +1308,26 @@ class ImageSegmentationSpec(HFTaskSpec):
     def batch_metric_statistics(self, torch, logits, labels_t, extra):
         if labels_t is None:
             return None
-        if logits.shape[-2:] != labels_t.shape[-2:]:
-            logits = torch.nn.functional.interpolate(logits, size=labels_t.shape[-2:], mode="bilinear", align_corners=False)
+        labels_t = self._resize_labels_to_logits(torch, labels_t, logits.shape[-2:])
         pred = torch.argmax(logits, dim=1)
         ignore_index = int(extra.get("ignore_index", -100))
         valid = labels_t != ignore_index
         pred = pred[valid]
         tgt = labels_t[valid]
         if pred.numel() == 0:
-            return {"intersection": 0.0, "pred_total": 0.0, "target_total": 0.0, "union": 0.0}
-        intersection = float((pred == tgt).sum().detach().cpu().item())
-        pred_total = float(pred.numel())
-        target_total = float(tgt.numel())
-        union = pred_total + target_total - intersection
-        return {"intersection": intersection, "pred_total": pred_total, "target_total": target_total, "union": union}
+            return {"metric_instance_count": 0.0}
+        stats = self._segmentation_class_statistics(
+            pred.detach().cpu().numpy(),
+            tgt.detach().cpu().numpy(),
+        )
+        stats["metric_instance_count"] = 1.0
+        return stats
 
     def metrics_from_statistics(self, stats):
+        metrics = self._segmentation_metrics_from_stats(stats)
+        if metrics is not None:
+            return metrics
+
         intersection = float(stats.get("intersection", 0.0))
         union = float(stats.get("union", 0.0))
         pred_total = float(stats.get("pred_total", 0.0))
@@ -781,11 +1342,18 @@ class ImageSegmentationSpec(HFTaskSpec):
         y_pred = np.asarray(y_pred)
         if y_true.size == 0:
             return {"primary": np.nan, "secondary": np.nan}
-        inter = float((y_true == y_pred).sum())
-        union = float(y_true.size + y_pred.size - inter)
-        iou = inter / union if union > 0 else np.nan
-        dice = (2 * inter) / float(y_true.size + y_pred.size) if (y_true.size + y_pred.size) > 0 else np.nan
-        return {"primary": iou, "secondary": dice}
+        ignore_index = None
+        if isinstance(y_extra, dict) and y_extra.get("ignore_index") is not None:
+            ignore_index = int(y_extra["ignore_index"])
+        if ignore_index is not None:
+            valid = y_true != ignore_index
+            y_true = y_true[valid]
+            y_pred = y_pred[valid]
+        stats = self._segmentation_class_statistics(y_pred, y_true)
+        metrics = self._segmentation_metrics_from_stats(stats)
+        if metrics is None:
+            return {"primary": np.nan, "secondary": np.nan}
+        return metrics
     
 
 class SentenceSimilaritySpec(HFTaskSpec):
@@ -1032,9 +1600,14 @@ class CausalLMGenerationSpec(HFTaskSpec):
                     pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
                     if pad_id is None:
                         pad_id = 0
+                    if max_prompt_len <= 0:
+                        max_prompt_len = 1
                     padded_ids = []
                     padded_mask = []
                     for row_ids, row_mask in zip(prompt_only_ids, prompt_only_mask):
+                        if not row_ids:
+                            row_ids = [int(pad_id)]
+                            row_mask = [1]
                         pad_len = max_prompt_len - len(row_ids)
                         padded_ids.append(([int(pad_id)] * pad_len) + list(row_ids))
                         padded_mask.append(([0] * pad_len) + list(row_mask))
@@ -1287,6 +1860,7 @@ class ImageCaptioningSpec(HFTaskSpec):
 class TextImageRetrievalSpec(HFTaskSpec):
     name = "text_image_retrieval"
     requires_num_labels = False
+    supports_unlabeled_metric_statistics = True
 
     def build_model(self, transformers, model_id, num_labels):
         AutoModel = transformers.AutoModel
@@ -1319,26 +1893,62 @@ class TextImageRetrievalSpec(HFTaskSpec):
     def loss_fn(self, torch, logits, labels_t, extra):
         return None
 
-    def preds_from_logits(self, torch, logits, extra):
-        return logits
+    def extract_logits(self, outputs):
+        logits_per_text = getattr(outputs, "logits_per_text", None)
+        if logits_per_text is not None:
+            return logits_per_text
 
-    def batch_metric_statistics_from_outputs(self, torch, outputs, labels_t, extra):
+        logits = getattr(outputs, "logits", None)
+        if logits is not None:
+            return logits
+
+        logits_per_image = getattr(outputs, "logits_per_image", None)
+        if logits_per_image is not None:
+            return logits_per_image.transpose(0, 1)
+
         img = getattr(outputs, "image_embeds", None)
         txt = getattr(outputs, "text_embeds", None)
-        if img is None or txt is None:
+        if img is not None and txt is not None:
+            img = img / img.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+            txt = txt / txt.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+            return txt @ img.transpose(0, 1)
+
+        raise AttributeError(
+            "Text-image retrieval output does not expose logits, logits_per_text, "
+            "logits_per_image, or image/text embeddings"
+        )
+
+    def preds_from_logits(self, torch, logits, extra):
+        return torch.argmax(logits, dim=-1)
+
+    def batch_metric_statistics_from_outputs(self, torch, outputs, labels_t, extra):
+        try:
+            sims = self.extract_logits(outputs)
+        except Exception:
+            img = getattr(outputs, "image_embeds", None)
+            txt = getattr(outputs, "text_embeds", None)
+            if img is None or txt is None:
+                return None
+
+            img = torch.nn.functional.normalize(img, dim=-1)
+            txt = torch.nn.functional.normalize(txt, dim=-1)
+            sims = txt @ img.transpose(0, 1)
+
+        if sims is None or sims.ndim != 2 or sims.shape[0] == 0 or sims.shape[1] == 0:
             return None
 
-        img = torch.nn.functional.normalize(img, dim=-1)
-        txt = torch.nn.functional.normalize(txt, dim=-1)
-        sims = txt @ img.transpose(0, 1)
-        targets = torch.arange(sims.shape[0], device=sims.device)
+        total = int(min(int(sims.shape[0]), int(sims.shape[1])))
+        if total <= 0:
+            return None
+        sims = sims[:total]
+        targets = torch.arange(total, device=sims.device)
 
         topk = min(10, sims.shape[1])
         _, idx = torch.topk(sims, k=topk, dim=1)
         r1 = (idx[:, :1] == targets[:, None]).any(dim=1).float().sum().item()
         r5 = (idx[:, : min(5, topk)] == targets[:, None]).any(dim=1).float().sum().item()
         r10 = (idx[:, : min(10, topk)] == targets[:, None]).any(dim=1).float().sum().item()
-        return {"r1_correct": r1, "r5_correct": r5, "r10_correct": r10, "total": float(sims.shape[0])}
+        return {"r1_correct": r1, "r5_correct": r5, "r10_correct": r10, "total": float(total)}
 
     def metrics_from_statistics(self, stats):
         total = max(1.0, float(stats.get("total", 0.0)))
@@ -1348,7 +1958,13 @@ class TextImageRetrievalSpec(HFTaskSpec):
         return {
             "primary": r1,
             "secondary": r5,
-            "named_metrics": {"r@1": r1, "r@5": r5, "r@10": r10},
+            "named_metrics": {
+                "accuracy": r1,
+                "top1_accuracy": r1,
+                "r@1": r1,
+                "r@5": r5,
+                "r@10": r10,
+            },
         }
 
 
@@ -1411,3 +2027,4 @@ class VQASpec(HFTaskSpec):
             exact = float((y_true.reshape(-1) == y_pred.reshape(-1)).mean())
 
         return {"primary": exact, "secondary": np.nan, "named_metrics": {"exact_match": exact}}
+

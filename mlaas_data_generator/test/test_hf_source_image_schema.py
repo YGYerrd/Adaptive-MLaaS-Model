@@ -60,3 +60,19 @@ def test_hf_source_image_requires_label_for_classification(monkeypatch):
 
     with pytest.raises(ValueError):
         load_huggingface_source(dataset_name="dummy", modality="image", task="classification", image_column="image")
+
+
+def test_hf_source_image_segmentation_falls_back_to_label_column_for_mask(monkeypatch):
+    ds = DummyDS([{"image": object(), "annotation": [[1]]}])
+    fake_mod = types.SimpleNamespace(load_dataset=lambda *args, **kwargs: ds)
+    monkeypatch.setitem(sys.modules, "datasets", fake_mod)
+
+    _, _, meta = load_huggingface_source(
+        dataset_name="dummy",
+        modality="image",
+        task="segmentation",
+        image_column="image",
+        label_column="annotation",
+    )
+
+    assert meta["schema"]["segmentation"]["mask_column"] == "annotation"

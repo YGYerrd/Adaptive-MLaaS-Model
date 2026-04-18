@@ -3,7 +3,7 @@ import time
 import math
 import numpy as np
 
-from .base import TaskStrategy, ClientOutcome, _nanmean, weights_size, metric_score_value
+from .base import TaskStrategy, ClientOutcome, _nanmean, weights_size, metric_score_value, canonical_task_family
 from ..system_metrics import ResourceTracker
 from ...models.train_eval import aggregate_state_dict
 
@@ -18,7 +18,9 @@ class HFStrategy(TaskStrategy):
     """
 
     def task_type(self):
-        return "classification"
+        base_task = str((self.meta or {}).get("task_type") or "").strip().lower()
+        resolved = canonical_task_family(base_task, self.hf_task)
+        return resolved if resolved != "unknown" else (base_task or "classification")
         
     def __init__(self, meta, knobs, config, x_test, y_test, metric_key, save_weights):
         super().__init__(meta, knobs, config, x_test, y_test, metric_key, save_weights)
@@ -28,6 +30,40 @@ class HFStrategy(TaskStrategy):
 
         ds_args = self.config.get("dataset_args", {}) or {}
         self.hf_task = (ds_args.get("hf_task") or self.config.get("hf_task") or "sequence_classification").lower()
+        self.runtime_adjustments = []
+        self._apply_runtime_safety_overrides(ds_args)
+
+    def _apply_runtime_safety_overrides(self, ds_args):
+        task = str(self.hf_task or "").strip().lower().replace("-", "_")
+        if task in {"image_segmentation", "semantic_segmentation"}:
+            try:
+                requested_batch_size = int(self.knobs.get("batch_size", 1) or 1)
+            except Exception:
+                requested_batch_size = 1
+            max_segmentation_batch_size = int(
+                self.config.get(
+                    "max_segmentation_batch_size",
+                    (ds_args or {}).get("max_segmentation_batch_size", 2),
+                )
+                or 2
+            )
+            max_segmentation_batch_size = max(1, max_segmentation_batch_size)
+            if requested_batch_size > max_segmentation_batch_size:
+                self.knobs["requested_batch_size"] = requested_batch_size
+                self.knobs["batch_size"] = max_segmentation_batch_size
+                self.runtime_adjustments.append(
+                    f"capped image_segmentation batch_size {requested_batch_size}->{max_segmentation_batch_size}"
+                )
+
+        model_id = str((ds_args or {}).get("hf_model_id") or self.config.get("hf_model_id") or "").strip().lower()
+        explicit_device = (ds_args or {}).get("device") or self.config.get("device")
+        if task in {"image_detection", "object_detection"} and model_id.startswith("facebook/detr-") and not explicit_device:
+            self.config = dict(self.config)
+            copied_ds_args = dict(ds_args or {})
+            copied_ds_args["device"] = "cpu"
+            self.config["dataset_args"] = copied_ds_args
+            self.config["device"] = "cpu"
+            self.runtime_adjustments.append("forced facebook/detr object detection device=cpu")
 
     # -------------------------
     # Logging + scoring policies
@@ -52,6 +88,9 @@ class HFStrategy(TaskStrategy):
             "text_classification",
             "sentence_similarity",
             "image_classification",
+            "image_detection",
+            "object_detection",
+            "image_segmentation",
         }
         if task in token_weighted_tasks:
             return "supervised_token_count"
@@ -59,6 +98,8 @@ class HFStrategy(TaskStrategy):
             return "sequence_count"
 
         accounting = (self.meta or {}).get("accounting") if isinstance(self.meta, dict) else {}
+        if not isinstance(accounting, dict):
+            accounting = {}
         if accounting.get("supervised_token_count"):
             return "supervised_token_count"
         return "sequence_count"
@@ -124,8 +165,34 @@ class HFStrategy(TaskStrategy):
         if self.hf_task in ("token_classification", "token-cls", "ner"):
             return float(primary_metric_value)
 
+        if self.hf_task == "sentence_similarity" and self.task_type() == "regression":
+            return metric_score_value("regression", float(primary_metric_value))
+
         # sequence classification primary is typically accuracy
         return metric_score_value("classification", float(primary_metric_value))
+
+    def _effective_finetune_lr(self):
+        requested_lr = self.knobs.get("learning_rate", 5e-5)
+        try:
+            requested = float(requested_lr)
+        except Exception:
+            requested = np.nan
+
+        task = str(self.hf_task or "").lower()
+        # Full-model transformer vision fine-tunes are unstable at the generic
+        # tabular/CNN learning rates used elsewhere in the manifest generator.
+        # Clamp object detection to a safer range so pretrained detectors do not
+        # immediately collapse during one-round transfer runs.
+        if task in {"image_detection", "object_detection"}:
+            safe_default = 5e-5
+            safe_max = 1e-4
+            if not np.isfinite(requested) or requested <= 0:
+                return safe_default, safe_default, True
+            if requested > safe_max:
+                return safe_max, requested, True
+            return requested, requested, False
+
+        return requested, requested, False
 
     def loggable_run_params(self):
         ds_args = self.config.get("dataset_args", {}) or {}
@@ -148,6 +215,8 @@ class HFStrategy(TaskStrategy):
         hf_model_id = ds_args.get("hf_model_id") or self.config.get("hf_model_id")
         max_length  = ds_args.get("max_length") or self.config.get("max_length")
         device      = ds_args.get("device") or self.config.get("device")
+        effective_lr, requested_lr, lr_adjusted = self._effective_finetune_lr()
+        max_train_time_s = self.knobs.get("max_train_time_s", self.config.get("max_train_time_s", 60))
 
         adapter = {
             "inference_only": self.inference_only,
@@ -157,8 +226,11 @@ class HFStrategy(TaskStrategy):
             "max_length": max_length,
             "device": device,
             "batch_size": self.knobs.get("batch_size"),
+            "requested_batch_size": self.knobs.get("requested_batch_size"),
             "local_epochs": self.knobs.get("local_epochs"),
-            "lr": self.knobs.get("learning_rate"),
+            "lr": effective_lr,
+            "requested_lr": requested_lr if lr_adjusted else None,
+            "learning_rate_adjusted": bool(lr_adjusted) if lr_adjusted else None,
             "max_new_tokens": ds_args.get("max_new_tokens") or self.config.get("max_new_tokens"),
             "num_beams": ds_args.get("num_beams") or self.config.get("num_beams"),
             "do_sample": ds_args.get("do_sample") if ds_args.get("do_sample") is not None else self.config.get("do_sample"),
@@ -166,17 +238,35 @@ class HFStrategy(TaskStrategy):
             "top_k": ds_args.get("top_k") or self.config.get("top_k"),
             "top_p": ds_args.get("top_p") or self.config.get("top_p"),
             "length_penalty": ds_args.get("length_penalty") or self.config.get("length_penalty"),
-            "max_train_time_s": self.knobs.get("max_train_time_s", self.config.get("max_train_time_s", 60)),
+            "max_train_time_s": max_train_time_s,
             "aggregation_weight_unit": self._weighting_policy(),
+            "runtime_adjustments": self.runtime_adjustments or None,
         }
         if uses_tokenization:
             adapter["padding_mode"] = ("dynamic" if ds_args.get("dynamic_padding") else "max_length")
 
+        meta_train_split = (self.meta or {}).get("train_split") if isinstance(self.meta, dict) else None
+        meta_test_split = (self.meta or {}).get("test_split") if isinstance(self.meta, dict) else None
+        requested_train_split = ds_args.get("train_split")
+        requested_test_split = ds_args.get("test_split")
+        resolved_train_split = meta_train_split or requested_train_split
+        resolved_test_split = meta_test_split or requested_test_split
+
         dataset = {
             "dataset_name": ds_args.get("dataset_name"),
             "dataset_config": ds_args.get("dataset_config"),
-            "train_split": ds_args.get("train_split"),
-            "test_split": ds_args.get("test_split"),
+            "train_split": resolved_train_split,
+            "test_split": resolved_test_split,
+            "requested_train_split": (
+                requested_train_split
+                if meta_train_split is not None and meta_train_split != requested_train_split
+                else None
+            ),
+            "requested_test_split": (
+                requested_test_split
+                if meta_test_split is not None and meta_test_split != requested_test_split
+                else None
+            ),
             "max_samples": ds_args.get("max_samples"),
         }
         if inferred_modality in {"text", "multimodal"}:
@@ -195,9 +285,15 @@ class HFStrategy(TaskStrategy):
             dataset["dynamic_padding"] = ds_args.get("dynamic_padding")
             dataset["padding_mode"] = ("dynamic" if ds_args.get("dynamic_padding") else "max_length")
 
+        aggregator = {
+            "strategy": "weighted_metric_average_no_weight_updates" if self.inference_only else "fedavg_weighted",
+            "aggregation_weight_unit": self._weighting_policy(),
+        }
+
         adapter = {k: v for k, v in adapter.items() if v is not None}
         dataset = {k: v for k, v in dataset.items() if v is not None}
-        return {"adapter": adapter, "dataset": dataset}
+        aggregator = {k: v for k, v in aggregator.items() if v is not None}
+        return {"adapter": adapter, "dataset": dataset, "aggregator": aggregator}
 
     # -------------------------
     # Federation-safe metric stats
@@ -229,8 +325,24 @@ class HFStrategy(TaskStrategy):
             if total <= 0:
                 return None
             top1 = float(stats.get("top1_correct", 0.0)) / total
-            top5 = float(stats.get("top5_correct", 0.0)) / total
-            return top1, top5
+            labels = set()
+            for key in stats:
+                key = str(key)
+                for suffix in ("_tp", "_pred_total", "_target_total"):
+                    if key.startswith("class_") and key.endswith(suffix):
+                        labels.add(key[len("class_"):-len(suffix)])
+            f1_scores = []
+            for label in sorted(labels):
+                tp = float(stats.get(f"class_{label}_tp", 0.0))
+                pred_total = float(stats.get(f"class_{label}_pred_total", 0.0))
+                target_total = float(stats.get(f"class_{label}_target_total", 0.0))
+                if pred_total <= 0 and target_total <= 0:
+                    continue
+                precision = tp / pred_total if pred_total > 0 else 0.0
+                recall = tp / target_total if target_total > 0 else 0.0
+                f1_scores.append(0.0 if (precision + recall) == 0 else (2.0 * precision * recall) / (precision + recall))
+            macro_f1 = float(np.mean(f1_scores)) if f1_scores else np.nan
+            return top1, macro_f1
 
         if task in {"image_detection", "object_detection"}:
             gt = float(stats.get("gt", 0.0))
@@ -244,6 +356,35 @@ class HFStrategy(TaskStrategy):
             return float(np.mean(vals)), float(vals[0])
 
         if task in {"image_segmentation", "semantic_segmentation"}:
+            class_prefix = "class_"
+            intersection_suffix = "_intersection"
+            pred_total_suffix = "_pred_total"
+            target_total_suffix = "_target_total"
+            per_class_iou = []
+            per_class_dice = []
+
+            for key, value in stats.items():
+                key = str(key)
+                if not (key.startswith(class_prefix) and key.endswith(intersection_suffix)):
+                    continue
+                label_token = key[len(class_prefix):-len(intersection_suffix)]
+                try:
+                    intersection = float(value)
+                    pred_total = float(stats.get(f"{class_prefix}{label_token}{pred_total_suffix}", 0.0))
+                    target_total = float(stats.get(f"{class_prefix}{label_token}{target_total_suffix}", 0.0))
+                except Exception:
+                    continue
+
+                union = pred_total + target_total - intersection
+                denom = pred_total + target_total
+                if union > 0:
+                    per_class_iou.append(intersection / union)
+                if denom > 0:
+                    per_class_dice.append((2.0 * intersection) / max(denom, 1e-9))
+
+            if per_class_iou and per_class_dice:
+                return float(np.mean(per_class_iou)), float(np.mean(per_class_dice))
+
             inter = float(stats.get("intersection", 0.0))
             union = float(stats.get("union", 0.0))
             pred_total = float(stats.get("pred_total", 0.0))
@@ -254,7 +395,69 @@ class HFStrategy(TaskStrategy):
             dice = (2.0 * inter) / max(pred_total + target_total, 1e-9)
             return iou, dice
 
+        if task in {"text_image_retrieval", "image_text_retrieval"}:
+            total = float(stats.get("total", 0.0))
+            if total <= 0:
+                return None
+            r1 = float(stats.get("r1_correct", 0.0)) / total
+            r5 = float(stats.get("r5_correct", 0.0)) / total
+            return r1, r5
+
         return None
+
+    @staticmethod
+    def _finite_float(value):
+        try:
+            parsed = float(value)
+        except Exception:
+            return np.nan
+        return parsed if np.isfinite(parsed) else np.nan
+
+    def _coerce_image_classification_metrics(self, primary, secondary, extras):
+        task = str(self.hf_task or "").lower()
+        if task not in {"image_classification"}:
+            return primary, secondary
+
+        extras = extras if isinstance(extras, dict) else {}
+        primary_val = self._finite_float(primary)
+        secondary_val = self._finite_float(secondary)
+
+        if primary_val != primary_val:
+            for key in ("accuracy", "top1_accuracy"):
+                candidate = self._finite_float(extras.get(key))
+                if candidate == candidate:
+                    primary_val = candidate
+                    break
+
+        if secondary_val != secondary_val:
+            for key in ("f1", "macro_f1", "weighted_f1", "top5_accuracy"):
+                candidate = self._finite_float(extras.get(key))
+                if candidate == candidate:
+                    secondary_val = candidate
+                    break
+
+        if secondary_val != secondary_val and primary_val == primary_val:
+            secondary_val = primary_val
+
+        return primary_val, secondary_val
+
+    def _weighted_metric_from_outcome_extras(self, outcomes, weights, keys):
+        pairs = []
+        for outcome, weight in zip(outcomes, weights):
+            if weight <= 0:
+                continue
+            extras = getattr(outcome, "extras", None)
+            if not isinstance(extras, dict):
+                continue
+            for key in keys:
+                candidate = self._finite_float(extras.get(key))
+                if candidate == candidate:
+                    pairs.append((candidate, float(weight)))
+                    break
+        if not pairs:
+            return np.nan
+        vals, wts = zip(*pairs)
+        return float(np.average(vals, weights=wts))
 
     # -------------------------
     # Model/adapter management
@@ -290,13 +493,23 @@ class HFStrategy(TaskStrategy):
 
         For token classification: primary is assumed F1, secondary assumed accuracy (or similar).
         """
+        effective_lr, requested_lr, lr_adjusted = self._effective_finetune_lr()
+        if lr_adjusted:
+            print(
+                "[HFStrategy] adjusted hf fine-tune learning rate "
+                f"for task={self.hf_task}: requested={requested_lr} effective={effective_lr}"
+            )
         train_qos = adapter.fit(
             x_train,
             y_train,
             epochs=self.knobs.get("local_epochs", 1),
-            lr=self.knobs.get("learning_rate", 5e-5),
+            lr=effective_lr,
             max_train_time_s=self.knobs.get("max_train_time_s", self.config.get("max_train_time_s", 60)),
         )
+        if isinstance(train_qos, dict):
+            train_qos["requested_learning_rate"] = float(requested_lr) if requested_lr == requested_lr else np.nan
+            train_qos["effective_learning_rate"] = float(effective_lr) if effective_lr == effective_lr else np.nan
+            train_qos["learning_rate_adjusted"] = bool(lr_adjusted)
         loss, primary, secondary, eval_qos = adapter.evaluate(self.x_test, self.y_test)
         return loss, primary, secondary, train_qos, eval_qos
 
@@ -340,8 +553,8 @@ class HFStrategy(TaskStrategy):
             if self.inference_only:
                 adapter = global_model if global_model is not None else self.build_model()
                 loss, primary, secondary, qos = adapter.evaluate(
-                    x,
-                    y,
+                    self.x_test,
+                    self.y_test,
                     inference_only=True,
                     max_eval_time_s=self.knobs.get("max_eval_time_s", self.config.get("max_eval_time_s")),
                     progress_log_interval=self.knobs.get(
@@ -349,12 +562,18 @@ class HFStrategy(TaskStrategy):
                         self.config.get("eval_progress_log_interval", 10),
                     ),
                 )
+                if isinstance(qos, dict) and qos.get("label_space_warning"):
+                    print(f"[HFStrategy] {qos.get('label_space_warning')}")
+                primary, secondary = self._coerce_image_classification_metrics(primary, secondary, qos)
 
                 duration = time.time() - start
                 usage = tracker.stop(duration)
 
                 mscore = self._metric_score(primary)
                 weighting = self._resolve_client_weighting(samples_count, qos)
+                extras = qos if isinstance(qos, dict) else {}
+                extras = dict(extras)
+                extras.update(self.perturbation_metrics(adapter, client_id=client_id, round_idx=round_idx))
 
                 return ClientOutcome(
                     participated=True,
@@ -380,7 +599,7 @@ class HFStrategy(TaskStrategy):
                     peak_host_ram_mb=usage.peak_host_ram_mb,
                     avg_host_ram_mb=usage.avg_host_ram_mb,
                     payload=None,
-                    extras=qos if isinstance(qos, dict) else {},
+                    extras=extras,
                     **weighting,
                 )
 
@@ -403,6 +622,8 @@ class HFStrategy(TaskStrategy):
                 extras.update(train_qos)
             if isinstance(eval_qos, dict):
                 extras.update(eval_qos)
+            primary, secondary = self._coerce_image_classification_metrics(primary, secondary, extras)
+            extras.update(self.perturbation_metrics(local_adapter, client_id=client_id, round_idx=round_idx))
             weighting = self._resolve_client_weighting(samples_count, extras)
 
             return ClientOutcome(
@@ -495,6 +716,21 @@ class HFStrategy(TaskStrategy):
             else:
                 primary = _weighted([o.metric_value for o in participated], weights)
                 secondary = _weighted([o.extra_metric for o in participated], weights)
+                if str(self.hf_task or "").lower() in {"image_classification"}:
+                    if primary != primary:
+                        primary = self._weighted_metric_from_outcome_extras(
+                            participated,
+                            weights,
+                            keys=("accuracy", "top1_accuracy"),
+                        )
+                    if secondary != secondary:
+                        secondary = self._weighted_metric_from_outcome_extras(
+                            participated,
+                            weights,
+                            keys=("f1", "macro_f1", "weighted_f1", "top5_accuracy"),
+                        )
+                    if secondary != secondary and primary == primary:
+                        secondary = primary
             mscore = self._metric_score(primary)
             return loss, primary, mscore, secondary
 

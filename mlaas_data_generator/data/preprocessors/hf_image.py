@@ -3,6 +3,7 @@ import io
 import os
 import inspect
 import logging
+import re
 
 import numpy as np
 
@@ -15,6 +16,20 @@ def _is_pil_image(value):
     except Exception:
         return False
     return isinstance(value, Image.Image)
+
+
+_DETECTION_LABEL_ALIASES = {
+    "tv": ("tv monitor",),
+    "couch": ("sofa",),
+    "cell phone": ("mobile phone",),
+    "hair drier": ("hair dryer",),
+}
+
+
+def _normalize_label_name(name):
+    txt = str(name or "").strip().lower()
+    txt = re.sub(r"[^a-z0-9]+", " ", txt).strip()
+    return txt
 
 
 def _to_numpy_rgb(image_like):
@@ -78,6 +93,106 @@ def _decode_bytes(data):
         return np.asarray(im.convert("RGB"))
 
 
+def _to_numpy_mask(mask_like):
+    if mask_like is None:
+        raise ValueError("segmentation mask is missing")
+
+    if isinstance(mask_like, np.ndarray):
+        arr = mask_like
+    elif isinstance(mask_like, dict):
+        if "array" in mask_like and mask_like["array"] is not None:
+            arr = np.asarray(mask_like["array"])
+        elif "bytes" in mask_like and mask_like["bytes"] is not None:
+            try:
+                from PIL import Image
+            except Exception as e:
+                raise ImportError("Segmentation mask decoding from bytes requires Pillow") from e
+            with Image.open(io.BytesIO(mask_like["bytes"])) as im:
+                arr = np.asarray(im)
+        elif "path" in mask_like and mask_like["path"]:
+            try:
+                from PIL import Image
+            except Exception as e:
+                raise ImportError("Segmentation mask decoding from path requires Pillow") from e
+            with Image.open(mask_like["path"]) as im:
+                arr = np.asarray(im)
+        else:
+            raise ValueError("unsupported HF segmentation mask dict payload")
+    elif isinstance(mask_like, (bytes, bytearray)):
+        try:
+            from PIL import Image
+        except Exception as e:
+            raise ImportError("Segmentation mask decoding from bytes requires Pillow") from e
+        with Image.open(io.BytesIO(mask_like)) as im:
+            arr = np.asarray(im)
+    elif isinstance(mask_like, str):
+        if not os.path.exists(mask_like):
+            raise FileNotFoundError(mask_like)
+        try:
+            from PIL import Image
+        except Exception as e:
+            raise ImportError("Segmentation mask decoding from path requires Pillow") from e
+        with Image.open(mask_like) as im:
+            arr = np.asarray(im)
+    elif _is_pil_image(mask_like):
+        arr = np.asarray(mask_like)
+    elif hasattr(mask_like, "__array__") or hasattr(mask_like, "__array_interface__"):
+        arr = np.asarray(mask_like)
+    else:
+        raise TypeError(f"unsupported segmentation mask payload type={type(mask_like)}")
+
+    arr = np.asarray(arr)
+    if arr.ndim == 3 and arr.shape[0] == 1:
+        arr = arr[0]
+    elif arr.ndim == 3 and arr.shape[-1] == 1:
+        arr = arr[..., 0]
+
+    if arr.ndim != 2:
+        raise ValueError(f"expected 2D segmentation mask, got shape={arr.shape}")
+
+    return arr.astype(np.int64, copy=False)
+
+
+def _sample_segmentation_mask_range(ds, mask_column, *, limit=None):
+    if not mask_column:
+        return None, None
+
+    observed_min = None
+    observed_max = None
+    sample_count = len(ds) if limit is None else min(int(limit), len(ds))
+    for idx in range(sample_count):
+        try:
+            arr = _to_numpy_mask(ds[idx].get(mask_column))
+        except Exception:
+            continue
+        if arr.size == 0:
+            continue
+        current_min = int(np.min(arr))
+        current_max = int(np.max(arr))
+        observed_min = current_min if observed_min is None else min(observed_min, current_min)
+        observed_max = current_max if observed_max is None else max(observed_max, current_max)
+
+    return observed_min, observed_max
+
+
+def _infer_segmentation_num_classes(labels, *, ignore_index=None):
+    observed_max = None
+    for item in labels or []:
+        arr = np.asarray(item)
+        if arr.size == 0:
+            continue
+        if ignore_index is not None:
+            arr = arr[arr != int(ignore_index)]
+        if arr.size == 0:
+            continue
+        current_max = int(np.max(arr))
+        observed_max = current_max if observed_max is None else max(observed_max, current_max)
+
+    if observed_max is None:
+        return None
+    return int(observed_max + 1)
+
+
 def _normalise_detection_item(boxes, classes):
     if boxes is None:
         boxes = []
@@ -131,6 +246,143 @@ def _extract_detection_annotations(row, *, label_column=None, boxes_column=None,
     return _normalise_detection_item(extracted_boxes, extracted_classes)
 
 
+def _infer_detection_box_format(boxes, *, image_h, image_w):
+    out_boxes = np.asarray(boxes, dtype=np.float32)
+    if out_boxes.size == 0:
+        return None
+    if out_boxes.ndim == 1:
+        if out_boxes.shape[0] != 4:
+            return None
+        out_boxes = out_boxes.reshape(1, 4)
+    if out_boxes.ndim != 2 or out_boxes.shape[1] != 4:
+        return None
+
+    tol_w = float(image_w) * 1.05
+    tol_h = float(image_h) * 1.05
+
+    x1, y1, x2_or_w, y2_or_h = out_boxes.T
+
+    xyxy_violations = (
+        (x1 < 0).sum()
+        + (y1 < 0).sum()
+        + (x2_or_w < x1).sum()
+        + (y2_or_h < y1).sum()
+        + (x2_or_w > tol_w).sum()
+        + (y2_or_h > tol_h).sum()
+    )
+
+    xywh_violations = (
+        (x1 < 0).sum()
+        + (y1 < 0).sum()
+        + (x2_or_w < 0).sum()
+        + (y2_or_h < 0).sum()
+        + ((x1 + x2_or_w) > tol_w).sum()
+        + ((y1 + y2_or_h) > tol_h).sum()
+    )
+
+    if int(xyxy_violations) < int(xywh_violations):
+        return "xyxy"
+    if int(xywh_violations) < int(xyxy_violations):
+        return "xywh"
+
+    # Ambiguous absolute coordinates: default to xywh because many HF object
+    # detection datasets publish [x, y, width, height].
+    return "xywh"
+
+
+def _is_likely_contiguous_zero_based_detection_labels(labels):
+    all_classes = []
+    for item in labels:
+        if not isinstance(item, dict):
+            continue
+        classes = item.get("classes")
+        if classes is None:
+            continue
+        arr = np.asarray(classes, dtype=np.int64).reshape(-1)
+        if arr.size == 0:
+            continue
+        all_classes.append(arr)
+
+    if not all_classes:
+        return False
+
+    cls = np.concatenate(all_classes, axis=0)
+    unique = np.unique(cls)
+    if unique.size == 0 or int(unique[0]) != 0:
+        return False
+
+    # Allow a small amount of sparsity in sampled subsets while still
+    # recognizing zero-based contiguous id spaces (e.g. COCO 0..79).
+    max_id = int(unique[-1])
+    uniq_count = int(unique.size)
+    slack = max(10, int(np.ceil(0.15 * max(1, uniq_count))))
+    return max_id <= int((uniq_count - 1) + slack)
+
+
+def _extract_detection_category_names(ds, label_column):
+    features = getattr(ds, "features", None) or {}
+    label_feature = features.get(label_column) if isinstance(features, dict) else None
+    if label_feature is None:
+        return None
+
+    nested = getattr(label_feature, "feature", None)
+    if isinstance(nested, dict):
+        for key in ("category", "category_id", "category_ids", "class_labels", "labels"):
+            category_feature = nested.get(key)
+            names = getattr(category_feature, "names", None)
+            if names:
+                return [str(name) for name in names]
+    names = getattr(label_feature, "names", None)
+    if names:
+        return [str(name) for name in names]
+    return None
+
+
+def _build_detection_class_id_map(*, hf_model_id, category_names):
+    if not category_names:
+        return None
+    try:
+        from transformers import AutoConfig
+    except Exception:
+        return None
+
+    try:
+        cfg = AutoConfig.from_pretrained(hf_model_id)
+        id2label = getattr(cfg, "id2label", None)
+    except Exception:
+        return None
+
+    if not isinstance(id2label, dict) or not id2label:
+        return None
+
+    model_name_to_ids = {}
+    for raw_id, raw_name in id2label.items():
+        try:
+            mid = int(raw_id)
+        except Exception:
+            continue
+        normalized = _normalize_label_name(raw_name)
+        if not normalized or normalized in {"n a", "na"}:
+            continue
+        model_name_to_ids.setdefault(normalized, []).append(mid)
+
+    resolved = []
+    for name in category_names:
+        normalized = _normalize_label_name(name)
+        candidates = [normalized]
+        candidates.extend(_normalize_label_name(alias) for alias in _DETECTION_LABEL_ALIASES.get(normalized, ()))
+        matched_id = None
+        for candidate in candidates:
+            ids = model_name_to_ids.get(candidate) or []
+            if len(ids) == 1:
+                matched_id = int(ids[0])
+                break
+        if matched_id is None:
+            return None
+        resolved.append(matched_id)
+    return np.asarray(resolved, dtype=np.int64)
+
+
 def _process_split(
     ds,
     *,
@@ -179,7 +431,7 @@ def _process_split(
         except (TypeError, ValueError):
             preprocess_accepts_kwargs = True
 
-    def _process_image(image_array, *, training_enabled):
+    def _build_processor_kwargs(*, training_enabled):
         base_kwargs = {
             "return_tensors": None,
             "do_resize": True,
@@ -208,6 +460,10 @@ def _process_split(
             ]
         )
 
+        return call_attempts
+
+    def _process_image(image_array, *, training_enabled):
+        call_attempts = _build_processor_kwargs(training_enabled=training_enabled)
         last_err = None
         for kwargs in call_attempts:
             try:
@@ -221,6 +477,28 @@ def _process_split(
         if last_err is not None:
             raise last_err
         return image_processor(image_array)
+
+    def _process_segmentation(image_array, mask_array, *, training_enabled):
+        call_attempts = _build_processor_kwargs(training_enabled=training_enabled)
+        last_err = None
+
+        for kwargs in call_attempts:
+            try:
+                return image_processor([image_array], segmentation_maps=[mask_array], **kwargs)
+            except TypeError as e:
+                last_err = e
+            except ValueError as e:
+                last_err = e
+            try:
+                return image_processor(images=[image_array], segmentation_maps=[mask_array], **kwargs)
+            except TypeError as e:
+                last_err = e
+            except ValueError as e:
+                last_err = e
+
+        if last_err is not None:
+            raise last_err
+        return image_processor([image_array], segmentation_maps=[mask_array])
 
     for idx in range(len(ds)):
         if task_type == "detection" and (idx == 0 or idx % 25 == 0):
@@ -243,8 +521,14 @@ def _process_split(
                     tuple(getattr(image, "shape", ())),
                 )
                 LOGGER.info("[detection preprocessing] split=%s idx=%d before processor call", split_name, idx)
-            proc = _process_image(image, training_enabled=training)
-            pix = proc.get("pixel_values", proc)
+            if task_type == "segmentation":
+                mask = _to_numpy_mask(row.get(mask_column))
+                proc = _process_segmentation(image, mask, training_enabled=training)
+                pix = proc.get("pixel_values", proc)
+                label = proc.get("labels", mask)
+            else:
+                proc = _process_image(image, training_enabled=training)
+                pix = proc.get("pixel_values", proc)
             if task_type == "detection":
                 LOGGER.info("[detection preprocessing] split=%s idx=%d after processor call", split_name, idx)
                 LOGGER.info(
@@ -276,13 +560,24 @@ def _process_split(
                     boxes_column=boxes_column,
                     classes_column=classes_column,
                 )
+                # Preserve the raw decoded image size so downstream box
+                # normalization stays aligned with dataset-native coordinates
+                # even when the processor resizes/pads pixel values.
+                label["image_size"] = np.asarray([image.shape[0], image.shape[1]], dtype=np.int64)
+                label["box_format"] = _infer_detection_box_format(
+                    label.get("boxes", []),
+                    image_h=image.shape[0],
+                    image_w=image.shape[1],
+                )
             elif task_type == "segmentation":
-                mask = row.get(mask_column)
-                if mask is None:
-                    raise ValueError("segmentation mask is missing")
-                if task_type == "detection":
-                    LOGGER.info("[detection preprocessing] split=%s idx=%d before np.asarray(mask)", split_name, idx)
-                label = np.asarray(mask)
+                label = np.asarray(label)
+                if label.ndim == 3 and label.shape[0] == 1:
+                    label = label[0]
+                elif label.ndim == 3 and label.shape[-1] == 1:
+                    label = label[..., 0]
+                if label.ndim != 2:
+                    raise ValueError(f"segmentation labels must be 2D after preprocessing, got {label.shape}")
+                label = label.astype(np.int64, copy=False)
             else:
                 label = None
         except Exception as e:
@@ -304,6 +599,14 @@ def _process_split(
         labels.append(label)
 
     if on_decode_error != "report":
+        if not images:
+            if decode_errors:
+                preview = "; ".join(f"row {item['index']}: {item['error']}" for item in decode_errors[:3])
+                raise ValueError(
+                    f"all samples failed preprocessing for split='{split_name}'. "
+                    f"sample errors: {preview}"
+                )
+            raise ValueError(f"no samples survived preprocessing for split='{split_name}'")
         # Object detection datasets can include thousands of high-resolution images.
         # Stacking the full split into one contiguous NCHW tensor eagerly allocates
         # all pixel storage at once and can exhaust host RAM before batching.
@@ -380,14 +683,58 @@ def preprocess_hf_image(
     ds_train, _ = train
     ds_test, _ = test
     task_type = (task_type or meta.get("task_type", "classification")).strip().lower()
+    detection_class_id_map = None
     if task_type == "detection":
         LOGGER.info(
             "[detection preprocessing] split lengths train=%d test=%d",
             len(ds_train),
             len(ds_test),
         )
+        category_names = _extract_detection_category_names(ds_train, label_column)
+        detection_class_id_map = _build_detection_class_id_map(
+            hf_model_id=hf_model_id,
+            category_names=category_names,
+        )
 
-    processor = AutoImageProcessor.from_pretrained(hf_model_id)
+    resolved_mask_column = mask_column
+    if task_type == "segmentation" and not resolved_mask_column:
+        resolved_mask_column = label_column
+
+    processor_kwargs = {"use_fast": False} if task_type == "segmentation" else {}
+    segmentation_model_num_labels = None
+    segmentation_ignore_index = None
+    if task_type == "segmentation":
+        try:
+            from transformers import AutoConfig
+        except Exception:
+            AutoConfig = None
+        if AutoConfig is not None:
+            try:
+                cfg = AutoConfig.from_pretrained(hf_model_id)
+                raw_num_labels = getattr(cfg, "num_labels", None)
+                if raw_num_labels is not None:
+                    segmentation_model_num_labels = int(raw_num_labels)
+                raw_ignore_index = getattr(cfg, "semantic_loss_ignore_index", None)
+                if raw_ignore_index is not None:
+                    segmentation_ignore_index = int(raw_ignore_index)
+            except Exception:
+                segmentation_model_num_labels = None
+                segmentation_ignore_index = None
+
+    processor = AutoImageProcessor.from_pretrained(hf_model_id, **processor_kwargs)
+    if task_type == "segmentation" and hasattr(processor, "do_reduce_labels"):
+        # Scan the selected training split instead of a tiny prefix sample.
+        # The previous probe could miss rare max-label ids and cause the same
+        # dataset/model pair to flip between aligned (150 labels) and misaligned
+        # (151 labels) runs depending on shuffle order.
+        raw_min, raw_max = _sample_segmentation_mask_range(ds_train, resolved_mask_column)
+        if (
+            raw_min == 0
+            and raw_max is not None
+            and segmentation_model_num_labels is not None
+            and int(raw_max) == int(segmentation_model_num_labels)
+        ):
+            processor.do_reduce_labels = True
 
     x_train, y_train, train_report = _process_split(
         ds_train,
@@ -399,7 +746,7 @@ def preprocess_hf_image(
         label_column=label_column,
         boxes_column=boxes_column,
         classes_column=classes_column,
-        mask_column=mask_column,
+        mask_column=resolved_mask_column,
         on_decode_error=on_decode_error,
         report_decode_errors=report_decode_errors,
     )
@@ -413,10 +760,27 @@ def preprocess_hf_image(
         label_column=label_column,
         boxes_column=boxes_column,
         classes_column=classes_column,
-        mask_column=mask_column,
+        mask_column=resolved_mask_column,
         on_decode_error=on_decode_error,
         report_decode_errors=report_decode_errors,
     )
+
+    if task_type == "detection":
+        likely_contiguous = _is_likely_contiguous_zero_based_detection_labels(list(y_train) + list(y_test))
+        if detection_class_id_map is not None:
+            for item in y_train:
+                if isinstance(item, dict):
+                    item["class_id_map"] = detection_class_id_map
+            for item in y_test:
+                if isinstance(item, dict):
+                    item["class_id_map"] = detection_class_id_map
+        if likely_contiguous:
+            for item in y_train:
+                if isinstance(item, dict):
+                    item["force_contiguous_label_remap"] = True
+            for item in y_test:
+                if isinstance(item, dict):
+                    item["force_contiguous_label_remap"] = True
 
     meta = append_accounting_stage(
         meta,
@@ -474,6 +838,22 @@ def preprocess_hf_image(
             if value > 0:
                 candidates.append(value)
         resolved_num_classes = int(max(candidates)) if candidates else None
+    elif task_type == "segmentation":
+        inferred_segmentation_num_classes = _infer_segmentation_num_classes(
+            list(y_train) + list(y_test),
+            ignore_index=segmentation_ignore_index,
+        )
+        candidates = []
+        for candidate in (resolved_num_classes, segmentation_model_num_labels, inferred_segmentation_num_classes):
+            if candidate is None:
+                continue
+            try:
+                value = int(candidate)
+            except Exception:
+                continue
+            if value > 0:
+                candidates.append(value)
+        resolved_num_classes = int(max(candidates)) if candidates else None
     meta.update(
         {
             "input_shape": inferred_input_shape,
@@ -481,23 +861,40 @@ def preprocess_hf_image(
             "label_column": label_column,
             "boxes_column": boxes_column,
             "classes_column": classes_column,
-            "mask_column": mask_column,
+            "mask_column": resolved_mask_column,
             "task_type": task_type,
             "modality": "image",
             "hf_processor": hf_model_id,
             "channel_order": "CHW",
             "num_classes": resolved_num_classes,
+            "num_labels": resolved_num_classes,
             "training_augmentations": bool(training_augmentations),
             "eval_augmentations": bool(eval_augmentations),
             "decode_error_policy": on_decode_error,
             "decode_report": {"train": train_report, "test": test_report},
+            "segmentation_reduce_labels": bool(getattr(processor, "do_reduce_labels", False)) if task_type == "segmentation" else None,
             "schema": {
                 "image_column": image_column,
                 "label_column": label_column if task_type == "classification" else None,
                 "detection": {"boxes_column": boxes_column, "classes_column": classes_column},
-                "segmentation": {"mask_column": mask_column},
+                "segmentation": {"mask_column": resolved_mask_column},
             },
         }
     )
+    if task_type == "segmentation":
+        if segmentation_ignore_index is not None:
+            meta["label_pad_value"] = segmentation_ignore_index
+            meta["ignore_index"] = segmentation_ignore_index
+    else:
+        meta.pop("label_pad_value", None)
+        meta.pop("ignore_index", None)
+    if task_type == "detection":
+        meta["detection_label_id_space"] = (
+            "contiguous_zero_based"
+            if _is_likely_contiguous_zero_based_detection_labels(list(y_train) + list(y_test))
+            else "dataset_native"
+        )
+        if detection_class_id_map is not None:
+            meta["detection_class_id_map"] = detection_class_id_map.tolist()
 
     return (x_train, y_train), (x_test, y_test), meta

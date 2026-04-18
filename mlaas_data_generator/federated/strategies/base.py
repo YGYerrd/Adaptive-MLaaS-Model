@@ -64,6 +64,8 @@ def canonical_task_family(task_type: str | None, hf_task: str | None = None) -> 
             return "token_classification"
         if hf == "fill_mask":
             return "fill_mask"
+        if hf == "sentence_similarity":
+            return "classification"
         if hf in {"sequence_classification", "image_classification"} or hf == "unknown":
             return "classification"
         if hf in {"image_detection"}:
@@ -99,7 +101,7 @@ def canonical_label_format(task_family: str) -> str:
 def canonical_metric_names(task_family: str, metric_key: str, *, hf_task: str | None = None, task_tag: str | None = None) -> tuple[str, str | None]:
     if task_family == "classification":
         if normalize_hf_task(hf_task) == "image_classification":
-            return ("accuracy", "top5_accuracy")
+            return ("accuracy", "f1")
         return ("accuracy", "f1")
     if task_family == "token_classification":
         return ("f1", "accuracy")
@@ -243,11 +245,52 @@ class TaskStrategy:
 
         from ...models.builders import create_model
 
+        resolved_num_labels = infer_num_labels(self.meta, fallback=self.meta.get("num_classes"))
+        if resolved_num_labels is None:
+            hf_task = normalize_hf_task(
+                (ds_args.get("hf_task") or self.config.get("hf_task") or self.meta.get("hf_task"))
+            )
+            if hf_task == "image_classification" and self.y_test is not None:
+                try:
+                    y_arr = np.asarray(self.y_test)
+                    if y_arr.size:
+                        flat = y_arr.reshape(-1)
+                        if flat.dtype.kind in {"i", "u"}:
+                            valid = flat[flat >= 0]
+                            if valid.size:
+                                resolved_num_labels = int(np.unique(valid).size)
+                        else:
+                            cast = flat.astype(np.float64)
+                            mask = np.isfinite(cast) & (cast >= 0.0)
+                            if np.any(mask):
+                                resolved_num_labels = int(np.unique(cast[mask].astype(np.int64)).size)
+                except Exception:
+                    resolved_num_labels = None
+            elif hf_task == "image_segmentation" and self.y_test is not None:
+                try:
+                    ignore_index = self.meta.get("label_pad_value", self.meta.get("ignore_index")) if isinstance(self.meta, dict) else None
+                    observed_max = None
+                    for item in self.y_test:
+                        arr = np.asarray(item)
+                        if arr.size == 0:
+                            continue
+                        if ignore_index is not None:
+                            arr = arr[arr != int(ignore_index)]
+                        if arr.size == 0:
+                            continue
+                        current_max = int(np.max(arr))
+                        observed_max = current_max if observed_max is None else max(observed_max, current_max)
+                    if observed_max is not None:
+                        resolved_num_labels = int(observed_max + 1)
+                except Exception:
+                    resolved_num_labels = None
+
         common = dict(
             input_shape=tuple(self.meta["input_shape"]),
-            num_classes=infer_num_labels(self.meta, fallback=self.meta.get("num_classes")),
+            num_classes=resolved_num_labels,
             task_type=self.task_type(),
             model_type=self.config.get("model_type"),
+            meta=self.meta,
             **extra,
         )
 
@@ -317,6 +360,28 @@ class TaskStrategy:
                 out.append((k, kv[k]))
         return out  
     
+    def perturbation_metrics(self, model, *, client_id=None, round_idx=None):
+        from ..perturbation import run_perturbation_stage
+
+        try:
+            return run_perturbation_stage(
+                model,
+                self.x_test,
+                self.y_test,
+                task_family=self.task_type(),
+                hf_task=getattr(self, "hf_task", None),
+                config=self.config,
+                meta=self.meta,
+                client_id=client_id,
+                round_idx=round_idx,
+            )
+        except Exception as exc:
+            return {
+                "perturbation_enabled_flag": True,
+                "perturbation_supported_flag": False,
+                "perturbation_error": f"{type(exc).__name__}",
+            }
+
 
     
     def task_type(self) -> str: ...
