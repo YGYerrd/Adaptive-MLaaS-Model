@@ -4,7 +4,11 @@ import types
 import numpy as np
 
 from mlaas_data_generator.data.preprocessors.hf import preprocess_hf
-from mlaas_data_generator.data.preprocessors.hf_image import _build_detection_class_id_map
+from mlaas_data_generator.data.preprocessors.hf_image import (
+    _build_detection_class_id_map,
+    _extract_detection_annotations,
+    _to_numpy_mask,
+)
 
 
 class DummySplit:
@@ -19,6 +23,19 @@ class DummySplit:
     def __getitem__(self, item):
         if isinstance(item, str):
             return [r.get(item) for r in self._rows]
+        return self._rows[item]
+
+
+class BrokenRowSplit(DummySplit):
+    def __init__(self, rows, *, broken_indices=None, features=None):
+        super().__init__(rows, features=features)
+        self._broken_indices = set(broken_indices or ())
+
+    def __getitem__(self, item):
+        if isinstance(item, str):
+            return [r.get(item) for r in self._rows]
+        if item in self._broken_indices:
+            raise FileNotFoundError(f"missing-image-{item}.jpg")
         return self._rows[item]
 
 
@@ -180,6 +197,30 @@ def test_image_decode_error_skip_and_report():
     assert meta["decode_report"]["train"]["failed"] == 1
     assert meta["accounting"]["post_filter_record_count"] == 1
     assert meta["accounting"]["sequence_count"] == 1
+
+
+def test_image_decode_error_skip_when_row_fetch_fails():
+    _install_fake_transformers()
+    train_rows = [
+        {"image": np.zeros((2, 2, 3), dtype=np.uint8), "label": 0},
+        {"image": np.ones((2, 2, 3), dtype=np.uint8), "label": 1},
+    ]
+    test_rows = [{"image": np.zeros((2, 2, 3), dtype=np.uint8), "label": 0}]
+
+    train, test, meta = preprocess_hf(
+        (BrokenRowSplit(train_rows, broken_indices={0}), None),
+        (DummySplit(test_rows), None),
+        {"hf_task": "sequence_classification", "modality": "image", "task_type": "classification", "hf_id": "dummy"},
+        hf_model_id="dummy/vision",
+        on_decode_error="skip",
+        report_decode_errors=True,
+    )
+
+    x_train, y_train = train
+    assert x_train["pixel_values"].shape[0] == 1
+    assert y_train.tolist() == [1]
+    assert meta["decode_report"]["train"]["failed"] == 1
+    assert meta["accounting"]["post_filter_record_count"] == 1
 
 
 def test_image_detection_schema_passthrough():
@@ -419,8 +460,10 @@ def test_image_segmentation_uses_label_column_as_mask_fallback_and_slow_processo
     assert FakeSegmentationImageProcessor.last_from_pretrained_kwargs == {"use_fast": False}
     assert meta["mask_column"] == "annotation"
     assert meta["schema"]["segmentation"]["mask_column"] == "annotation"
-    assert x_train["pixel_values"].shape == (1, 3, 4, 4)
-    assert x_test["pixel_values"].shape == (1, 3, 4, 4)
+    assert len(x_train["pixel_values"]) == 1
+    assert len(x_test["pixel_values"]) == 1
+    assert x_train["pixel_values"][0].shape == (3, 4, 4)
+    assert x_test["pixel_values"][0].shape == (3, 4, 4)
     assert y_train[0].shape == (4, 4)
     assert y_test[0].shape == (4, 4)
     assert meta["num_classes"] == 4
@@ -460,6 +503,28 @@ def test_image_segmentation_reduce_labels_scans_beyond_small_prefix():
 
     assert meta["segmentation_reduce_labels"] is True
     assert meta["num_labels"] == 3
+
+
+def test_segmentation_binary_255_masks_are_mapped_to_foreground_class():
+    mask = _to_numpy_mask(np.asarray([[0, 255], [255, 0]], dtype=np.uint8))
+
+    assert mask.tolist() == [[0, 1], [1, 0]]
+
+
+def test_detection_annotations_accept_json_records_and_label_key():
+    json_row = {
+        "annotations": '[{"bbox": [1, 2, 3, 4], "category_id": 7}, {"bbox": [5, 6, 7, 8], "category_id": 8}]'
+    }
+    parsed = _extract_detection_annotations(json_row, label_column="annotations")
+
+    assert parsed["boxes"].tolist() == [[1, 2, 3, 4], [5, 6, 7, 8]]
+    assert parsed["classes"].tolist() == [7, 8]
+
+    label_row = {"objects": {"bbox": [[1, 2, 3, 4]], "label": [4]}}
+    parsed = _extract_detection_annotations(label_row, label_column="objects")
+
+    assert parsed["boxes"].tolist() == [[1, 2, 3, 4]]
+    assert parsed["classes"].tolist() == [4]
 
 
 def test_detection_class_id_map_matches_names_to_model_ids():

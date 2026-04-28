@@ -40,9 +40,10 @@ class ManifestCandidate:
     model: dict[str, Any]
     dataset_spec: dict[str, Any]
     run_regime: str
-    variant_index: int
     pair_score: float
     fit_reason: str
+    service_variant_index: int = 0
+    dataset_variant_index: int = 0
 
 
 @dataclass(frozen=True)
@@ -111,7 +112,18 @@ MANIFEST_PROFILES: dict[str, ManifestProfile] = {
     ),
 }
 
-STRICT_VALIDATION_TASK_KEYS = {"image_captioning", "text_image_retrieval"}
+STRICT_VALIDATION_TASK_KEYS = {"image_captioning", "text_image_retrieval", "visual_question_answering"}
+FINETUNE_VALIDATION_TASK_KEYS = {"image_captioning", "text_image_retrieval", "visual_question_answering"}
+NOT_APPLICABLE = "N/A"
+INFERENCE_ONLY_TRAINING_COLUMNS = (
+    "local_epochs",
+    "earning_rate",
+    "learning_rate",
+    "optimizer",
+    "weight_decay",
+    "momentum",
+    "dirichlet_alpha",
+)
 
 MANIFEST_COLUMNS = [
     "external_run_id",
@@ -143,6 +155,7 @@ MANIFEST_COLUMNS = [
     "aggregation",
     "device",
     "save_weights",
+    "save_final_model_params",
     "model_type",
     "hf_task",
     "task_type",
@@ -157,6 +170,13 @@ MANIFEST_COLUMNS = [
     "mask_column",
     "text_column",
     "image_column",
+    "question_column",
+    "answer_column",
+    "ranking_label_column",
+    "vqa_label_mode",
+    "vqa_answer_vocab_size",
+    "vqa_unseen_answer_policy",
+    "retrieval_positive_policy",
     "task_tag",
     "run_regime",
     "explainability_enabled",
@@ -355,6 +375,80 @@ def _max_clients_for_samples(task_key: str, max_samples: int) -> int:
     return max(1, int(max_samples) // min_samples)
 
 
+def _resolve_seq2seq_columns(dataset_spec: dict[str, Any]) -> tuple[str | None, str | None]:
+    column_mapping = dataset_spec.get("column_mapping")
+    mapping = column_mapping if isinstance(column_mapping, dict) else {}
+
+    source_col = mapping.get("source") or dataset_spec.get("source_column") or dataset_spec.get("text_column")
+    target_col = mapping.get("target") or dataset_spec.get("target_column") or dataset_spec.get("label_column")
+
+    source_col = str(source_col).strip() if _has_required_value(source_col) else None
+    target_col = str(target_col).strip() if _has_required_value(target_col) else None
+    return source_col, target_col
+
+
+def _normalise_dataset_ref(value: Any) -> str:
+    return str(value or "").strip().lower().replace("\\", "/")
+
+
+def _dataset_reference_aliases(dataset_spec: dict[str, Any]) -> set[str]:
+    aliases: set[str] = set()
+    for key in ("registry_id", "dataset_name", "dataset_config", "dataset_hint"):
+        value = dataset_spec.get(key)
+        if _has_required_value(value):
+            aliases.add(_normalise_dataset_ref(value))
+
+    dataset_name = _normalise_dataset_ref(dataset_spec.get("dataset_name"))
+    dataset_config = _normalise_dataset_ref(dataset_spec.get("dataset_config"))
+    if dataset_name and dataset_config:
+        aliases.add(f"{dataset_name}/{dataset_config}")
+        aliases.add(f"{dataset_name}:{dataset_config}")
+    return {alias for alias in aliases if alias}
+
+
+def _model_inference_dataset_refs(model: dict[str, Any], audit_meta: dict[str, Any]) -> set[str]:
+    refs: set[str] = set()
+    for key in (
+        "inference_dataset_keys",
+        "trained_dataset_keys",
+        "trained_on_dataset_keys",
+        "dataset_tags",
+        "audit_dataset_tags",
+    ):
+        values = model.get(key)
+        if isinstance(values, (list, tuple, set)):
+            refs.update(_normalise_dataset_ref(value) for value in values if _has_required_value(value))
+        elif _has_required_value(values):
+            refs.add(_normalise_dataset_ref(values))
+
+    model_id = str(model.get("hf_model_id") or model.get("model_id") or model.get("id") or "").strip()
+    audit_models = audit_meta.get("models", {}) if isinstance(audit_meta, dict) else {}
+    model_audit = audit_models.get(model_id, {}) if isinstance(audit_models, dict) else {}
+    for key in ("audit_dataset_tags", "dataset_tags"):
+        values = model_audit.get(key)
+        if isinstance(values, (list, tuple, set)):
+            refs.update(_normalise_dataset_ref(value) for value in values if _has_required_value(value))
+
+    return {ref for ref in refs if ref}
+
+
+def _is_strict_inference_dataset_match(
+    *,
+    model: dict[str, Any],
+    dataset_spec: dict[str, Any],
+    audit_meta: dict[str, Any],
+) -> tuple[bool, str]:
+    dataset_aliases = _dataset_reference_aliases(dataset_spec)
+    model_refs = _model_inference_dataset_refs(model, audit_meta)
+    if not model_refs:
+        return False, "missing_inference_training_dataset_metadata"
+
+    matches = dataset_aliases.intersection(model_refs)
+    if matches:
+        return True, f"strict_inference_dataset_match:{sorted(matches)[0]}"
+    return False, "model_not_marked_as_trained_on_dataset"
+
+
 def _task_dataset_validation_issues(
     *,
     task_key: str,
@@ -362,6 +456,8 @@ def _task_dataset_validation_issues(
     model: dict[str, Any],
     dataset_spec: dict[str, Any],
     run_regime: str,
+    audit_meta: dict[str, Any],
+    strict_inference_dataset_match: bool,
 ) -> list[str]:
     issues: list[str] = []
 
@@ -378,6 +474,15 @@ def _task_dataset_validation_issues(
     dataset_key = str(dataset_spec.get("registry_id") or "").strip()
     if compatible_dataset_keys and dataset_key and dataset_key not in set(compatible_dataset_keys):
         issues.append("dataset_not_in_model_dataset_keys")
+
+    if run_regime == "inference_only" and strict_inference_dataset_match:
+        matched, reason = _is_strict_inference_dataset_match(
+            model=model,
+            dataset_spec=dataset_spec,
+            audit_meta=audit_meta,
+        )
+        if not matched:
+            issues.append(reason)
 
     model_task = str(model.get("task_key") or "").strip()
     dataset_task = str(dataset_spec.get("task_key") or "").strip()
@@ -396,6 +501,13 @@ def _task_dataset_validation_issues(
     if task_key in STRICT_VALIDATION_TASK_KEYS and not dataset_spec.get("manifest_validated"):
         issues.append("task_requires_manifest_validated_dataset")
 
+    if (
+        run_regime == "finetune_transfer"
+        and task_key in FINETUNE_VALIDATION_TASK_KEYS
+        and not model.get("finetune_validated")
+    ):
+        issues.append("task_requires_finetune_validated_model")
+
     if task_spec.modality == "text":
         if not _has_required_value(dataset_spec.get("text_column")):
             issues.append("missing_text_column")
@@ -403,6 +515,10 @@ def _task_dataset_validation_issues(
             text_column = dataset_spec.get("text_column")
             if not isinstance(text_column, (list, tuple)) or len(text_column) != 2 or not _has_required_value(list(text_column)):
                 issues.append("sentence_similarity_requires_text_pair")
+        if task_key == "text2text_generation":
+            source_col, target_col = _resolve_seq2seq_columns(dataset_spec)
+            if not source_col or not target_col or source_col == target_col:
+                issues.append("seq2seq_requires_distinct_source_and_target_columns")
         if not _has_required_value(dataset_spec.get("label_column")):
             issues.append("missing_label_column")
 
@@ -456,6 +572,66 @@ def _model_priority_score(model: dict[str, Any], *, audit_meta: dict[str, Any], 
     return score
 
 
+def _model_registry_key(model: dict[str, Any]) -> str:
+    return str(
+        model.get("registry_id")
+        or model.get("hf_model_id")
+        or model.get("model_id")
+        or model.get("id")
+        or ""
+    ).strip()
+
+
+def _model_family_key(model: dict[str, Any]) -> str:
+    family = str(model.get("family") or "").strip().lower()
+    if family:
+        return family
+    return _model_registry_key(model).lower() or "unknown"
+
+
+def _select_diverse_models(
+    ranked_models: list[dict[str, Any]],
+    *,
+    models_per_task: int,
+    max_models_per_family: int | None,
+) -> list[dict[str, Any]]:
+    limit = max(0, models_per_task)
+    if limit <= 0:
+        return []
+
+    family_cap = _normalise_positive_int(max_models_per_family) if max_models_per_family is not None else None
+    selected: list[dict[str, Any]] = []
+    selected_keys: set[str] = set()
+    family_counts: dict[str, int] = {}
+
+    def maybe_add(model: dict[str, Any], *, distinct_family_only: bool) -> bool:
+        registry_key = _model_registry_key(model)
+        family_key = _model_family_key(model)
+        if registry_key in selected_keys:
+            return False
+        if distinct_family_only and family_counts.get(family_key, 0) > 0:
+            return False
+        if family_cap is not None and family_counts.get(family_key, 0) >= family_cap:
+            return False
+
+        selected.append(model)
+        selected_keys.add(registry_key)
+        family_counts[family_key] = family_counts.get(family_key, 0) + 1
+        return True
+
+    for model in ranked_models:
+        if len(selected) >= limit:
+            return selected
+        maybe_add(model, distinct_family_only=True)
+
+    for model in ranked_models:
+        if len(selected) >= limit:
+            break
+        maybe_add(model, distinct_family_only=False)
+
+    return selected
+
+
 def _dataset_priority_score(dataset_spec: dict[str, Any], *, target_avg_sample_size: int | None) -> float:
     realism = _as_float(dataset_spec.get("realism_score"))
     if realism is None:
@@ -482,6 +658,7 @@ def _pair_priority_score(
     audit_meta: dict[str, Any],
     profile: ManifestProfile,
     target_avg_sample_size: int | None,
+    strict_inference_dataset_match: bool = False,
 ) -> tuple[float, str]:
     model_score = _model_priority_score(model, audit_meta=audit_meta, profile=profile)
     dataset_score = _dataset_priority_score(dataset_spec, target_avg_sample_size=target_avg_sample_size)
@@ -493,6 +670,14 @@ def _pair_priority_score(
     )
     if task_key in STRICT_VALIDATION_TASK_KEYS:
         reason += "; strict multimodal validation passed"
+    if run_regime == "inference_only" and strict_inference_dataset_match:
+        matched, match_reason = _is_strict_inference_dataset_match(
+            model=model,
+            dataset_spec=dataset_spec,
+            audit_meta=audit_meta,
+        )
+        if matched:
+            reason += f"; {match_reason}"
     return score, reason
 
 
@@ -567,6 +752,16 @@ def _apply_dataset_variant(dataset_spec: dict[str, Any], variant_index: int) -> 
     return dataset_variant
 
 
+def _resolved_dataset_variant_budget(dataset_spec: dict[str, Any], requested_variants: int) -> int:
+    requested = _normalise_positive_int(requested_variants) or 1
+    return min(requested, len(_dataset_split_variants(dataset_spec)))
+
+
+def _batch_size_choices(per_client_budget: int) -> list[int]:
+    choices = [choice for choice in [4, 8, 16, 32] if choice <= max(4, per_client_budget)]
+    return choices or [max(1, min(4, per_client_budget))]
+
+
 def _sample_training_knobs(
     rng: random.Random,
     *,
@@ -576,19 +771,28 @@ def _sample_training_knobs(
     max_samples: int | None = None,
     num_clients: int = 1,
 ) -> dict[str, Any]:
-    effective_max_samples = max(1, _as_int(max_samples) or 1)
-    per_client_budget = effective_max_samples
-    effective_total_samples = effective_max_samples * max(1, int(num_clients))
-    allow_dirichlet = (
-        run_regime != "inference_only"
-        and per_client_budget >= 24
-        and effective_total_samples >= 64
-    )
-    distribution = rng.choice(["iid", "dirichlet"]) if allow_dirichlet else "iid"
-    dirichlet_alpha = rng.choice([0.1, 0.3, 0.5]) if distribution == "dirichlet" else None
-
     task_key = str(task_key or "").strip().lower()
     run_regime = str(run_regime or "").strip().lower()
+    effective_max_samples = max(1, _as_int(max_samples) or 1)
+    per_client_budget = effective_max_samples
+
+    if run_regime == "inference_only":
+        return {
+            "batch_size": rng.choice(_batch_size_choices(per_client_budget)),
+            "learning_rate": NOT_APPLICABLE,
+            "optimizer": NOT_APPLICABLE,
+            "seed": seed,
+            "distribution": "iid",
+            "weight_decay": NOT_APPLICABLE,
+            "momentum": NOT_APPLICABLE,
+            "dirichlet_alpha": NOT_APPLICABLE,
+            "save_weights": False,
+        }
+
+    effective_total_samples = effective_max_samples * max(1, int(num_clients))
+    allow_dirichlet = per_client_budget >= 24 and effective_total_samples >= 64
+    distribution = rng.choice(["iid", "dirichlet"]) if allow_dirichlet else "iid"
+    dirichlet_alpha = rng.choice([0.1, 0.3, 0.5]) if distribution == "dirichlet" else None
 
     if task_key == "object_detection" and run_regime == "finetune_transfer":
         return {
@@ -600,12 +804,9 @@ def _sample_training_knobs(
             "weight_decay": rng.choice([0.0, 0.01, 0.05]),
             "momentum": 0.0,
             "dirichlet_alpha": dirichlet_alpha,
-            "save_weights": True,
+            "save_weights": False,
         }
 
-    batch_choices = [choice for choice in [4, 8, 16, 32] if choice <= max(4, per_client_budget)]
-    if not batch_choices:
-        batch_choices = [max(1, min(4, per_client_budget))]
     learning_rate = rng.choice([1e-5, 2e-5, 3e-5, 5e-5, 1e-4])
 
     optimizer = rng.choice(["adamw", "sgd", "rmsprop"])
@@ -627,7 +828,7 @@ def _sample_training_knobs(
 
 
     return {
-        "batch_size": rng.choice(batch_choices),
+        "batch_size": rng.choice(_batch_size_choices(per_client_budget)),
         "learning_rate": learning_rate,
         "optimizer": optimizer,
         "seed": seed,
@@ -635,8 +836,18 @@ def _sample_training_knobs(
         "weight_decay": weight_decay,
         "momentum": momentum,
         "dirichlet_alpha": dirichlet_alpha,
-        "save_weights": True,
+        "save_weights": False,
     }
+
+
+def _apply_inference_only_placeholders(row: dict[str, Any]) -> dict[str, Any]:
+    if str(row.get("run_regime") or "").strip().lower() != "inference_only":
+        return row
+
+    for column in INFERENCE_ONLY_TRAINING_COLUMNS:
+        row[column] = NOT_APPLICABLE
+    row["save_weights"] = False
+    return row
 
 
 def _sample_run_workload(
@@ -644,7 +855,6 @@ def _sample_run_workload(
     *,
     task_key: str,
     run_regime: str,
-    max_samples: int,
     profile: ManifestProfile,
 ) -> dict[str, Any]:
     if run_regime == "inference_only":
@@ -692,7 +902,8 @@ def _resolve_candidate_sample_sizes(
     resolved: list[int] = []
     for candidate, base_cap in zip(candidates, base_caps):
         sample_rng = random.Random(
-            f"{seed}:samples:{candidate.task_key}:{candidate.model.get('hf_model_id')}:{candidate.dataset_spec.get('registry_id')}:{candidate.run_regime}:{candidate.variant_index}"
+            f"{seed}:samples:{candidate.task_key}:{candidate.model.get('hf_model_id')}:{candidate.dataset_spec.get('registry_id')}:"
+            f"{candidate.run_regime}:{candidate.dataset_variant_index}:{candidate.service_variant_index}"
         )
         jitter = sample_rng.uniform(0.85, 1.15)
         minimum = min(base_cap, _minimum_samples_for_task(candidate.task_key, candidate.run_regime))
@@ -708,10 +919,11 @@ def _select_manifest_candidates(
     models_per_task: int,
     datasets_per_model: int,
     selected_run_regimes: list[str],
-    variants_per_pair: int,
+    max_models_per_family: int | None,
     target_avg_sample_size: int | None,
     audit_meta: dict[str, Any],
     profile: ManifestProfile,
+    strict_inference_dataset_match: bool,
 ) -> list[ManifestCandidate]:
     candidates: list[ManifestCandidate] = []
 
@@ -741,7 +953,7 @@ def _select_manifest_candidates(
             ),
         )
 
-        selected_models = 0
+        compatible_by_model: dict[str, list[tuple[dict[str, Any], float, list[str], str]]] = {}
         for model in ranked_models:
             compatible_datasets: list[tuple[dict[str, Any], float, list[str], str]] = []
             for dataset in datasets:
@@ -755,6 +967,8 @@ def _select_manifest_candidates(
                         model=model,
                         dataset_spec=dataset,
                         run_regime=run_regime,
+                        audit_meta=audit_meta,
+                        strict_inference_dataset_match=strict_inference_dataset_match,
                     )
                     if issues:
                         continue
@@ -766,6 +980,7 @@ def _select_manifest_candidates(
                         audit_meta=audit_meta,
                         profile=profile,
                         target_avg_sample_size=target_avg_sample_size,
+                        strict_inference_dataset_match=strict_inference_dataset_match,
                     )
                     valid_run_regimes.append(run_regime)
                     if pair_score > best_score:
@@ -781,11 +996,18 @@ def _select_manifest_candidates(
             compatible_datasets.sort(
                 key=lambda item: (-item[1], str(item[0].get("registry_id") or "")),
             )
-            chosen_datasets = compatible_datasets[: max(0, datasets_per_model)]
+            compatible_by_model[_model_registry_key(model)] = compatible_datasets
+
+        selected_models = _select_diverse_models(
+            [model for model in ranked_models if _model_registry_key(model) in compatible_by_model],
+            models_per_task=models_per_task,
+            max_models_per_family=max_models_per_family,
+        )
+        for model in selected_models:
+            chosen_datasets = compatible_by_model[_model_registry_key(model)][: max(0, datasets_per_model)]
             if not chosen_datasets:
                 continue
 
-            selected_models += 1
             for dataset, _, valid_run_regimes, _ in chosen_datasets:
                 for run_regime in valid_run_regimes:
                     pair_score, fit_reason = _pair_priority_score(
@@ -796,23 +1018,19 @@ def _select_manifest_candidates(
                         audit_meta=audit_meta,
                         profile=profile,
                         target_avg_sample_size=target_avg_sample_size,
+                        strict_inference_dataset_match=strict_inference_dataset_match,
                     )
-                    for variant_index in range(max(1, variants_per_pair)):
-                        candidates.append(
-                            ManifestCandidate(
-                                task_key=task_key,
-                                task_spec=task_spec,
-                                model=model,
-                                dataset_spec=_apply_dataset_variant(dataset, variant_index),
-                                run_regime=run_regime,
-                                variant_index=variant_index,
-                                pair_score=pair_score,
-                                fit_reason=fit_reason,
-                            )
+                    candidates.append(
+                        ManifestCandidate(
+                            task_key=task_key,
+                            task_spec=task_spec,
+                            model=model,
+                            dataset_spec=dataset,
+                            run_regime=run_regime,
+                            pair_score=pair_score,
+                            fit_reason=fit_reason,
                         )
-
-            if selected_models >= max(0, models_per_task):
-                break
+                    )
 
     return candidates
 
@@ -894,6 +1112,7 @@ def _row_from_registry(
     task_spec: TaskSpec,
     model: dict[str, Any],
     dataset_spec: dict[str, Any],
+    service_variant_index: int,
     knobs: dict[str, Any],
     workload: dict[str, Any],
     resolved_max_samples: int,
@@ -916,8 +1135,15 @@ def _row_from_registry(
         "run_regime": run_regime,
         "audit_json_used": bool(audit_meta),
         "pair_score": round(pair_score, 4),
-        "variant_index": dataset_spec.get("_variant_index", 0),
+        "variant_index": service_variant_index,
+        "service_variant_index": service_variant_index,
+        "dataset_variant_index": dataset_spec.get("_variant_index", 0),
         "split_variant_index": dataset_spec.get("_split_variant_index", 0),
+        "finetune_validated": bool(model.get("finetune_validated")),
+        "vqa_label_mode": model.get("vqa_label_mode") or dataset_spec.get("vqa_label_mode"),
+        "retrieval_positive_policy": (
+            model.get("retrieval_positive_policy") or dataset_spec.get("retrieval_positive_policy")
+        ),
     }
     explainability = _resolve_explainability_metadata(model=model, dataset_spec=dataset_spec, run_regime=run_regime)
     resolved_modality = str(dataset_spec.get("modality") or "").strip().lower()
@@ -932,7 +1158,7 @@ def _row_from_registry(
         "run_group_id": run_group_id,
         "case_name": (
             f"{model_id.replace('/', '_')}__{dataset_spec.get('registry_id', dataset_spec.get('dataset_name'))}"
-            f"__{run_regime}__v{dataset_spec.get('_variant_index', 0)}"
+            f"__{run_regime}__split{dataset_spec.get('_split_variant_index', 0)}__svc{service_variant_index}"
         ),
         "notes": "Generated from scored registry-defined HF model and dataset compatibility",
         "enabled": True,
@@ -948,6 +1174,7 @@ def _row_from_registry(
         "optimizer": knobs["optimizer"],
         "seed": knobs["seed"],
         "distribution": knobs["distribution"],
+        "sample_size": resolved_max_samples,
         "max_samples": resolved_max_samples,
         "max_length": dataset_spec.get("max_length", 128),
         "num_workers": workload["num_workers"],
@@ -958,6 +1185,7 @@ def _row_from_registry(
         "aggregation": "",
         "device": "",
         "save_weights": knobs["save_weights"],
+        "save_final_model_params": run_regime == "finetune_transfer",
         "model_type": model_defaults["model_type"] if run_regime == "inference_only" else (model.get("model_type") or model_defaults["model_type"]),
         "hf_task": task_spec.hf_task,
         "task_type": dataset_spec.get("task_type", task_spec.task_type),
@@ -971,6 +1199,21 @@ def _row_from_registry(
         "mask_column": dataset_spec.get("mask_column"),
         "text_column": dataset_spec.get("text_column", "text"),
         "image_column": dataset_spec.get("image_column"),
+        "question_column": dataset_spec.get("question_column"),
+        "answer_column": dataset_spec.get("answer_column"),
+        "ranking_label_column": dataset_spec.get("ranking_label_column"),
+        "vqa_label_mode": model.get("vqa_label_mode") or dataset_spec.get("vqa_label_mode"),
+        "vqa_answer_vocab_size": dataset_spec.get("vqa_answer_vocab_size") or model.get("vqa_answer_vocab_size"),
+        "vqa_unseen_answer_policy": (
+            dataset_spec.get("vqa_unseen_answer_policy")
+            or model.get("vqa_unseen_answer_policy")
+            or ("ignore" if task_spec.hf_task == "visual_question_answering" else None)
+        ),
+        "retrieval_positive_policy": (
+            model.get("retrieval_positive_policy")
+            or dataset_spec.get("retrieval_positive_policy")
+            or ("diagonal_in_batch" if task_spec.hf_task == "text_image_retrieval" else None)
+        ),
         "task_tag": dataset_spec.get("task_tag", task_spec.task_tag),
         "run_regime": run_regime,
         "explainability_enabled": explainability["explainability_enabled"],
@@ -990,7 +1233,7 @@ def _row_from_registry(
         "hf_url": model.get("url") or model_audit.get("url") or (f"https://huggingface.co/{model_id}" if model_id else None),
         "hf_service_meta_json": json.dumps(service_payload),
     }
-    return row
+    return _apply_inference_only_placeholders(row)
 
 
 def _selected_generic_cases(requested_task_keys: list[str]) -> list[dict[str, Any]]:
@@ -1016,9 +1259,30 @@ def _balanced_hf_candidates(
     base_candidates: list[ManifestCandidate],
     requested_task_keys: list[str],
     total_runs: int | None,
+    service_variants_per_pair: int,
+    dataset_split_variants_per_pair: int,
 ) -> list[ManifestCandidate]:
     if total_runs is None:
-        return base_candidates
+        expanded: list[ManifestCandidate] = []
+        service_budget = _normalise_positive_int(service_variants_per_pair) or 1
+        for candidate in base_candidates:
+            dataset_budget = _resolved_dataset_variant_budget(candidate.dataset_spec, dataset_split_variants_per_pair)
+            for dataset_variant_index in range(dataset_budget):
+                for service_variant_index in range(service_budget):
+                    expanded.append(
+                        ManifestCandidate(
+                            task_key=candidate.task_key,
+                            task_spec=candidate.task_spec,
+                            model=candidate.model,
+                            dataset_spec=candidate.dataset_spec,
+                            run_regime=candidate.run_regime,
+                            pair_score=candidate.pair_score,
+                            fit_reason=candidate.fit_reason,
+                            service_variant_index=service_variant_index,
+                            dataset_variant_index=dataset_variant_index,
+                        )
+                    )
+        return expanded
 
     by_task: dict[str, list[ManifestCandidate]] = {}
     for candidate in base_candidates:
@@ -1033,17 +1297,22 @@ def _balanced_hf_candidates(
         quota = quotas.get(task_key, 0)
         for run_offset in range(quota):
             base_candidate = pool[run_offset % len(pool)]
-            variant_index = run_offset // len(pool)
+            variant_ordinal = run_offset // len(pool)
+            service_budget = _normalise_positive_int(service_variants_per_pair) or 1
+            dataset_budget = _resolved_dataset_variant_budget(base_candidate.dataset_spec, dataset_split_variants_per_pair)
+            service_variant_index = variant_ordinal % service_budget
+            dataset_variant_index = (variant_ordinal // service_budget) % dataset_budget
             selected.append(
                 ManifestCandidate(
                     task_key=base_candidate.task_key,
                     task_spec=base_candidate.task_spec,
                     model=base_candidate.model,
-                    dataset_spec=_apply_dataset_variant(base_candidate.dataset_spec, variant_index),
+                    dataset_spec=base_candidate.dataset_spec,
                     run_regime=base_candidate.run_regime,
-                    variant_index=variant_index,
                     pair_score=base_candidate.pair_score,
                     fit_reason=base_candidate.fit_reason,
+                    service_variant_index=service_variant_index,
+                    dataset_variant_index=dataset_variant_index,
                 )
             )
     return selected
@@ -1180,7 +1449,8 @@ def _row_from_generic_case(
         "dirichlet_alpha": dirichlet_alpha,
         "aggregation": "",
         "device": "",
-        "save_weights": not is_non_federated,
+        "save_weights": False,
+        "save_final_model_params": True,
         "model_type": case["model_type"],
         "hf_task": "",
         "task_type": case["task_type"],
@@ -1238,10 +1508,13 @@ def build_hf_manifest(
     datasets_per_model: int,
     run_regimes: list[str] | None = None,
     variants_per_pair: int = 1,
+    dataset_split_variants_per_pair: int = 1,
     total_runs: int | None = None,
     seed: int,
     manifest_profile: str = "balanced",
     avg_sample_size: int | None = None,
+    max_models_per_family: int | None = None,
+    strict_inference_dataset_match: bool = False,
 ) -> pd.DataFrame:
     requested_task_keys = _dedupe_preserve_order(
         task_keys or [*list(TASK_SPECS.keys()), *sorted(GENERIC_MANIFEST_TASK_KEYS)]
@@ -1253,16 +1526,16 @@ def build_hf_manifest(
     effective_avg_sample_size = avg_sample_size if avg_sample_size is not None else profile.default_avg_sample_size
     effective_total_runs = _normalise_positive_int(total_runs) if total_runs is not None else None
 
-    hf_variant_budget = 1 if effective_total_runs is not None else variants_per_pair
     candidates = _select_manifest_candidates(
         requested_task_keys=requested_task_keys,
         models_per_task=models_per_task,
         datasets_per_model=datasets_per_model,
         selected_run_regimes=selected_run_regimes,
-        variants_per_pair=hf_variant_budget,
+        max_models_per_family=max_models_per_family,
         target_avg_sample_size=effective_avg_sample_size,
         audit_meta=audit_meta,
         profile=profile,
+        strict_inference_dataset_match=bool(strict_inference_dataset_match),
     )
     generic_cases = _selected_generic_cases(requested_task_keys)
     hf_total_runs, generic_total_runs = _split_total_runs_by_family(
@@ -1275,6 +1548,8 @@ def build_hf_manifest(
         base_candidates=candidates,
         requested_task_keys=requested_task_keys,
         total_runs=hf_total_runs,
+        service_variants_per_pair=variants_per_pair,
+        dataset_split_variants_per_pair=dataset_split_variants_per_pair,
     )
 
     resolved_sample_sizes = _resolve_candidate_sample_sizes(
@@ -1285,14 +1560,15 @@ def build_hf_manifest(
 
     rows: list[dict[str, Any]] = []
     for candidate, resolved_max_samples in zip(candidates, resolved_sample_sizes):
+        resolved_dataset_spec = _apply_dataset_variant(candidate.dataset_spec, candidate.dataset_variant_index)
         variant_rng = random.Random(
-            f"{seed}:{candidate.task_key}:{candidate.model.get('hf_model_id')}:{candidate.dataset_spec.get('registry_id')}:{candidate.run_regime}:{candidate.variant_index}"
+            f"{seed}:{candidate.task_key}:{candidate.model.get('hf_model_id')}:{candidate.dataset_spec.get('registry_id')}:"
+            f"{candidate.run_regime}:{candidate.dataset_variant_index}:{candidate.service_variant_index}"
         )
         workload = _sample_run_workload(
             variant_rng,
             task_key=candidate.task_key,
             run_regime=candidate.run_regime,
-            max_samples=resolved_max_samples,
             profile=profile,
         )
         knobs = _sample_training_knobs(
@@ -1309,7 +1585,8 @@ def build_hf_manifest(
                 run_index=len(rows) + 1,
                 task_spec=candidate.task_spec,
                 model=candidate.model,
-                dataset_spec=candidate.dataset_spec,
+                dataset_spec=resolved_dataset_spec,
+                service_variant_index=candidate.service_variant_index,
                 knobs=knobs,
                 workload=workload,
                 resolved_max_samples=resolved_max_samples,
@@ -1369,12 +1646,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sheet", default="runs", help="Sheet name for xlsx output")
     parser.add_argument("--task-keys", help="Comma-separated registry task keys")
     parser.add_argument("--models-per-task", type=int, default=10)
+    parser.add_argument("--max-models-per-family", type=int, help="Optional cap on models selected from the same family within each task")
     parser.add_argument("--datasets-per-model", type=int, default=1)
     parser.add_argument("--run-regimes", help="Comma-separated run regimes")
-    parser.add_argument("--variants-per-pair", type=int, default=1)
+    parser.add_argument("--variants-per-pair", "--service-variants-per-pair", dest="variants_per_pair", type=int, default=1)
+    parser.add_argument("--dataset-split-variants-per-pair", type=int, default=1)
     parser.add_argument("--total-runs", type=int, help="Total rows to emit, split as evenly as possible across requested task keys")
     parser.add_argument("--manifest-profile", choices=sorted(MANIFEST_PROFILES), default="balanced")
     parser.add_argument("--avg-sample-size", type=int, help="Target average max_samples across emitted manifest rows")
+    parser.add_argument(
+        "--strict-inference-dataset-match",
+        action="store_true",
+        help="For inference_only rows, require model metadata to identify the selected dataset as a training/eval dataset",
+    )
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
 
@@ -1388,10 +1672,13 @@ def main() -> None:
         datasets_per_model=args.datasets_per_model,
         run_regimes=_parse_csv_arg(args.run_regimes),
         variants_per_pair=args.variants_per_pair,
+        dataset_split_variants_per_pair=args.dataset_split_variants_per_pair,
         total_runs=args.total_runs,
         seed=args.seed,
         manifest_profile=args.manifest_profile,
         avg_sample_size=args.avg_sample_size,
+        max_models_per_family=args.max_models_per_family,
+        strict_inference_dataset_match=args.strict_inference_dataset_match,
     )
     output_path = Path(args.output)
     save_manifest(df, output_path, sheet_name=args.sheet)

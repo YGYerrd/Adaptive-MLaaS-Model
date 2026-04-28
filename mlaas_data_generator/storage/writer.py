@@ -2,6 +2,10 @@ from __future__ import annotations
 import sqlite3, os, json, numpy as np
 from typing import Mapping, Any
 
+ALLOWED_METRIC_DOMAINS = {"quality", "performance", "reliability", "cost", "resource"}
+SQLITE_INT_MIN = -(2**63)
+SQLITE_INT_MAX = 2**63 - 1
+
 def make_writer(kind: str, **kwargs):
     if kind == "sqlite":
         return SQLiteWriter(**kwargs)
@@ -27,10 +31,34 @@ class SQLiteWriter:
             sql = resources.files(__package__).joinpath("schemaV2.sql").read_text(encoding="utf-8")
             self.conn.executescript(sql)
             self.conn.commit()
+        else:
+            self._ensure_runtime_schema()
 
         # Optional but helpful: faster inserts
         self.conn.execute("PRAGMA journal_mode = WAL;")
         self.conn.execute("PRAGMA synchronous = NORMAL;")
+
+    def _ensure_runtime_schema(self) -> None:
+        self.conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS run_failures (
+              failure_id           INTEGER PRIMARY KEY AUTOINCREMENT,
+              external_run_id      TEXT,
+              row_index            INTEGER,
+              case_name            TEXT,
+              run_group_id         TEXT,
+              failure_stage        TEXT NOT NULL,
+              error_message        TEXT,
+              resolved_config_json TEXT,
+              traceback_text       TEXT,
+              created_at           TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_run_failures_external_run_id ON run_failures(external_run_id);
+            CREATE INDEX IF NOT EXISTS idx_run_failures_run_group_id ON run_failures(run_group_id);
+            CREATE INDEX IF NOT EXISTS idx_run_failures_stage ON run_failures(failure_stage);
+            """
+        )
+        self.conn.commit()
 
     def _ins(self, table, row) -> None:
         keys = list(row.keys())
@@ -52,22 +80,39 @@ class SQLiteWriter:
     def write_run_param(self, run_id: str, scope: str, key: str, value: Any) -> None:
         row = {"run_id": run_id, "scope": scope, "key": key}
 
-        # Exactly one typed column
-        if isinstance(value, bool):
-            row["value_bool"] = 1 if value else 0
-        elif isinstance(value, int) and not isinstance(value, bool):
-            row["value_int"] = value
-        elif isinstance(value, float):
-            row["value_num"] = value
-        elif value is None:
-            # run_params schema forbids all NULL value_*; so skip Nones.
+        value_columns = self._coerce_value_columns(value, null_as_json=False)
+        if value_columns is None:
             return
-        elif isinstance(value, (dict, list)):
-            row["value_json"] = json.dumps(value)
-        else:
-            row["value_text"] = str(value)
+        row.update(value_columns)
 
         self._ins("run_params", row)
+
+    def write_run_failure(
+        self,
+        *,
+        external_run_id: str | None,
+        row_index: int | None,
+        case_name: str | None,
+        run_group_id: str | None,
+        failure_stage: str,
+        error_message: str | None,
+        resolved_config_json: str | None,
+        traceback_text: str | None = None,
+    ) -> None:
+        self._ensure_runtime_schema()
+        self._ins(
+            "run_failures",
+            {
+                "external_run_id": external_run_id,
+                "row_index": row_index,
+                "case_name": case_name,
+                "run_group_id": run_group_id,
+                "failure_stage": failure_stage,
+                "error_message": error_message,
+                "resolved_config_json": resolved_config_json,
+                "traceback_text": traceback_text,
+            },
+        )
 
     # -------- Metric registry --------
 
@@ -102,12 +147,23 @@ class SQLiteWriter:
 
     def _ensure_metric(self, name: str, domain: str, unit: str | None, direction: str, data_type: str, description: str | None) -> None:
         name = (name or "").strip().lower()
+        domain = (domain or "resource").strip().lower()
+        if domain not in ALLOWED_METRIC_DOMAINS:
+            domain = "resource"
         self.conn.execute(
             """
             INSERT OR IGNORE INTO metrics (name, domain, unit, direction, data_type, description)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
             (name, domain, unit, direction, data_type, description),
+        )
+        self.conn.execute(
+            """
+            UPDATE metrics
+            SET domain = ?, unit = ?, direction = ?, data_type = ?, description = ?
+            WHERE name = ?
+            """,
+            (domain, unit, direction, data_type, description, name),
         )
 
     def seed_metrics(self) -> None:
@@ -118,6 +174,7 @@ class SQLiteWriter:
             ("loss", "quality", None, "lower_better", "num", "Loss"),
             ("participated_flag", "reliability", "bool", "higher_better", "bool", "Client participated in round"),
             ("fail_reason", "reliability", None, "neutral", "text", "Failure reason / exception"),
+            ("fail_reason_category", "reliability", None, "neutral", "text", "Normalised failure reason category"),
             ("compute_time_s", "performance", "s", "lower_better", "num", "Client round compute duration"),
             ("comm_bytes_up", "resource", "bytes", "lower_better", "int", "Upload communication bytes"),
             ("comm_bytes_down", "resource", "bytes", "lower_better", "int", "Download communication bytes"),
@@ -188,6 +245,14 @@ class SQLiteWriter:
             ("client_update_max_abs", "federated_dynamics", None, "higher_better", "num", "Max absolute element change between incoming global weights and client payload"),
             ("client_update_changed_flag", "federated_dynamics", "bool", "higher_better", "bool", "Client payload differs from incoming global weights beyond tolerance"),
             ("client_update_layer_count", "federated_dynamics", "layers", "neutral", "int", "Comparable client payload layers"),
+            ("update_signature_id", "resource", None, "neutral", "text", "Identifier for the compressed local model update signature"),
+            ("signature_dim", "resource", "dimensions", "neutral", "int", "Stored update signature vector dimension"),
+            ("signature_norm", "resource", None, "neutral", "num", "L2 norm of the raw local model update before signature normalisation"),
+            ("update_signature_path", "resource", None, "neutral", "text", "Path to the compressed update signature vector"),
+            ("update_signature_method", "resource", None, "neutral", "text", "Compression method used for the update signature"),
+            ("update_signature_source_dim", "resource", "parameters", "neutral", "int", "Number of parameter deltas used to build the signature"),
+            ("update_signature_layer_count", "resource", "layers", "neutral", "int", "Number of comparable layers used to build the signature"),
+            ("update_signature_error", "reliability", None, "neutral", "text", "Best-effort update signature capture failure reason"),
             ("round_global_weight_delta_l2", "federated_dynamics", None, "higher_better", "num", "L2 norm between pre-aggregation and post-aggregation global weights"),
             ("round_global_weight_delta_max_abs", "federated_dynamics", None, "higher_better", "num", "Max absolute global weight change after aggregation"),
             ("round_global_weight_changed_flag", "federated_dynamics", "bool", "higher_better", "bool", "Global weights changed after server aggregation beyond tolerance"),
@@ -205,6 +270,11 @@ class SQLiteWriter:
             ("perturbation_duration_s", "performance", "s", "lower_better", "num", "Runtime of post-evaluation perturbation probe"),
             ("perturbation_error", "quality", None, "neutral", "text", "Best-effort perturbation probe failure reason"),
             ("perturbation_samples", "quality", None, "neutral", "json", "Structured per-sample perturbation records"),
+            ("explainability_supported_flag", "quality", "bool", "higher_better", "bool", "Task-faithfulness explainability probe produced valid sample-level results"),
+            ("explainability_task_family", "quality", None, "neutral", "text", "Task family used by task-specific explainability scoring"),
+            ("explainability_method", "quality", None, "neutral", "text", "Attribution and scoring method used for explainability"),
+            ("explainability_quality_metric", "quality", None, "neutral", "text", "Task-specific model-output quality quantity degraded by perturbation"),
+            ("explainability_budget_fractions", "quality", None, "neutral", "json", "Fractions of meaningful input units removed during explainability scoring"),
             ("explainability_confidence_drop_mean", "quality", "confidence_delta", "higher_better", "num", "Mean confidence drop after masking influential input units"),
             ("explainability_confidence_drop_std", "quality", "confidence_delta", "lower_better", "num", "Standard deviation of confidence drop after masking influential input units"),
             ("explainability_confidence_drop_p50", "quality", "confidence_delta", "higher_better", "num", "Median confidence drop after masking influential input units"),
@@ -213,8 +283,27 @@ class SQLiteWriter:
             ("explainability_prediction_change_rate", "quality", "proportion", "higher_better", "num", "Rate at which targeted perturbations changed predictions"),
             ("explainability_unit_fraction_mean", "quality", "proportion", "lower_better", "num", "Mean fraction of meaningful input units masked by targeted perturbations"),
             ("explainability_unit_fraction_p95", "quality", "proportion", "lower_better", "num", "P95 fraction of meaningful input units masked by targeted perturbations"),
-            ("explainability_score", "quality", "score", "higher_better", "num", "Compactness-adjusted targeted perturbation explainability score"),
-            ("explainability_score_p10", "quality", "score", "higher_better", "num", "P10 compactness-adjusted targeted perturbation explainability score"),
+            ("explainability_targeted_degradation_mean", "quality", "proportion", "higher_better", "num", "Mean task-quality degradation after removing explanation-ranked evidence"),
+            ("explainability_random_degradation_mean", "quality", "proportion", "neutral", "num", "Mean task-quality degradation after removing random evidence of equal size"),
+            ("explainability_self_faithfulness_score", "quality", "score", "higher_better", "num", "Self-faithfulness score from model-ranked evidence removal versus random evidence"),
+            ("explainability_self_faithfulness_score_p10", "quality", "score", "higher_better", "num", "P10 self-faithfulness score"),
+            ("explainability_semantic_supported_flag", "quality", "bool", "higher_better", "bool", "Expected semantic evidence was available for explainability scoring"),
+            ("explainability_semantic_supported_rate", "quality", "proportion", "higher_better", "num", "Fraction of perturbation samples with expected semantic evidence"),
+            ("explainability_semantic_target_source", "quality", None, "neutral", "text", "Source used to select expected semantic evidence"),
+            ("explainability_semantic_degradation_mean", "quality", "proportion", "higher_better", "num", "Mean task-quality degradation after removing expected semantic evidence"),
+            ("explainability_semantic_random_degradation_mean", "quality", "proportion", "neutral", "num", "Mean task-quality degradation after removing random evidence matched to semantic evidence size"),
+            ("explainability_semantic_behavior_score", "quality", "score", "higher_better", "num", "Combined semantic sensitivity and selectivity score"),
+            ("explainability_semantic_behavior_score_p10", "quality", "score", "higher_better", "num", "P10 combined semantic sensitivity and selectivity score"),
+            ("explainability_semantic_sensitivity_score", "quality", "score", "higher_better", "num", "Absolute degradation score after masking expected semantic evidence"),
+            ("explainability_semantic_sensitivity_score_p10", "quality", "score", "higher_better", "num", "P10 semantic sensitivity score"),
+            ("explainability_semantic_selectivity_score", "quality", "score", "higher_better", "num", "Excess degradation from expected semantic evidence removal versus random evidence"),
+            ("explainability_semantic_selectivity_score_p10", "quality", "score", "higher_better", "num", "P10 semantic selectivity score"),
+            ("explainability_semantic_alignment_score", "quality", "score", "higher_better", "num", "Overlap between model-ranked important evidence and expected semantic evidence"),
+            ("explainability_semantic_alignment_score_p10", "quality", "score", "higher_better", "num", "P10 semantic alignment score"),
+            ("explainability_meaningful_drop_threshold", "quality", "proportion", "neutral", "num", "Targeted degradation threshold treated as a fully meaningful confidence or quality drop"),
+            ("explainability_selectivity_floor", "quality", "score", "neutral", "num", "Minimum semantic behavior credit retained when expected evidence causes an absolute drop but not excess degradation over random"),
+            ("explainability_score", "quality", "score", "higher_better", "num", "Hybrid explainability score combining semantic sensitivity, semantic alignment, and self-faithfulness"),
+            ("explainability_score_p10", "quality", "score", "higher_better", "num", "P10 hybrid explainability score"),
             ("trust_confidence_delta_mean", "reliability", "confidence_delta", "lower_better", "num", "Mean confidence movement under benign perturbations"),
             ("trust_confidence_delta_std", "reliability", "confidence_delta", "lower_better", "num", "Standard deviation of confidence movement under benign perturbations"),
             ("trust_confidence_delta_p95", "reliability", "confidence_delta", "lower_better", "num", "P95 confidence movement under benign perturbations"),
@@ -276,6 +365,16 @@ class SQLiteWriter:
             self._metric_cache = {}
 
     def _coerce_measurement_value(self, v):
+        out = self._coerce_value_columns(v, null_as_json=True)
+        return {
+            "value_num": out.get("value_num"),
+            "value_int": out.get("value_int"),
+            "value_bool": out.get("value_bool"),
+            "value_text": out.get("value_text"),
+            "value_json": out.get("value_json"),
+        }
+
+    def _coerce_value_columns(self, v, *, null_as_json: bool):
         out = {
             "value_num": None,
             "value_int": None,
@@ -290,8 +389,9 @@ class SQLiteWriter:
         elif isinstance(v, (np.floating,)):
             v = float(v)
 
-        # Ensure we never violate the CHECK constraint
         if v is None:
+            if not null_as_json:
+                return None
             out["value_json"] = json.dumps(None)
             return out
 
@@ -300,7 +400,7 @@ class SQLiteWriter:
             return out
 
         if isinstance(v, int):
-            if -(2**63) <= int(v) <= (2**63 - 1):
+            if SQLITE_INT_MIN <= int(v) <= SQLITE_INT_MAX:
                 out["value_int"] = v
             else:
                 try:

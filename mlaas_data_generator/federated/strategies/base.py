@@ -1,5 +1,6 @@
 #base.p
 from dataclasses import dataclass
+import time
 import numpy as np
 from ...hf_tasks import normalize_hf_task as shared_normalize_hf_task
 from ...models.label_schema import infer_num_labels
@@ -24,6 +25,26 @@ def weights_size(weights_dict_or_list) -> int:
 def _is_keras_like(m) -> bool:
     return hasattr(m, "get_weights") and callable(getattr(m, "get_weights", None)) \
         and hasattr(m, "set_weights") and callable(getattr(m, "set_weights", None))
+
+def _perturbation_progress_enabled(config):
+    value = (config or {}).get("perturbation_progress_logging", False)
+    if isinstance(value, str):
+        return value.strip().lower() not in {"0", "false", "no", "off"}
+    return bool(value)
+
+def _config_bool(config, key, default=False):
+    value = (config or {}).get(key, default)
+    if value is None:
+        return bool(default)
+    if isinstance(value, str):
+        return value.strip().lower() not in {"", "0", "false", "no", "off"}
+    return bool(value)
+
+def _perturbation_metrics_enabled(config):
+    value = (config or {}).get("enable_perturbation_metrics", (config or {}).get("perturbation_enabled", True))
+    if isinstance(value, str):
+        return value.strip().lower() not in {"", "0", "false", "no", "off"}
+    return bool(value)
 
 def _nanmean(values):
     cleaned = [float(v) for v in values if v is not None and not np.isnan(float(v))]
@@ -116,7 +137,11 @@ def canonical_metric_names(task_family: str, metric_key: str, *, hf_task: str | 
             return ("loss", "perplexity")
         if hf == "seq2seq_generation" and tag in {"", "language_modeling", "language-modeling"}:
             return ("loss", "perplexity")
-        return ("perplexity", None)
+        eval_metrics = canonical_generation_metrics(task_tag=task_tag, has_labels=True, hf_task=hf_task)
+        if eval_metrics:
+            secondary = eval_metrics[1] if len(eval_metrics) > 1 else None
+            return (eval_metrics[0], secondary)
+        return ("token_accuracy", "perplexity")
     if task_family == "clustering":
         return ("silhouette", None)
     if task_family == "detection":
@@ -206,6 +231,7 @@ class ClientOutcome:
     supervised_token_count: int | None = None
     aggregation_weight_unit: str | None = None
     aggregation_weight_value: float | None = None
+    model_params: dict | None = None
 
 class TaskStrategy:
     """Base class: thin wrapper around your existing per-task logic."""
@@ -360,14 +386,26 @@ class TaskStrategy:
                 out.append((k, kv[k]))
         return out  
     
-    def perturbation_metrics(self, model, *, client_id=None, round_idx=None):
+    def perturbation_metrics(self, model, *, client_id=None, round_idx=None, x_eval=None, y_eval=None):
         from ..perturbation import run_perturbation_stage
 
+        if not self.should_run_perturbation_metrics(round_idx):
+            return {}
+
+        eval_x = self.x_test if x_eval is None else x_eval
+        eval_y = self.y_test if y_eval is None else y_eval
+        if _perturbation_progress_enabled(self.config):
+            print(
+                f"[Perturbation] strategy call starts | client={client_id or 'global'} "
+                f"| round={round_idx if round_idx is not None else 'n/a'} | task={self.task_type()}",
+                flush=True,
+            )
+        start = time.time()
         try:
-            return run_perturbation_stage(
+            metrics = run_perturbation_stage(
                 model,
-                self.x_test,
-                self.y_test,
+                eval_x,
+                eval_y,
                 task_family=self.task_type(),
                 hf_task=getattr(self, "hf_task", None),
                 config=self.config,
@@ -375,13 +413,50 @@ class TaskStrategy:
                 client_id=client_id,
                 round_idx=round_idx,
             )
+            if _perturbation_progress_enabled(self.config):
+                print(
+                    f"[Perturbation] strategy call ends | client={client_id or 'global'} "
+                    f"| round={round_idx if round_idx is not None else 'n/a'} "
+                    f"| supported={metrics.get('perturbation_supported_flag')} "
+                    f"| samples={metrics.get('perturbation_sample_count')} "
+                    f"| duration_s={time.time() - start:.2f}",
+                    flush=True,
+                )
+            return metrics
         except Exception as exc:
+            if _perturbation_progress_enabled(self.config):
+                print(
+                    f"[Perturbation] strategy call failed | client={client_id or 'global'} "
+                    f"| round={round_idx if round_idx is not None else 'n/a'} "
+                    f"| error={type(exc).__name__} | duration_s={time.time() - start:.2f}",
+                    flush=True,
+                )
             return {
                 "perturbation_enabled_flag": True,
                 "perturbation_supported_flag": False,
+                "explainability_supported_flag": False,
                 "perturbation_error": f"{type(exc).__name__}",
             }
 
+
+    def should_run_perturbation_metrics(self, round_idx=None):
+        if not _perturbation_metrics_enabled(self.config):
+            return False
+
+        final_round_only = _config_bool(self.config, "perturbation_final_round_only", True)
+        if not final_round_only:
+            return True
+
+        if round_idx is None:
+            return False
+
+        try:
+            final_round_idx = int(self.knobs.get("num_rounds", self.config.get("num_rounds", 0)) or 0)
+            current_round_idx = int(round_idx)
+        except Exception:
+            return False
+
+        return final_round_idx > 0 and current_round_idx == final_round_idx
 
     
     def task_type(self) -> str: ...

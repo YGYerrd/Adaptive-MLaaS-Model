@@ -5,6 +5,22 @@ from ..accounting import append_accounting_stage, finalize_accounting
 from ...models.adapters.hf_cache import get_cached_tokenizer
 
 
+def _extract_class_label_names(label_feature):
+    if hasattr(label_feature, "names"):
+        return list(label_feature.names)
+
+    nested = getattr(label_feature, "feature", None)
+    if nested is not None:
+        names = _extract_class_label_names(nested)
+        if names:
+            return names
+
+    if isinstance(label_feature, (list, tuple)) and len(label_feature) == 1:
+        return _extract_class_label_names(label_feature[0])
+
+    return None
+
+
 def preprocess_hf_text_token(train, test, meta, *, hf_model_id, tokens_column, label_column, dynamic_padding=False):
     ds_train, _ = train
     ds_test, _ = test
@@ -18,11 +34,11 @@ def preprocess_hf_text_token(train, test, meta, *, hf_model_id, tokens_column, l
         raise ValueError(f"Missing label_column '{label_column}' in dataset '{meta.get('hf_id')}'")
 
     label_feat = ds_train.features.get(label_column)
-    if hasattr(label_feat, "feature") and hasattr(label_feat.feature, "names"):
-        num_classes = int(len(label_feat.feature.names))
-        label_mapping = {name: idx for idx, name in enumerate(label_feat.feature.names)}
-    else:
+    label_names = _extract_class_label_names(label_feat)
+    if not label_names:
         raise ValueError("Token classification requires Sequence(ClassLabel) style labels.")
+    num_classes = int(len(label_names))
+    label_mapping = {name: idx for idx, name in enumerate(label_names)}
 
     try:
         import transformers

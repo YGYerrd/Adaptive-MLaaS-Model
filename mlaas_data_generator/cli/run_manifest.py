@@ -24,7 +24,16 @@ BASE_DEFAULTS: dict[str, Any] = {
     "sample_frac": None,
 }
 
-BOOL_COLUMNS = {"enabled", "measure_system_metrics", "mixed_precision", "explainability_enabled"}
+BOOL_COLUMNS = {
+    "enabled",
+    "measure_system_metrics",
+    "mixed_precision",
+    "explainability_enabled",
+    "save_weights",
+    "save_final_model_params",
+    "dynamic_padding",
+    "report_decode_errors",
+}
 INT_COLUMNS = {
     "seed",
     "num_rounds",
@@ -37,6 +46,9 @@ INT_COLUMNS = {
     "max_length",
     "num_workers",
     "timeout_s",
+    "source_max_length",
+    "target_max_length",
+    "vqa_answer_vocab_size",
 }
 FLOAT_COLUMNS = {
     "client_participation_rate",
@@ -59,11 +71,39 @@ DATASET_ARG_COLUMNS = {
     "mask_column",
     "text_column",
     "image_column",
+    "question_column",
+    "answer_column",
+    "ranking_label_column",
     "modality",
     "missing_pair_handling",
+    "on_decode_error",
+    "report_decode_errors",
+    "vqa_label_mode",
+    "vqa_answer_vocab_size",
+    "vqa_unseen_answer_policy",
+    "retrieval_positive_policy",
     "max_samples",
+    "source_max_length",
+    "target_max_length",
+    "dynamic_padding",
+    "column_mapping",
     "task_tag",
     "task",
+    "run_regime",
+    "service_source",
+    "model_role",
+    "input_schema",
+    "fit_decision",
+    "fit_reason",
+    "realism_score",
+    "domain_alignment",
+    "dataset_hint",
+    "hf_pipeline_tag",
+    "hf_downloads",
+    "hf_likes",
+    "hf_author",
+    "hf_url",
+    "hf_service_meta_json",
     "explainability_enabled",
     "explainability_method",
     "explainability_target",
@@ -71,7 +111,9 @@ DATASET_ARG_COLUMNS = {
 
 REQUIRED_COLUMNS = {"model_type"}
 
-BLANK_STRINGS = {"", "na", "nan", "null", "none"}
+BLANK_STRINGS = {"", "na", "n/a", "nan", "null", "none", "not applicable", "not_applicable"}
+JSON_COLUMNS = {"column_mapping"}
+SAMPLE_COUNT_COLUMNS = ("sample_size", "max_samples")
 
 COLUMN_ALIASES = {
     "external run id": "external_run_id",
@@ -99,6 +141,9 @@ COLUMN_ALIASES = {
     "image column": "image_column",
     "task tag": "task_tag",
     "dataset task": "task",
+    "sample count": "sample_size",
+    "sample_count": "sample_size",
+    "samples": "sample_size",
 }
 
 @dataclass
@@ -147,6 +192,44 @@ def _write_failure_log(
     with log_path.open("a", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
 
+
+def _format_traceback(exc) -> str | None:
+    if exc is None:
+        return None
+    return "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)).strip()
+
+
+def _write_failure_db(
+    resolved,
+    *,
+    row_index,
+    external_run_id,
+    case_name,
+    run_group_id,
+    failure_stage,
+    error_message,
+    exc=None,
+):
+    db_path = resolved.get("db_path") or "outputs/federated.db"
+    try:
+        from ..storage.writer import make_writer
+
+        writer = make_writer("sqlite", db_path=db_path)
+        writer.start()
+        writer.write_run_failure(
+            external_run_id=str(external_run_id) if external_run_id is not None else None,
+            row_index=int(row_index) if row_index is not None else None,
+            case_name=str(case_name) if case_name is not None else None,
+            run_group_id=str(run_group_id) if run_group_id is not None else None,
+            failure_stage=str(failure_stage),
+            error_message=str(error_message) if error_message is not None else None,
+            resolved_config_json=json.dumps(resolved, default=str),
+            traceback_text=_format_traceback(exc),
+        )
+        writer.finish()
+    except Exception as db_exc:  # noqa: BLE001
+        print(f"Warning: failed to persist run failure to SQLite: {db_exc}")
+
 def _is_blank(value: Any) -> bool:
     if value is None:
         return True
@@ -185,6 +268,9 @@ def _coerce_by_column(column: str, value: Any) -> Any:
     if value is None:
         return None
 
+    if column in JSON_COLUMNS and isinstance(value, str):
+        return json.loads(value)
+
     if column in BOOL_COLUMNS:
         return _to_bool(value)
     if column in INT_COLUMNS:
@@ -194,6 +280,18 @@ def _coerce_by_column(column: str, value: Any) -> Any:
     if column in ENUM_COLUMNS and isinstance(value, str):
         return value.lower()
     return value
+
+
+def _first_manifest_sample_count(row: pd.Series, manifest_defaults: dict[str, Any]) -> Any:
+    for source in (row, manifest_defaults):
+        for column in SAMPLE_COUNT_COLUMNS:
+            if column not in source:
+                continue
+            value = _coerce_by_column(column, source[column])
+            if value is not None:
+                return value
+    return None
+
 
 def _normalize_column_name(column: Any) -> Any:
     if not isinstance(column, str):
@@ -275,6 +373,10 @@ def _resolve_row(row: pd.Series, manifest_defaults: dict[str, Any]) -> dict[str,
             continue
         resolved[column] = value
 
+    manifest_sample_count = _first_manifest_sample_count(row, manifest_defaults)
+    if manifest_sample_count is not None:
+        resolved["sample_size"] = manifest_sample_count
+
     if "distribution" in resolved:
         resolved["distribution_type"] = resolved["distribution"]
 
@@ -309,6 +411,18 @@ def _validate_row(resolved: dict[str, Any]) -> RowValidation:
     if str(dataset).strip().lower() == "hf":
         if _is_blank(resolved.get("hf_model_id")) and _is_blank(resolved.get("case_name")):
             return RowValidation(False, "HF runs require 'hf_model_id' or 'case_name'")
+
+        hf_task = str(resolved.get("hf_task") or "").strip().lower().replace("-", "_")
+        if hf_task in {"seq2seq_generation", "text2text_generation"}:
+            column_mapping = resolved.get("column_mapping") if isinstance(resolved.get("column_mapping"), dict) else {}
+            source_col = column_mapping.get("source") or resolved.get("source_column") or resolved.get("text_column")
+            target_col = column_mapping.get("target") or resolved.get("target_column") or resolved.get("label_column")
+            if _is_blank(source_col) or _is_blank(target_col) or str(source_col) == str(target_col):
+                return RowValidation(
+                    False,
+                    "seq2seq_generation requires distinct source and target columns; "
+                    "single-text datasets should use causal_lm_generation/fill_mask or provide dataset_args.column_mapping",
+                )
 
 
     modality = str(resolved.get("modality") or "").strip().lower()
@@ -384,6 +498,15 @@ def run_manifest(file: str, sheet: str = "runs", dry_run: bool = False) -> Path:
                 failure_stage="validation_failed",
                 error_message=validation.error,
                 resolved=resolved,
+            )
+            _write_failure_db(
+                resolved,
+                row_index=int(idx),
+                external_run_id=external_run_id,
+                case_name=resolved.get("case_name"),
+                run_group_id=resolved.get("run_group_id"),
+                failure_stage="validation_failed",
+                error_message=validation.error,
             )
 
             print(f"Skipping row {idx}: {validation.error}")
@@ -468,6 +591,16 @@ def run_manifest(file: str, sheet: str = "runs", dry_run: bool = False) -> Path:
                 failure_stage="runtime_exception",
                 error_message=str(exc),
                 resolved=resolved,
+                exc=exc,
+            )
+            _write_failure_db(
+                resolved,
+                row_index=int(idx),
+                external_run_id=external_run_id,
+                case_name=resolved.get("case_name"),
+                run_group_id=resolved.get("run_group_id"),
+                failure_stage="runtime_exception",
+                error_message=str(exc),
                 exc=exc,
             )
 

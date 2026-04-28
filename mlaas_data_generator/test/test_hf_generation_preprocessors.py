@@ -67,6 +67,35 @@ def _install_empty_preserving_fake_transformers():
     sys.modules["transformers"] = fake_mod
 
 
+def test_seq2seq_generation_preprocessor_falls_back_to_slow_tokenizer():
+    calls = []
+
+    class FallbackTokenizer(FakeTokenizer):
+        @classmethod
+        def from_pretrained(cls, *args, **kwargs):
+            calls.append(kwargs.get("use_fast"))
+            if kwargs.get("use_fast"):
+                raise TypeError("Input must be a List[Union[str, AddedToken]]")
+            return cls()
+
+    sys.modules["transformers"] = types.SimpleNamespace(AutoTokenizer=FallbackTokenizer)
+    train_rows = [{"article": "Long article body", "highlights": "Short summary"}]
+    test_rows = [{"article": "Held-out article", "highlights": "Held-out summary"}]
+
+    _, _, meta = preprocess_hf(
+        (DummySplit(train_rows), None),
+        (DummySplit(test_rows), None),
+        {"hf_task": "seq2seq_generation", "modality": "text", "max_length": 10, "hf_id": "dummy"},
+        hf_model_id="dummy/model",
+        source_max_length=7,
+        target_max_length=5,
+        dynamic_padding=True,
+    )
+
+    assert calls == [True, False]
+    assert meta["column_mapping"] == {"source": "article", "target": "highlights"}
+
+
 def test_causal_lm_generation_preprocessor_prompt_completion_mapping():
     _install_fake_transformers()
     train_rows = [

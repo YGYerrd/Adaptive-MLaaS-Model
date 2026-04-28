@@ -8,3 +8,4 @@ service_data.xlsx
 query1.sql
 flatten_query.sql
 hf_manifest.xlsx
+outputs/

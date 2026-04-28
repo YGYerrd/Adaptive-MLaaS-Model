@@ -24,6 +24,8 @@ from .dynamics import (
     repeated_round_metrics,
     snapshot_model_weights,
 )
+from .model_params import write_final_model_manifest, write_final_model_parameters
+from .update_signature import compute_and_store_update_signature
 from ..models.label_schema import infer_ignore_index, infer_label_format, infer_num_labels
 from ..runtime_compat import is_rocm_miopen_runtime_error
 
@@ -174,6 +176,14 @@ def _format_summary_value(value):
     return value
 
 
+def _bool_config(value, default=False):
+    if value is None:
+        return bool(default)
+    if isinstance(value, str):
+        return value.strip().lower() not in {"", "0", "false", "no", "off"}
+    return bool(value)
+
+
 def _can_compute_numeric_range(values) -> bool:
     """Return True when values can be safely reduced via numeric min/max."""
     if values is None:
@@ -239,6 +249,8 @@ class FederatedDataGenerator:
         # load data
         dataset_load_timer = _StageTimer()
         loader_dataset_args = dict(self.dataset_args)
+        if "inference_only" not in loader_dataset_args:
+            loader_dataset_args["inference_only"] = (self.model_type or "").lower() in {"hf", "hf_text", "transformers"}
         total_loader_max_samples = _per_client_total_cap(
             loader_dataset_args.get("max_samples"),
             self.config.get("num_clients", 1),
@@ -266,7 +278,15 @@ class FederatedDataGenerator:
             print(f"Warning: overriding dataset task type '{meta_task}' with requested '{self.task_type}'.")
 
         self.target_scaler = meta.get("target_scaler")
-        self.save_weights = bool(self.config.get("save_weights", True))
+        self.save_weights = _bool_config(self.config.get("save_weights"), default=False)
+        self.save_final_model_params = _bool_config(
+            self.config.get("save_final_model_params"),
+            default=self.save_weights,
+        )
+        self.final_model_params_dir = self.config.get(
+            "final_model_params_dir",
+            os.path.join("outputs", "final_model_params"),
+        )
         self.distribution_bins = int(self.config.get("distribution_bins", 10) or 10)
 
         # Regression: set value range for distribution summaries
@@ -506,6 +526,27 @@ class FederatedDataGenerator:
             return bool(value)
         return None
 
+    def _is_final_round_idx(self, round_idx):
+        try:
+            return int(round_idx) == int(self.knobs.get("num_rounds", 0) or 0)
+        except Exception:
+            return False
+
+    def _is_final_round_only_client_metric(self, metric_name):
+        name = (metric_name or "").strip().lower()
+        return name.startswith(("perturbation_", "explainability_", "trust_", "robustness_"))
+
+    def _drop_non_final_trust_metrics(self, values, round_idx):
+        if not _bool_config(self.config.get("perturbation_final_round_only"), default=True):
+            return values
+        if self._is_final_round_idx(round_idx):
+            return values
+        return {
+            key: value
+            for key, value in (values or {}).items()
+            if not self._is_final_round_only_client_metric(key)
+        }
+
     def _normalize_outcome_extras(self, outcome):
         extras = getattr(outcome, "extras", {}) if outcome is not None else {}
         if not isinstance(extras, dict):
@@ -597,6 +638,131 @@ class FederatedDataGenerator:
         except Exception:
             pass
         return bool(client_payloads)
+
+    def _update_signature_output_dir(self, db_path):
+        configured = self.config.get("update_signature_dir")
+        if configured:
+            return configured
+        db_folder = os.path.dirname(str(db_path))
+        if db_folder:
+            return os.path.join(db_folder, "update_signatures")
+        return os.path.join("outputs", "update_signatures")
+
+    def _update_signature_config(self, db_path):
+        enabled = _bool_config(self.config.get("update_signature_enabled"), default=True)
+        if bool(getattr(self.strategy, "inference_only", False)):
+            enabled = False
+        if self.task_type == "clustering" or (self.model_type or "").lower() == "randomforest":
+            enabled = False
+
+        try:
+            dim = int(self.config.get("update_signature_dim", 256) or 256)
+        except Exception:
+            dim = 256
+        dim = max(1, dim)
+
+        max_source_elements = self.config.get("update_signature_max_source_elements")
+        if max_source_elements in (None, ""):
+            max_source_elements = None
+        else:
+            try:
+                max_source_elements = max(1, int(max_source_elements))
+            except Exception:
+                max_source_elements = None
+
+        return {
+            "enabled": bool(enabled),
+            "dim": dim,
+            "dir": self._update_signature_output_dir(db_path),
+            "max_source_elements": max_source_elements,
+        }
+
+    def _save_final_model_parameters(self, *, run_id, round_idx, global_model, client_outcomes):
+        files = []
+        metadata = {
+            "dataset": self.dataset,
+            "task_type": self.task_type,
+            "model_type": self.model_type,
+            "hf_task": self.hf_task,
+            "hf_model_id": (
+                self.dataset_args.get("hf_model_id")
+                if isinstance(self.dataset_args, dict)
+                else self.config.get("hf_model_id")
+            ) or self.config.get("hf_model_id"),
+            "external_run_id": self.config.get("external_run_id"),
+            "case_name": self.config.get("case_name"),
+        }
+
+        save_global = self.task_type != "clustering" and (self.model_type or "").lower() != "randomforest"
+        if save_global:
+            global_path = write_final_model_parameters(
+                output_dir=self.final_model_params_dir,
+                run_id=run_id,
+                model_role="global",
+                model_id="global",
+                round_idx=round_idx,
+                model_type=self.model_type,
+                task_type=self.task_type,
+                model=global_model,
+                config=self.config,
+                metadata=metadata,
+            )
+            if global_path:
+                files.append({
+                    "role": "global",
+                    "model_id": "global",
+                    "path": global_path,
+                    "artifact_type": "directory" if os.path.isdir(global_path) else "json",
+                })
+
+        client_adapters = getattr(self.strategy, "_client_adapters", {}) or {}
+        for outcome in client_outcomes or []:
+            if not getattr(outcome, "participated", False):
+                continue
+            client_id = getattr(outcome, "client_id", None)
+            if not client_id:
+                continue
+
+            client_metadata = {
+                **metadata,
+                "client_id": client_id,
+                "samples_count": getattr(outcome, "samples_count", None),
+                "aggregation_weight_unit": getattr(outcome, "aggregation_weight_unit", None),
+                "aggregation_weight_value": getattr(outcome, "aggregation_weight_value", None),
+            }
+            pre_extracted = getattr(outcome, "model_params", None)
+            payload = getattr(outcome, "payload", None)
+            if pre_extracted is None and payload is None:
+                continue
+
+            path = write_final_model_parameters(
+                output_dir=self.final_model_params_dir,
+                run_id=run_id,
+                model_role="client",
+                model_id=client_id,
+                round_idx=round_idx,
+                model_type=self.model_type,
+                task_type=self.task_type,
+                model=client_adapters.get(client_id),
+                payload=payload,
+                pre_extracted=pre_extracted,
+                config=self.config,
+                metadata=client_metadata,
+            )
+            if path:
+                files.append({
+                    "role": "client",
+                    "model_id": client_id,
+                    "path": path,
+                    "artifact_type": "directory" if os.path.isdir(path) else "json",
+                })
+
+        manifest_path = write_final_model_manifest(
+            output_dir=self.final_model_params_dir,
+            run_id=run_id,
+            files=files,
+        )
+        return manifest_path
     
     def run(self):
         run_start_epoch = time.time()
@@ -615,10 +781,15 @@ class FederatedDataGenerator:
 
         run_stage_measurements = dict(getattr(self, "_run_stage_measurements", {}))
 
+        inference_only = bool(getattr(self.strategy, "inference_only", False))
+        split_source_name = "eval" if inference_only else "train"
+        split_x = self.x_test if inference_only else self.x_train
+        split_y = self.y_test if inference_only else self.y_train
+
         split_timer = _StageTimer()
         clients, split_info = split_data(
-            self.x_train,
-            self.y_train,
+            split_x,
+            split_y,
             self.knobs["num_clients"],
             strategy=self.knobs["distribution_type"],
             distribution_param=self.knobs["distribution_param"],
@@ -636,8 +807,12 @@ class FederatedDataGenerator:
 
         loaded_train_samples = _sample_count(self.x_train, self.y_train)
         loaded_test_samples = _sample_count(self.x_test, self.y_test)
-        split_train_samples = int(sum(_sample_count(data.get("x"), data.get("y")) for data in clients.values()))
+        loaded_split_source_samples = _sample_count(split_x, split_y)
+        split_partition_samples = int(sum(_sample_count(data.get("x"), data.get("y")) for data in clients.values()))
         client_sample_counts = [int(_sample_count(data.get("x"), data.get("y"))) for data in clients.values()]
+        requested_partition_samples = None
+        if self.knobs.get("sample_size") is not None:
+            requested_partition_samples = max(0, int(self.knobs.get("sample_size"))) * int(self.knobs["num_clients"])
         resolved_split_strategy = (split_info or {}).get("strategy", self.knobs.get("distribution_type"))
         resolved_split_param = (split_info or {}).get("distribution_param", self.knobs.get("distribution_param"))
         requested_split_strategy = self.knobs.get("distribution_type")
@@ -659,6 +834,8 @@ class FederatedDataGenerator:
             ("client_dropout_rate", self.config.get("client_dropout_rate", 0.0)),
             ("seed", self.config.get("seed", 42)),
             ("save_weights", self.save_weights),
+            ("save_final_model_params", self.save_final_model_params),
+            ("final_model_params_dir", self.final_model_params_dir if self.save_final_model_params else None),
             ("input_shape", self.input_shape),
             ("num_classes", self.num_classes),
             ("loaded_train_samples", loaded_train_samples),
@@ -672,15 +849,26 @@ class FederatedDataGenerator:
         # from resolved/effective values because split_data can shrink samples
         # or fall back to iid for structured labels.
         splitter = [
+            ("split.source", split_source_name),
+            ("split.loaded_source_samples", loaded_split_source_samples),
             ("split.requested_strategy", requested_split_strategy),
             ("split.resolved_strategy", resolved_split_strategy),
             ("split.fallback_reason", (split_info or {}).get("fallback_reason")),
             ("split.requested_param", requested_split_param),
             ("split.resolved_param", resolved_split_param),
-            ("split.requested_sample_size", self.knobs.get("sample_size")),
+            ("split.requested_samples_per_client", self.knobs.get("sample_size")),
+            ("split.requested_partition_samples_total", requested_partition_samples),
             ("split.effective_sample_size_total", (split_info or {}).get("effective_sample_size_total")),
+            (
+                "split.resampled_with_replacement",
+                (
+                    requested_partition_samples > loaded_split_source_samples
+                    if requested_partition_samples is not None
+                    else None
+                ),
+            ),
             ("split.requested_sample_frac", self.knobs.get("sample_frac")),
-            ("split.effective_train_samples", split_train_samples),
+            (f"split.effective_{split_source_name}_samples", split_partition_samples),
             ("split.client_samples_min", min(client_sample_counts) if client_sample_counts else None),
             ("split.client_samples_max", max(client_sample_counts) if client_sample_counts else None),
             ("split.distribution_bins", self.knobs.get("distribution_bins")),
@@ -716,7 +904,12 @@ class FederatedDataGenerator:
             print("Per-client lifecycle logs: start -> strategy call -> completion/failure.")
         print()
 
-        print("Client data distributions before training:")
+        distribution_heading = (
+            "Client evaluation data distributions before inference:"
+            if inference_only
+            else "Client data distributions before training:"
+        )
+        print(distribution_heading)
         client_distributions = {}
         is_fill_mask = self.task_family == "fill_mask"
         is_generation = self.task_family == "generation"
@@ -791,8 +984,13 @@ class FederatedDataGenerator:
 
 
         db_path = self.config.get("db_path", "federated2.db")
+        update_signature_cfg = self._update_signature_config(db_path)
         writer = make_writer("sqlite", db_path=db_path)
         skip_reason = None
+        completed_all_rounds = False
+        final_client_outcomes = []
+        final_round_idx = None
+        final_model_params_manifest = None
         writer.start()
         try:
             # Seed metric dictionary (recommended)
@@ -818,12 +1016,70 @@ class FederatedDataGenerator:
                 writer.write_run_param(run_id, "runner", "seed", self.config.get("seed", 42))
                 writer.write_run_param(run_id, "runner", "client_dropout_rate", self.config.get("client_dropout_rate", 0.0))
                 writer.write_run_param(run_id, "runner", "save_weights", self.save_weights)
+                writer.write_run_param(run_id, "runner", "save_final_model_params", self.save_final_model_params)
+                writer.write_run_param(run_id, "runner", "final_model_params_dir", self.final_model_params_dir)
+                writer.write_run_param(run_id, "runner", "update_signature_enabled", update_signature_cfg["enabled"])
+                writer.write_run_param(run_id, "runner", "update_signature_dim", update_signature_cfg["dim"])
+                writer.write_run_param(run_id, "runner", "update_signature_dir", update_signature_cfg["dir"])
+                writer.write_run_param(run_id, "runner", "update_signature_max_source_elements", update_signature_cfg["max_source_elements"])
                 writer.write_run_param(run_id, "runner", "enable_perturbation_metrics", self.config.get("enable_perturbation_metrics", True))
+                writer.write_run_param(run_id, "runner", "perturbation_final_round_only", self.config.get("perturbation_final_round_only", True))
                 writer.write_run_param(run_id, "runner", "perturbation_sample_count", self.config.get("perturbation_sample_count", 1))
                 writer.write_run_param(run_id, "runner", "perturbation_trust_trials", self.config.get("perturbation_trust_trials", 2))
                 writer.write_run_param(run_id, "runner", "perturbation_target_units", self.config.get("perturbation_target_units", 1))
                 writer.write_run_param(run_id, "runner", "perturbation_candidate_units", self.config.get("perturbation_candidate_units", 4))
                 writer.write_run_param(run_id, "runner", "perturbation_random_strength", self.config.get("perturbation_random_strength", 0.02))
+                writer.write_run_param(run_id, "runner", "perturbation_progress_logging", self.config.get("perturbation_progress_logging", False))
+                writer.write_run_param(run_id, "runner", "perturbation_progress_sample_interval", self.config.get("perturbation_progress_sample_interval", 1))
+                writer.write_run_param(run_id, "runner", "explainability_meaningful_drop_threshold", self.config.get("explainability_meaningful_drop_threshold", 0.2))
+                writer.write_run_param(run_id, "runner", "explainability_selectivity_floor", self.config.get("explainability_selectivity_floor", 0.5))
+
+                manifest_metadata = {}
+                for key in (
+                    "run_regime",
+                    "service_source",
+                    "model_role",
+                    "input_schema",
+                    "fit_decision",
+                    "fit_reason",
+                    "realism_score",
+                    "domain_alignment",
+                    "dataset_hint",
+                    "modality",
+                    "hf_pipeline_tag",
+                    "hf_downloads",
+                    "hf_likes",
+                    "hf_author",
+                    "hf_url",
+                    "hf_service_meta_json",
+                    "case_name",
+                    "run_group_id",
+                    "external_run_id",
+                ):
+                    value = self.config.get(key)
+                    if value is None and isinstance(self.dataset_args, dict):
+                        value = self.dataset_args.get(key)
+                    if value is not None:
+                        manifest_metadata[key] = value
+
+                if "service_source" not in manifest_metadata:
+                    manifest_metadata["service_source"] = "huggingface_hub" if is_hf_run else "generic"
+                if "run_regime" not in manifest_metadata:
+                    if is_hf_run:
+                        manifest_metadata["run_regime"] = "inference_only" if inference_only else "finetune_transfer"
+                    else:
+                        manifest_metadata["run_regime"] = "generic"
+                manifest_metadata["weights_exported"] = bool(self.save_weights or self.save_final_model_params)
+
+                runner_metadata_keys = {"run_regime", "service_source", "weights_exported", "case_name", "run_group_id", "external_run_id"}
+                adapter_metadata_keys = {"model_role", "fit_decision", "fit_reason", "realism_score"}
+                dataset_metadata_keys = set(manifest_metadata) - runner_metadata_keys - adapter_metadata_keys
+                for key in sorted(runner_metadata_keys & set(manifest_metadata)):
+                    writer.write_run_param(run_id, "runner", key, manifest_metadata[key])
+                for key in sorted(adapter_metadata_keys & set(manifest_metadata)):
+                    writer.write_run_param(run_id, "adapter", key, manifest_metadata[key])
+                for key in sorted(dataset_metadata_keys):
+                    writer.write_run_param(run_id, "dataset", key, manifest_metadata[key])
 
                 # benchmark identity for cross-run comparisons
                 benchmark_identity = {
@@ -842,8 +1098,23 @@ class FederatedDataGenerator:
                 writer.write_run_param(run_id, "splitter", "distribution_type", self.knobs.get("distribution_type"))
                 writer.write_run_param(run_id, "splitter", "distribution_param", self.knobs.get("distribution_param"))
                 writer.write_run_param(run_id, "splitter", "distribution_bins", self.knobs.get("distribution_bins"))
+                writer.write_run_param(run_id, "splitter", "split_source", split_source_name)
+                writer.write_run_param(run_id, "splitter", "loaded_source_samples", loaded_split_source_samples)
                 writer.write_run_param(run_id, "splitter", "sample_size", self.knobs.get("sample_size"))
+                writer.write_run_param(run_id, "splitter", "requested_samples_per_client", self.knobs.get("sample_size"))
+                writer.write_run_param(run_id, "splitter", "requested_partition_samples_total", requested_partition_samples)
                 writer.write_run_param(run_id, "splitter", "effective_sample_size_total", (split_info or {}).get("effective_sample_size_total"))
+                writer.write_run_param(run_id, "splitter", "effective_partition_samples", split_partition_samples)
+                writer.write_run_param(
+                    run_id,
+                    "splitter",
+                    "resampled_with_replacement",
+                    (
+                        requested_partition_samples > loaded_split_source_samples
+                        if requested_partition_samples is not None
+                        else None
+                    ),
+                )
                 writer.write_run_param(run_id, "splitter", "sample_frac", self.knobs.get("sample_frac"))
 
                 params_by_scope = self.strategy.loggable_run_params()
@@ -1000,9 +1271,10 @@ class FederatedDataGenerator:
                         continue
 
                     next_rounds_so_far = participated_counts[client_id] + 1
+                    sample_label = "eval_samples" if inference_only else "train_samples"
                     print(
                         f"{client_id} {phase_label}... "
-                        f"(samples={n_samples}, round={round_idx}, participation_count={next_rounds_so_far})"
+                        f"({sample_label}={n_samples}, round={round_idx}, participation_count={next_rounds_so_far})"
                     )
                     if verbose_progress:
                         action = "evaluate_client" if bool(getattr(self.strategy, "inference_only", False)) else "train_client"
@@ -1017,6 +1289,7 @@ class FederatedDataGenerator:
                         rounds_so_far=next_rounds_so_far,
                         comm_down=down_bytes,
                     )
+                    setattr(outcome, "client_id", client_id)
 
                     if not outcome.participated and is_rocm_miopen_runtime_error(outcome.fail_reason):
                         raise _RunSkipped(
@@ -1045,7 +1318,8 @@ class FederatedDataGenerator:
                                 "eval_latency_ms_steady_p95",
                                 "eval_throughput_eps",
                                 "tokens_per_second",
-                                "eval_samples",
+                                "eval_sequence_count",
+                                "client_partition_sample_count",
                                 "batch_size",
                                 "device",
                             )
@@ -1071,8 +1345,12 @@ class FederatedDataGenerator:
                         "metric_score": float(outcome.metric_score) if outcome.metric_score == outcome.metric_score else None,
                         "extra_metric": float(outcome.extra_metric) if outcome.extra_metric == outcome.extra_metric else None,
                         "cpu_time_s": float(outcome.cpu_time_s) if outcome.cpu_time_s is not None else None,
+                        "cpu_utilization": float(outcome.cpu_utilization) if outcome.cpu_utilization is not None else None,
                         "memory_used_mb": float(outcome.memory_used_mb) if outcome.memory_used_mb is not None else None,
+                        "memory_utilization": float(outcome.memory_utilization) if outcome.memory_utilization is not None else None,
+                        "gpu_utilization": float(outcome.gpu_utilization) if outcome.gpu_utilization is not None else None,
                         "gpu_memory_used_mb": float(outcome.gpu_memory_used_mb) if outcome.gpu_memory_used_mb is not None else None,
+                        "gpu_memory_utilization": float(outcome.gpu_memory_utilization) if outcome.gpu_memory_utilization is not None else None,
                     }
                     client_values.update(
                         client_update_metrics(
@@ -1081,8 +1359,30 @@ class FederatedDataGenerator:
                             tolerance=dynamics_tolerance,
                         )
                     )
+                    if (
+                        update_signature_cfg["enabled"]
+                        and bool(getattr(outcome, "participated", False))
+                        and getattr(outcome, "payload", None) is not None
+                    ):
+                        try:
+                            client_values.update(
+                                compute_and_store_update_signature(
+                                    round_start_weights,
+                                    outcome.payload,
+                                    output_dir=update_signature_cfg["dir"],
+                                    run_id=run_id,
+                                    round_idx=round_idx,
+                                    client_id=client_id,
+                                    dim=update_signature_cfg["dim"],
+                                    seed=int(self.config.get("seed", 42) or 42),
+                                    max_source_elements=update_signature_cfg["max_source_elements"],
+                                )
+                            )
+                        except Exception as exc:
+                            client_values["update_signature_error"] = type(exc).__name__
                     client_values.update(self._extract_dynamic_metrics(outcome))
                     client_values.update(self._normalize_outcome_extras(outcome))
+                    client_values = self._drop_non_final_trust_metrics(client_values, round_idx)
 
                     client_values = {
                         key: value
@@ -1238,6 +1538,11 @@ class FederatedDataGenerator:
                     )
                     print("----------------------------------------")
 
+                final_client_outcomes = list(client_outcomes)
+                final_round_idx = round_idx
+
+            completed_all_rounds = True
+
         except _RunSkipped as exc:
             skip_reason = str(exc)
             print(f"Run skipped before database commit: {skip_reason}")
@@ -1255,16 +1560,31 @@ class FederatedDataGenerator:
             }
         finally:
             if skip_reason is None:
+                if self.save_final_model_params and completed_all_rounds:
+                    try:
+                        final_model_params_manifest = self._save_final_model_parameters(
+                            run_id=run_id,
+                            round_idx=final_round_idx,
+                            global_model=global_model,
+                            client_outcomes=final_client_outcomes,
+                        )
+                        if final_model_params_manifest:
+                            print(f"Final model parameters saved: {final_model_params_manifest}")
+                    except Exception as exc:
+                        print(f"Warning: failed to save final model parameters: {exc}")
                 run_end_epoch = time.time()
                 run_end_ts = datetime.now(timezone.utc).isoformat()
+                run_end_values = {
+                    "run_end_ts": run_end_ts,
+                    "run_total_runtime_s": float(run_end_epoch - run_start_epoch),
+                }
+                if final_model_params_manifest:
+                    run_end_values["final_model_params_manifest"] = final_model_params_manifest
                 writer.write_measurements(
                     run_id=run_id,
                     round=None,
                     client_id=None,
-                    values={
-                        "run_end_ts": run_end_ts,
-                        "run_total_runtime_s": float(run_end_epoch - run_start_epoch),
-                    },
+                    values=run_end_values,
                 )
                 writer.finish()
 

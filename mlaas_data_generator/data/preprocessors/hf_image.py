@@ -1,5 +1,6 @@
 from ..accounting import append_accounting_stage, finalize_accounting
 import io
+import json
 import os
 import inspect
 import logging
@@ -150,7 +151,13 @@ def _to_numpy_mask(mask_like):
     if arr.ndim != 2:
         raise ValueError(f"expected 2D segmentation mask, got shape={arr.shape}")
 
-    return arr.astype(np.int64, copy=False)
+    arr = arr.astype(np.int64, copy=False)
+    if arr.size:
+        unique = np.unique(arr)
+        if unique.size <= 2 and set(int(v) for v in unique.tolist()).issubset({0, 255}):
+            arr = (arr > 0).astype(np.int64, copy=False)
+
+    return arr
 
 
 def _sample_segmentation_mask_range(ds, mask_column, *, limit=None):
@@ -208,7 +215,57 @@ def _normalise_detection_item(boxes, classes):
         out_boxes = out_boxes.reshape(1, 4)
     elif out_boxes.ndim != 2 or out_boxes.shape[1] != 4:
         raise ValueError(f"detection boxes must be Nx4, got shape={out_boxes.shape}")
+
+    if out_classes.ndim == 0:
+        out_classes = out_classes.reshape(1)
+    else:
+        out_classes = out_classes.reshape(-1)
+
+    if out_boxes.shape[0] != out_classes.shape[0]:
+        n = min(int(out_boxes.shape[0]), int(out_classes.shape[0]))
+        out_boxes = out_boxes[:n]
+        out_classes = out_classes[:n]
     return {"boxes": out_boxes, "classes": out_classes}
+
+
+def _decode_detection_annotation_payload(annotation):
+    if not isinstance(annotation, str):
+        return annotation
+
+    text = annotation.strip()
+    if not text or text[0] not in "[{":
+        return annotation
+    try:
+        return json.loads(text)
+    except Exception:
+        return annotation
+
+
+def _extract_detection_records(records):
+    boxes = []
+    classes = []
+    candidate_boxes_keys = ("boxes", "bbox", "bboxes")
+    candidate_classes_keys = ("classes", "class_labels", "labels", "label", "category", "category_id", "category_ids")
+
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        box = None
+        for key in candidate_boxes_keys:
+            if key in record:
+                box = record.get(key)
+                break
+        cls = None
+        for key in candidate_classes_keys:
+            if key in record:
+                cls = record.get(key)
+                break
+        if box is None or cls is None:
+            continue
+        boxes.append(box)
+        classes.append(cls)
+
+    return _normalise_detection_item(boxes, classes)
 
 
 def _extract_detection_annotations(row, *, label_column=None, boxes_column=None, classes_column=None):
@@ -219,17 +276,23 @@ def _extract_detection_annotations(row, *, label_column=None, boxes_column=None,
         return _normalise_detection_item(boxes, classes)
 
     annotation = row.get(label_column) if label_column else None
+    annotation = _decode_detection_annotation_payload(annotation)
+    if isinstance(annotation, (list, tuple)):
+        return _extract_detection_records(annotation)
     if not isinstance(annotation, dict):
         return _normalise_detection_item([], [])
 
     for container_key in ("objects", "annotations", "targets"):
         nested = annotation.get(container_key)
+        nested = _decode_detection_annotation_payload(nested)
+        if isinstance(nested, (list, tuple)):
+            return _extract_detection_records(nested)
         if isinstance(nested, dict):
             annotation = nested
             break
 
     candidate_boxes_keys = ("boxes", "bbox", "bboxes")
-    candidate_classes_keys = ("classes", "class_labels", "labels", "category", "category_id", "category_ids")
+    candidate_classes_keys = ("classes", "class_labels", "labels", "label", "category", "category_id", "category_ids")
 
     extracted_boxes = None
     for key in candidate_boxes_keys:
@@ -508,8 +571,8 @@ def _process_split(
                 idx,
                 len(ds),
             )
-        row = ds[idx]
         try:
+            row = ds[idx]
             if task_type == "detection":
                 LOGGER.info("[detection preprocessing] split=%s idx=%d before image decode", split_name, idx)
             image = _to_numpy_rgb(row.get(image_column))
@@ -607,13 +670,13 @@ def _process_split(
                     f"sample errors: {preview}"
                 )
             raise ValueError(f"no samples survived preprocessing for split='{split_name}'")
-        # Object detection datasets can include thousands of high-resolution images.
+        # Detection and segmentation datasets can include many high-resolution images.
         # Stacking the full split into one contiguous NCHW tensor eagerly allocates
         # all pixel storage at once and can exhaust host RAM before batching.
         #
-        # Keep detection pixel values as a per-sample list and let the training loop
+        # Keep pixel values as a per-sample list and let the training loop
         # materialize tensor batches lazily in HFCore._batch_iter/encode_batch.
-        if task_type == "detection":
+        if task_type in {"detection", "segmentation"}:
             x = {"pixel_values": images}
         else:
             try:

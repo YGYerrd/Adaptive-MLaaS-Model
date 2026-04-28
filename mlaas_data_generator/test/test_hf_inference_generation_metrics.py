@@ -1,5 +1,6 @@
 import contextlib
 import numpy as np
+import torch
 
 from mlaas_data_generator.models.adapters.hf_core import HFCore
 from mlaas_data_generator.models.adapters.hf_task import CausalLMGenerationSpec, TextImageRetrievalSpec
@@ -96,6 +97,32 @@ class DummyClipModel:
             "CLIPOutput",
             (),
             {
+                "logits_per_text": logits,
+                "logits_per_image": logits.transpose(0, 1),
+            },
+        )
+
+
+class DummyClipEmbeddingModel:
+    def __init__(self, image_embeds, text_embeds):
+        self.image_embeds = image_embeds
+        self.text_embeds = text_embeds
+
+    def eval(self):
+        return self
+
+    def __call__(self, **kwargs):
+        idx = kwargs["input_ids"][:, 0].detach().cpu().numpy().astype(int)
+        device = kwargs["input_ids"].device
+        image_embeds = torch.tensor(self.image_embeds[idx], dtype=torch.float32, device=device)
+        text_embeds = torch.tensor(self.text_embeds[idx], dtype=torch.float32, device=device)
+        logits = text_embeds @ image_embeds.transpose(0, 1)
+        return type(
+            "CLIPOutput",
+            (),
+            {
+                "image_embeds": image_embeds,
+                "text_embeds": text_embeds,
                 "logits_per_text": logits,
                 "logits_per_image": logits.transpose(0, 1),
             },
@@ -237,6 +264,40 @@ def test_hfcore_eval_inference_only_generation_uses_teacher_forced_labels_for_me
     assert core.tokenizer.padding_side == "left"
 
 
+def test_hfcore_eval_pads_ragged_generated_batches_for_metrics():
+    core = HFCore.__new__(HFCore)
+    core.torch = FakeTorch()
+    core.task_spec = DummyGenerationSpec()
+    core.tokenizer = DummyTokenizer()
+    core.model = DummyGenerationModel()
+    core.generation_config = {}
+    core.batch_size = 1
+    core.device = "cpu"
+    core.label_pad_value = -100
+    core.max_length = 4
+    core.model_id = "dummy"
+    core.weight_format = None
+    core.task_tag = None
+    core.tokenizer_load_s = 0.0
+    core.model_load_s = 0.0
+    core.tokenizer_cache_hit = True
+    core.model_cache_hit = True
+
+    xs = {
+        "input_ids": np.asarray([[5, 0, 0], [7, 8, 9]], dtype=np.int64),
+        "attention_mask": np.asarray([[1, 0, 0], [1, 1, 1]], dtype=np.int64),
+    }
+    ys = np.asarray([[7, 8], [7, 8]], dtype=np.int64)
+
+    loss, primary, secondary, qos = core.eval(xs, ys, inference_only=True)
+
+    assert np.isclose(loss, 0.5)
+    assert np.isfinite(primary)
+    assert np.isclose(secondary, 0.25)
+    assert qos["eval_supervised_token_count"] == 4
+    assert core.model.forward_calls == 2
+
+
 def test_causal_lm_encode_batch_left_pads_dict_inputs_even_without_labels():
     spec = CausalLMGenerationSpec()
     fake_torch = FakeTorch()
@@ -260,6 +321,31 @@ def test_causal_lm_encode_batch_left_pads_dict_inputs_even_without_labels():
     assert enc["input_ids"].numpy().tolist() == [[0, 0, 10, 11], [0, 20, 21, 22]]
     assert enc["attention_mask"].numpy().tolist() == [[0, 0, 1, 1], [0, 1, 1, 1]]
     assert labels_t is None
+
+
+def test_causal_lm_encode_batch_left_pads_dict_labels_with_inputs():
+    spec = CausalLMGenerationSpec()
+    fake_torch = FakeTorch()
+    tok = DummyTokenizer()
+    xb = {
+        "input_ids": np.asarray([[10, 11, 0, 0], [20, 21, 22, 0]], dtype=np.int64),
+        "attention_mask": np.asarray([[1, 1, 0, 0], [1, 1, 1, 0]], dtype=np.int64),
+    }
+    yb = np.asarray([[10, 11, -100, -100], [20, 21, 22, -100]], dtype=np.int64)
+
+    enc, labels_t, _ = spec.encode_batch(
+        tok,
+        xb,
+        yb,
+        max_length=4,
+        torch=fake_torch,
+        device="cpu",
+        inference_only=False,
+    )
+
+    assert enc["input_ids"].numpy().tolist() == [[0, 0, 10, 11], [0, 20, 21, 22]]
+    assert enc["attention_mask"].numpy().tolist() == [[0, 0, 1, 1], [0, 1, 1, 1]]
+    assert labels_t.numpy().tolist() == [[-100, -100, 10, 11], [-100, 20, 21, 22]]
 
 
 def test_hfcore_eval_inference_only_non_generation_uses_label_stats_for_metrics():
@@ -327,3 +413,41 @@ def test_hfcore_eval_clip_retrieval_uses_logits_per_text_for_accuracy():
     assert np.isclose(qos["accuracy"], 1.0)
     assert np.isclose(qos["top1_accuracy"], 1.0)
     assert np.isclose(qos["r@1"], 1.0)
+
+
+def test_hfcore_eval_clip_retrieval_r5_uses_full_eval_candidate_pool():
+    image_embeds = np.eye(6, dtype=np.float32)
+    text_embeds = np.eye(6, dtype=np.float32)
+    text_embeds[5] = np.asarray([5, 4, 3, 2, 1, 0], dtype=np.float32)
+
+    core = HFCore.__new__(HFCore)
+    core.torch = torch
+    core.task_spec = TextImageRetrievalSpec()
+    core.tokenizer = None
+    core.model = DummyClipEmbeddingModel(image_embeds, text_embeds)
+    core.generation_config = {}
+    core.batch_size = 3
+    core.device = "cpu"
+    core.label_pad_value = -100
+    core.max_length = 4
+    core.model_id = "dummy-clip"
+    core.weight_format = None
+    core.task_tag = None
+    core.tokenizer_load_s = 0.0
+    core.model_load_s = 0.0
+    core.tokenizer_cache_hit = True
+    core.model_cache_hit = True
+
+    xs = {
+        "input_ids": np.asarray([[0, 1], [1, 1], [2, 1], [3, 1], [4, 1], [5, 1]], dtype=np.int64),
+        "attention_mask": np.ones((6, 2), dtype=np.int64),
+        "pixel_values": np.zeros((6, 3, 2, 2), dtype=np.float32),
+    }
+    ys = np.zeros((6,), dtype=np.int64)
+
+    _, primary, secondary, qos = core.eval(xs, ys, inference_only=True)
+
+    assert np.isclose(primary, 5 / 6)
+    assert np.isclose(secondary, 5 / 6)
+    assert np.isclose(qos["r@5"], 5 / 6)
+    assert np.isclose(qos["metric_stat_candidate_count"], 6.0)

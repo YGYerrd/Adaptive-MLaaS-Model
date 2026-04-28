@@ -28,6 +28,19 @@ class DummyDS:
         return {"train": DummyDS(self.rows[:-n_test]), "test": DummyDS(self.rows[-n_test:])}
 
 
+class BrokenRowDS(DummyDS):
+    def __init__(self, rows, broken_indices):
+        super().__init__(rows)
+        self._broken_indices = set(broken_indices)
+
+    def __getitem__(self, key):
+        if isinstance(key, str):
+            return [r.get(key) for r in self.rows]
+        if key in self._broken_indices:
+            raise FileNotFoundError(f"missing-row-{key}.jpg")
+        return self.rows[key]
+
+
 def test_hf_source_multimodal_pair_drop(monkeypatch):
     train_ds = DummyDS([
         {"image": np.zeros((8, 8, 3), dtype=np.uint8), "text": "a", "label": 0},
@@ -125,6 +138,135 @@ def test_hf_multimodal_preprocessor_contract(monkeypatch):
     assert x_train["input_ids"].shape[0] == x_train["pixel_values"].shape[0] == len(y_train)
     assert meta["schema"]["batch_contract"]["combined_keys"] == ["input_ids", "attention_mask", "pixel_values"]
     assert meta["accounting"]["sequence_count"] == 2
+
+
+def test_hf_multimodal_preprocessor_skips_decode_errors(monkeypatch):
+    train = DummyDS([
+        {"image": "missing-file.jpg", "text": "bad", "label": 0},
+        {"image": np.ones((8, 8, 3), dtype=np.uint8), "text": "good", "label": 1},
+    ])
+    test = DummyDS([
+        {"image": np.ones((8, 8, 3), dtype=np.uint8), "text": "test", "label": 1},
+    ])
+
+    class DummyTokenizer:
+        def __call__(self, text, **kwargs):
+            return {"input_ids": [1, 2, 0], "attention_mask": [1, 1, 0]}
+
+    class DummyImageProcessor:
+        def __call__(self, image, **kwargs):
+            if isinstance(image, str):
+                raise FileNotFoundError(image)
+            chw = np.transpose(np.asarray(image, dtype=np.float32), (2, 0, 1))
+            return {"pixel_values": chw}
+
+    fake_tr = types.SimpleNamespace(
+        AutoTokenizer=types.SimpleNamespace(from_pretrained=lambda *a, **k: DummyTokenizer()),
+        AutoImageProcessor=types.SimpleNamespace(from_pretrained=lambda *a, **k: DummyImageProcessor()),
+    )
+    monkeypatch.setitem(sys.modules, "transformers", fake_tr)
+
+    (x_train, y_train), (_, _), meta = preprocess_hf_multimodal(
+        (train, None),
+        (test, None),
+        {"task_type": "classification"},
+        hf_model_id="dummy/model",
+        image_column="image",
+        text_column="text",
+        label_column="label",
+        max_length=4,
+        on_decode_error="skip",
+        report_decode_errors=True,
+    )
+
+    assert x_train["pixel_values"].shape[0] == 1
+    assert y_train.tolist() == [1]
+    assert meta["schema"]["decode_report"]["train"]["failed"] == 1
+    assert meta["schema"]["decode_report"]["train"]["survived"] == 1
+
+
+def test_hf_multimodal_preprocessor_skips_row_fetch_errors(monkeypatch):
+    train = BrokenRowDS(
+        [
+            {"image": np.ones((8, 8, 3), dtype=np.uint8), "text": "bad", "label": 0},
+            {"image": np.ones((8, 8, 3), dtype=np.uint8), "text": "good", "label": 1},
+        ],
+        broken_indices={0},
+    )
+    test = DummyDS([
+        {"image": np.ones((8, 8, 3), dtype=np.uint8), "text": "test", "label": 1},
+    ])
+
+    class DummyTokenizer:
+        def __call__(self, text, **kwargs):
+            return {"input_ids": [1, 2, 0], "attention_mask": [1, 1, 0]}
+
+    class DummyImageProcessor:
+        def __call__(self, image, **kwargs):
+            chw = np.transpose(np.asarray(image, dtype=np.float32), (2, 0, 1))
+            return {"pixel_values": chw}
+
+    fake_tr = types.SimpleNamespace(
+        AutoTokenizer=types.SimpleNamespace(from_pretrained=lambda *a, **k: DummyTokenizer()),
+        AutoImageProcessor=types.SimpleNamespace(from_pretrained=lambda *a, **k: DummyImageProcessor()),
+    )
+    monkeypatch.setitem(sys.modules, "transformers", fake_tr)
+
+    (x_train, y_train), (_, _), meta = preprocess_hf_multimodal(
+        (train, None),
+        (test, None),
+        {"task_type": "classification"},
+        hf_model_id="dummy/model",
+        image_column="image",
+        text_column="text",
+        label_column="label",
+        max_length=4,
+        on_decode_error="skip",
+        report_decode_errors=True,
+    )
+
+    assert x_train["pixel_values"].shape[0] == 1
+    assert y_train.tolist() == [1]
+    assert meta["schema"]["decode_report"]["train"]["failed"] == 1
+    assert meta["schema"]["pair_validation"]["train"]["decode_error_rows"] == 1
+
+
+def test_hf_multimodal_preprocessor_squeezes_singleton_image_batches(monkeypatch):
+    train = DummyDS([
+        {"image": np.ones((8, 8, 3), dtype=np.uint8), "text": "hello", "label": 1},
+    ])
+    test = DummyDS([
+        {"image": np.ones((8, 8, 3), dtype=np.uint8), "text": "test", "label": 1},
+    ])
+
+    class DummyTokenizer:
+        def __call__(self, text, **kwargs):
+            return {"input_ids": [1, 2, 0], "attention_mask": [1, 1, 0]}
+
+    class DummyImageProcessor:
+        def __call__(self, image, **kwargs):
+            chw = np.transpose(np.asarray(image, dtype=np.float32), (2, 0, 1))
+            return {"pixel_values": chw.reshape(1, 1, *chw.shape)}
+
+    fake_tr = types.SimpleNamespace(
+        AutoTokenizer=types.SimpleNamespace(from_pretrained=lambda *a, **k: DummyTokenizer()),
+        AutoImageProcessor=types.SimpleNamespace(from_pretrained=lambda *a, **k: DummyImageProcessor()),
+    )
+    monkeypatch.setitem(sys.modules, "transformers", fake_tr)
+
+    (x_train, _), (_, _), meta = preprocess_hf_multimodal(
+        (train, None),
+        (test, None),
+        {"task_type": "classification"},
+        hf_model_id="dummy/model",
+        image_column="image",
+        text_column="text",
+        label_column="label",
+        max_length=4,
+    )
+
+    assert x_train["pixel_values"].shape == (1, 3, 8, 8)
+    assert meta["input_shape"] == (3, 8, 8)
 
 
 
@@ -241,6 +383,204 @@ def test_hf_multimodal_vqa_defaults(monkeypatch):
     assert y_test.tolist() == ["home"]
     assert meta["text_column"] == "question"
     assert meta["label_column"] == "answer"
+
+
+def test_hf_multimodal_vqa_answers_and_variable_image_shapes(monkeypatch):
+    train = DummyDS([
+        {
+            "image": np.ones((8, 6, 3), dtype=np.uint8),
+            "question": "what?",
+            "answers": {"answer": ["cat", "dog", "cat"]},
+        },
+        {
+            "image": np.ones((5, 9, 3), dtype=np.uint8),
+            "question": "where?",
+            "answers": {"answer": ["home"]},
+        },
+    ])
+    test = DummyDS([
+        {
+            "image": np.ones((7, 4, 3), dtype=np.uint8),
+            "question": "what color?",
+            "answers": {"answer": ["blue", "blue", "red"]},
+        },
+    ])
+
+    class DummyTokenizer:
+        def __call__(self, text, **kwargs):
+            return {"input_ids": [1, 2, 3, 0], "attention_mask": [1, 1, 1, 0]}
+
+    class DummyImageProcessor:
+        size = {"height": 4, "width": 4}
+
+        def __call__(self, image, **kwargs):
+            chw = np.transpose(np.asarray(image, dtype=np.float32), (2, 0, 1))
+            return {"pixel_values": chw}
+
+    fake_tr = types.SimpleNamespace(
+        AutoTokenizer=types.SimpleNamespace(from_pretrained=lambda *a, **k: DummyTokenizer()),
+        AutoImageProcessor=types.SimpleNamespace(from_pretrained=lambda *a, **k: DummyImageProcessor()),
+    )
+    monkeypatch.setitem(sys.modules, "transformers", fake_tr)
+
+    (x_train, y_train), (x_test, y_test), meta = preprocess_hf_multimodal(
+        (train, None),
+        (test, None),
+        {},
+        hf_model_id="dummy/model",
+        hf_task="visual_question_answering",
+        label_column="answers",
+    )
+
+    assert x_train["pixel_values"].shape == (2, 3, 4, 4)
+    assert x_test["pixel_values"].shape == (1, 3, 4, 4)
+    assert y_train.tolist() == ["cat", "home"]
+    assert y_test.tolist() == ["blue"]
+    assert meta["label_column"] == "answers"
+
+
+def test_hf_multimodal_vqa_classification_labels_from_model_vocab(monkeypatch):
+    train = DummyDS([
+        {"image": np.ones((8, 8, 3), dtype=np.uint8), "question": "what?", "answer": "cat"},
+        {"image": np.ones((8, 8, 3), dtype=np.uint8), "question": "where?", "answer": "home"},
+    ])
+    test = DummyDS([
+        {"image": np.ones((8, 8, 3), dtype=np.uint8), "question": "what?", "answer": "bird"},
+    ])
+
+    class DummyTokenizer:
+        def __call__(self, text, **kwargs):
+            return {"input_ids": [1, 2, 0], "attention_mask": [1, 1, 0]}
+
+    class DummyImageProcessor:
+        def __call__(self, image, **kwargs):
+            chw = np.transpose(np.asarray(image, dtype=np.float32), (2, 0, 1))
+            return {"pixel_values": chw}
+
+    class DummyConfig:
+        model_type = "vilt"
+        label2id = {"cat": 0, "home": 1}
+        id2label = {0: "cat", 1: "home"}
+
+    fake_tr = types.SimpleNamespace(
+        AutoTokenizer=types.SimpleNamespace(from_pretrained=lambda *a, **k: DummyTokenizer()),
+        AutoImageProcessor=types.SimpleNamespace(from_pretrained=lambda *a, **k: DummyImageProcessor()),
+        AutoConfig=types.SimpleNamespace(from_pretrained=lambda *a, **k: DummyConfig()),
+    )
+    monkeypatch.setitem(sys.modules, "transformers", fake_tr)
+
+    (_, y_train), (_, y_test), meta = preprocess_hf_multimodal(
+        (train, None),
+        (test, None),
+        {},
+        hf_model_id="dummy/vilt",
+        hf_task="visual_question_answering",
+        vqa_label_mode="classification",
+    )
+
+    assert y_train.tolist() == [0, 1]
+    assert y_test.tolist() == [-100]
+    assert meta["label_format"] == "vqa_class_index"
+    assert meta["num_labels"] == 2
+    assert meta["vqa_answer_vocab_source"] == "model_config"
+    assert meta["vqa_test_unseen_answer_count"] == 1
+
+
+def test_hf_multimodal_vqa_generation_token_labels(monkeypatch):
+    train = DummyDS([
+        {"image": np.ones((8, 8, 3), dtype=np.uint8), "question": "what?", "answer": "cat"},
+    ])
+    test = DummyDS([
+        {"image": np.ones((8, 8, 3), dtype=np.uint8), "question": "where?", "answer": "home"},
+    ])
+
+    class DummyTokenizer:
+        vocab_size = 10
+
+        def __call__(self, text, **kwargs):
+            if str(text) == "home":
+                return {"input_ids": [3, 4, 0], "attention_mask": [1, 1, 0]}
+            return {"input_ids": [1, 2, 0], "attention_mask": [1, 1, 0]}
+
+    class DummyImageProcessor:
+        def __call__(self, image, **kwargs):
+            chw = np.transpose(np.asarray(image, dtype=np.float32), (2, 0, 1))
+            return {"pixel_values": chw}
+
+    class DummyConfig:
+        model_type = "blip"
+
+    fake_tr = types.SimpleNamespace(
+        AutoTokenizer=types.SimpleNamespace(from_pretrained=lambda *a, **k: DummyTokenizer()),
+        AutoImageProcessor=types.SimpleNamespace(from_pretrained=lambda *a, **k: DummyImageProcessor()),
+        AutoConfig=types.SimpleNamespace(from_pretrained=lambda *a, **k: DummyConfig()),
+    )
+    monkeypatch.setitem(sys.modules, "transformers", fake_tr)
+
+    (_, y_train), (_, y_test), meta = preprocess_hf_multimodal(
+        (train, None),
+        (test, None),
+        {},
+        hf_model_id="dummy/blip",
+        hf_task="visual_question_answering",
+        vqa_label_mode="generation",
+    )
+
+    assert y_train.tolist() == [[1, 2, -100]]
+    assert y_test.tolist() == [[3, 4, -100]]
+    assert meta["label_format"] == "vqa_token_index"
+    assert meta["vqa_label_mode"] == "generation"
+    assert meta["num_labels"] == 10
+
+
+def test_hf_multimodal_clamps_text_length_to_model_limit(monkeypatch):
+    train = DummyDS([
+        {"image": np.ones((8, 8, 3), dtype=np.uint8), "question": "what?", "answer": "cat"},
+    ])
+    test = DummyDS([
+        {"image": np.ones((8, 8, 3), dtype=np.uint8), "question": "where?", "answer": "home"},
+    ])
+
+    class DummyTokenizer:
+        model_max_length = 40
+
+        def __call__(self, text, **kwargs):
+            max_length = int(kwargs["max_length"])
+            return {
+                "input_ids": list(range(max_length)),
+                "attention_mask": [1] * max_length,
+            }
+
+    class DummyImageProcessor:
+        def __call__(self, image, **kwargs):
+            chw = np.transpose(np.asarray(image, dtype=np.float32), (2, 0, 1))
+            return {"pixel_values": chw}
+
+    class DummyConfig:
+        max_position_embeddings = 40
+
+    fake_tr = types.SimpleNamespace(
+        AutoTokenizer=types.SimpleNamespace(from_pretrained=lambda *a, **k: DummyTokenizer()),
+        AutoImageProcessor=types.SimpleNamespace(from_pretrained=lambda *a, **k: DummyImageProcessor()),
+        AutoConfig=types.SimpleNamespace(from_pretrained=lambda *a, **k: DummyConfig()),
+    )
+    monkeypatch.setitem(sys.modules, "transformers", fake_tr)
+
+    (x_train, _), (_, _), meta = preprocess_hf_multimodal(
+        (train, None),
+        (test, None),
+        {},
+        hf_model_id="dummy/vilt",
+        hf_task="visual_question_answering",
+        max_length=48,
+    )
+
+    assert x_train["input_ids"].shape == (1, 40)
+    assert x_train["attention_mask"].shape == (1, 40)
+    assert meta["max_length"] == 40
+    assert meta["requested_max_length"] == 48
+    assert meta["model_text_max_length"] == 40
+    assert meta["max_length_adjusted"] is True
 
 
 def test_hf_multimodal_caption_fallback_and_image_dict_payload(monkeypatch):

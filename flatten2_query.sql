@@ -20,7 +20,6 @@ p AS (
         COALESCE(value_text, CAST(value_num AS TEXT), CAST(value_int AS TEXT), CAST(value_bool AS TEXT), value_json) AS text_value
     FROM run_params
 ),
-text_image_retrieval	retrieval		multimodal	jxie/flickr8k		openai/clip-vit-base-patch32
 
 params AS (
     SELECT
@@ -152,6 +151,70 @@ client_agg AS (
         AVG(CASE WHEN metric_name = 'explainability_score' THEN num_value END) AS explainability_score
     FROM m
     WHERE client_id IS NOT NULL
+    GROUP BY run_id
+),
+
+client_distribution_pairs AS (
+    SELECT
+        c.run_id,
+        c.client_id,
+        je.key AS distribution_key,
+        CASE
+            WHEN je.key NOT GLOB '*[^0-9]*' THEN CAST(je.key AS INTEGER)
+        END AS numeric_distribution_key,
+        CASE
+            WHEN je.key NOT GLOB '*[^0-9]*' THEN je.key
+            ELSE quote(je.key)
+        END AS formatted_distribution_key,
+        CASE je.type
+            WHEN 'object' THEN je.value
+            WHEN 'array' THEN je.value
+            WHEN 'text' THEN quote(CAST(je.value AS TEXT))
+            WHEN 'null' THEN 'null'
+            ELSE CAST(je.value AS TEXT)
+        END AS formatted_distribution_value
+    FROM clients c
+    JOIN json_each(COALESCE(c.data_distribution_json, '{}')) AS je
+),
+
+client_distribution_maps AS (
+    SELECT
+        run_id,
+        client_id,
+        '{' || group_concat(formatted_distribution_key || ': ' || formatted_distribution_value, ', ') || '}' AS distribution_text
+    FROM (
+        SELECT *
+        FROM client_distribution_pairs
+        ORDER BY
+            run_id,
+            client_id,
+            numeric_distribution_key IS NULL,
+            numeric_distribution_key,
+            distribution_key
+    )
+    GROUP BY run_id, client_id
+),
+
+client_distributions AS (
+    SELECT
+        run_id,
+        group_concat(client_id || ': ' || distribution_text, char(10)) AS dataset_distributions
+    FROM (
+        SELECT
+            c.run_id,
+            c.client_id,
+            COALESCE(cdm.distribution_text, c.data_distribution_json, '{}') AS distribution_text
+        FROM clients c
+        LEFT JOIN client_distribution_maps cdm
+          ON cdm.run_id = c.run_id
+         AND cdm.client_id = c.client_id
+        ORDER BY
+            c.run_id,
+            CASE
+                WHEN c.client_id GLOB 'client_[0-9]*' THEN CAST(substr(c.client_id, 8) AS INTEGER)
+            END,
+            c.client_id
+    )
     GROUP BY run_id
 ),
 
@@ -292,6 +355,7 @@ raw_base AS (
         CASE WHEN COALESCE(params.inference_only, 0.0) = 1.0 THEN NULL ELSE params.learning_rate END AS learning_rate,
         params.batch_size,
         params.data_distribution,
+        cd.dataset_distributions,
         COALESCE(rl.train_set_size, params.dataset_size) AS dataset_size,
         ca.explainability_score
     FROM runs r
@@ -299,6 +363,7 @@ raw_base AS (
     LEFT JOIN run_level rl ON rl.run_id = r.run_id
     LEFT JOIN final_round fr ON fr.run_id = r.run_id
     LEFT JOIN client_agg ca ON ca.run_id = r.run_id
+    LEFT JOIN client_distributions cd ON cd.run_id = r.run_id
     LEFT JOIN round_participation rp ON rp.run_id = r.run_id
 ),
 
@@ -495,6 +560,7 @@ SELECT
     COALESCE(CAST(learning_rate AS TEXT), 'Not Available') AS "Learning rate",
     COALESCE(CAST(batch_size AS TEXT), 'Not Available') AS "Batch size",
     COALESCE(data_distribution, 'Not Available') AS "Data distribution",
+    COALESCE(dataset_distributions, 'Not Available') AS "Dataset distributions",
     COALESCE(CAST(dataset_size AS TEXT), 'Not Available') AS "Dataset size",
     COALESCE(CAST(explainability_score AS TEXT), 'Not Available') AS "Explainability score"
 FROM final_with_efficiency

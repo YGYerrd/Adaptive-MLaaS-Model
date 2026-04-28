@@ -39,7 +39,10 @@ class HFCore:
         self.transformers = transformers
 
         self.model_id = model_id
+        self.requested_max_length = int(max_length)
         self.max_length = int(max_length)
+        self.model_text_max_length = None
+        self.max_length_adjusted = False
         self.batch_size = int(batch_size)
         self.label_pad_value = int(label_pad_value)
 
@@ -72,6 +75,7 @@ class HFCore:
             self.model_load_s = float(time.time() - model_load_start)
             self.weight_format = getattr(self.task_spec, "weight_format", None)
             self.model.to(self.device)
+            self.sync_effective_max_length()
 
     def _qos_startup(self):
         return {
@@ -81,6 +85,46 @@ class HFCore:
             "tokenizer_cache_hit": bool(self.tokenizer_cache_hit),
             "model_cache_hit": bool(self.model_cache_hit),
         }
+
+    @staticmethod
+    def _concat_or_pad_batches(batches, *, empty_dtype="int64", pad_value=0):
+        if not batches:
+            return np.asarray([], dtype=empty_dtype)
+
+        arrays = []
+        for batch in batches:
+            arr = np.asarray(batch)
+            if arr.dtype == object:
+                try:
+                    return np.concatenate([np.asarray(item, dtype=object) for item in batches], axis=0)
+                except Exception:
+                    return np.asarray(batches, dtype=object)
+            arrays.append(arr)
+
+        try:
+            return np.concatenate(arrays, axis=0)
+        except ValueError:
+            pass
+        except Exception:
+            return np.asarray(batches, dtype=object)
+
+        ndim = arrays[0].ndim
+        if ndim <= 1 or any(arr.ndim != ndim for arr in arrays):
+            return np.asarray(batches, dtype=object)
+
+        target_tail = []
+        for axis in range(1, ndim):
+            target_tail.append(max(int(arr.shape[axis]) for arr in arrays))
+
+        padded = []
+        for arr in arrays:
+            target_shape = (int(arr.shape[0]), *target_tail)
+            out = np.full(target_shape, pad_value, dtype=arr.dtype)
+            slices = tuple(slice(0, size) for size in arr.shape)
+            out[slices] = arr
+            padded.append(out)
+
+        return np.concatenate(padded, axis=0)
 
     def _resolve_generation_config(self, generation_config):
         defaults = {
@@ -126,8 +170,54 @@ class HFCore:
         except Exception:
             return "cpu"
 
+    @staticmethod
+    def _bounded_positive_int(value):
+        try:
+            parsed = int(value)
+        except Exception:
+            return None
+        if parsed <= 0 or parsed >= 1_000_000:
+            return None
+        return parsed
+
+    @classmethod
+    def _config_text_length_limits(cls, config):
+        if config is None:
+            return []
+        configs = [config]
+        for attr in ("text_config", "encoder", "decoder"):
+            nested = getattr(config, attr, None)
+            if nested is not None:
+                configs.append(nested)
+
+        limits = []
+        for cfg in configs:
+            for attr in ("max_position_embeddings", "n_positions", "max_sequence_length"):
+                candidate = cls._bounded_positive_int(getattr(cfg, attr, None))
+                if candidate is not None:
+                    limits.append(candidate)
+        return limits
+
+    def sync_effective_max_length(self):
+        limits = []
+        tokenizer_limit = self._bounded_positive_int(getattr(self.tokenizer, "model_max_length", None))
+        if tokenizer_limit is not None:
+            limits.append(tokenizer_limit)
+        limits.extend(self._config_text_length_limits(getattr(self.model, "config", None)))
+
+        if not limits:
+            return self.max_length
+
+        self.model_text_max_length = int(min(limits))
+        if self.max_length > self.model_text_max_length:
+            self.max_length = int(self.model_text_max_length)
+            self.max_length_adjusted = True
+        return self.max_length
+
     def _ensure_left_padding_for_decoder_only_generation(self):
         if not bool(getattr(self.task_spec, "supports_generation", False)):
+            return
+        if self.tokenizer is None:
             return
         model_cfg = getattr(self.model, "config", None)
         is_encoder_decoder = bool(getattr(model_cfg, "is_encoder_decoder", False))
@@ -525,6 +615,13 @@ class HFCore:
             "device": str(self.device),
             "hf_model_id": self.model_id,
             "max_length": int(self.max_length),
+            "requested_max_length": int(getattr(self, "requested_max_length", self.max_length)),
+            "model_text_max_length": (
+                int(getattr(self, "model_text_max_length", None))
+                if getattr(self, "model_text_max_length", None) is not None
+                else np.nan
+            ),
+            "max_length_adjusted": bool(getattr(self, "max_length_adjusted", False)),
             "hf_task": getattr(self.task_spec, "name", None),
             "label_pad_value": int(self.label_pad_value),
             "hf_weights_format": self.weight_format,
@@ -614,12 +711,15 @@ class HFCore:
                         ignore_index=self.label_pad_value,
                         inference_only=False,
                     )
-                    teacher_forced = (teacher_enc, teacher_labels_t, dict(teacher_extra or {}))
                     if teacher_labels_t is not None:
+                        teacher_forced = (teacher_enc, teacher_labels_t, dict(teacher_extra or {}))
                         labels_all.append(self._labels_to_numpy(teacher_labels_t))
                         labels_recorded = True
                         supervised_token_count = _count_supervised_tokens(teacher_labels_t, self.label_pad_value)
                         eval_supervised_token_count += supervised_token_count
+                    elif isinstance(teacher_extra, dict) and teacher_extra.get("answer_texts") is not None:
+                        labels_all.append(np.asarray(teacher_extra.get("answer_texts"), dtype=object).reshape(-1))
+                        labels_recorded = True
 
                 if bool(inference_only) and bool(getattr(self.task_spec, "supports_generation", False)):
                     self._ensure_left_padding_for_decoder_only_generation()
@@ -634,7 +734,10 @@ class HFCore:
                     )
                     if not first_batch_logged:
                         print("[HFCore.eval] first batch forward ends")
-                    preds_all.append(pred_t.detach().cpu().numpy())
+                    if hasattr(pred_t, "detach"):
+                        preds_all.append(pred_t.detach().cpu().numpy())
+                    else:
+                        preds_all.append(np.asarray(pred_t, dtype=object))
 
                     if teacher_forced is not None:
                         teacher_enc, teacher_labels_t, teacher_extra = teacher_forced
@@ -673,7 +776,10 @@ class HFCore:
                     pred_t = self.task_spec.preds_from_logits(torch, logits, extra)
                     if not first_batch_logged:
                         print("[HFCore.eval] first batch forward ends")
-                    preds_all.append(pred_t.detach().cpu().numpy())
+                    if hasattr(pred_t, "detach"):
+                        preds_all.append(pred_t.detach().cpu().numpy())
+                    else:
+                        preds_all.append(np.asarray(pred_t, dtype=object))
                     
                     collect_unlabeled_stats = bool(getattr(self.task_spec, "supports_unlabeled_metric_statistics", False))
                     if labels_t is not None or collect_unlabeled_stats:
@@ -726,11 +832,19 @@ class HFCore:
 
         duration_s = time.time() - t_start
 
-        try:
-            y_true_np = np.concatenate(labels_all, axis=0) if labels_all else np.asarray([], dtype="int64")
-        except Exception:
-            y_true_np = np.asarray(labels_all, dtype=object) if labels_all else np.asarray([], dtype=object)
-        y_pred_np = np.concatenate(preds_all, axis=0) if preds_all else np.asarray([], dtype="int64")
+        y_true_np = self._concat_or_pad_batches(
+            labels_all,
+            empty_dtype="int64",
+            pad_value=int(self.label_pad_value),
+        )
+        pred_pad_value = 0
+        if self.tokenizer is not None and getattr(self.tokenizer, "pad_token_id", None) is not None:
+            pred_pad_value = int(self.tokenizer.pad_token_id)
+        y_pred_np = self._concat_or_pad_batches(
+            preds_all,
+            empty_dtype="int64",
+            pad_value=pred_pad_value,
+        )
         label_space_warning = None
         label_space_mismatch = False
         model_num_labels = None
@@ -778,19 +892,37 @@ class HFCore:
 
         stats_summary = self._metric_statistics_summary(stats_accum)
         m_stats = self.task_spec.metrics_from_statistics(stats_accum) if self._has_metric_statistics(stats_accum) else None
+        metric_start = None
+        metric_mode = None
         if isinstance(m_stats, dict) and m_stats:
-            print("[HFCore.eval] metric computation starts")
+            metric_start = time.time()
+            metric_mode = "statistics"
+            print("[HFCore.eval] metric computation starts | mode=statistics", flush=True)
             primary = float(m_stats.get("primary", np.nan))
             secondary = float(m_stats.get("secondary", np.nan))
             named_metrics = m_stats.get("named_metrics") if isinstance(m_stats, dict) else None
         elif y_true_np.size == 0 or y_pred_np.size == 0:
+            print(
+                "[HFCore.eval] metric computation skipped | "
+                f"reason=empty_arrays | y_true_size={y_true_np.size} | y_pred_size={y_pred_np.size}",
+                flush=True,
+            )
             primary = np.nan
             secondary = np.nan
         else:
-            print("[HFCore.eval] metric computation starts")
+            metric_start = time.time()
+            metric_mode = "arrays"
+            print(
+                "[HFCore.eval] metric computation starts | "
+                f"mode=arrays | y_true_shape={getattr(y_true_np, 'shape', None)} "
+                f"| y_pred_shape={getattr(y_pred_np, 'shape', None)}",
+                flush=True,
+            )
             metrics_extra = dict(last_extra or {})
             metrics_extra["task_tag"] = self.task_tag
             metrics_extra["loss_mean"] = loss_mean
+            if getattr(self.task_spec, "supports_generation", False):
+                metrics_extra["tokenizer"] = self.tokenizer
             m = self.task_spec.metrics(y_true_np, y_pred_np, y_extra=metrics_extra)
             primary = float(m.get("primary", np.nan))
             secondary = float(m.get("secondary", np.nan))
@@ -801,6 +933,14 @@ class HFCore:
                     secondary = float(np.exp(np.clip(loss_mean, a_min=-50.0, a_max=50.0)))
                 except Exception:
                     secondary = np.nan
+
+        if metric_start is not None:
+            print(
+                "[HFCore.eval] metric computation ends | "
+                f"mode={metric_mode} | primary={primary} | secondary={secondary} "
+                f"| metric_s={time.time() - metric_start:.2f}",
+                flush=True,
+            )
 
         lat_mean = float(np.mean(latencies_ms)) if latencies_ms else np.nan
         lat_p95 = float(np.percentile(latencies_ms, 95)) if latencies_ms else np.nan
@@ -841,6 +981,13 @@ class HFCore:
             "device": str(self.device),
             "hf_model_id": self.model_id,
             "max_length": int(self.max_length),
+            "requested_max_length": int(getattr(self, "requested_max_length", self.max_length)),
+            "model_text_max_length": (
+                int(getattr(self, "model_text_max_length", None))
+                if getattr(self, "model_text_max_length", None) is not None
+                else np.nan
+            ),
+            "max_length_adjusted": bool(getattr(self, "max_length_adjusted", False)),
             "hf_task": getattr(self.task_spec, "name", None),
             "label_pad_value": int(self.label_pad_value),
             "hf_weights_format": self.weight_format,

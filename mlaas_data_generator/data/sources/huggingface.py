@@ -15,6 +15,14 @@ _TEXT_COLUMN_ALIASES = (
 )
 
 
+def _bool_arg(value, default=False):
+    if value is None:
+        return bool(default)
+    if isinstance(value, str):
+        return value.strip().lower() not in {"", "0", "false", "no", "off"}
+    return bool(value)
+
+
 def load_huggingface_source(**kwargs):
     try:
         from datasets import load_dataset
@@ -35,6 +43,7 @@ def load_huggingface_source(**kwargs):
     max_samples = kwargs.get("max_samples", None)
     seed = int(kwargs.get("seed", 42))
     max_length = int(kwargs.get("max_length", 128))
+    inference_only = _bool_arg(kwargs.get("inference_only", False))
 
     task_type = kwargs.get("task", "classification")
     modality = str(kwargs.get("modality", "text")).strip().lower()
@@ -97,7 +106,8 @@ def load_huggingface_source(**kwargs):
         if len(ds_test) > 1:
             ds_test = ds_test.shuffle(seed=seed + 1)
         ds_train = ds_train.select(range(min(n, len(ds_train))))
-        ds_test = ds_test.select(range(min(max(1, n // 5), len(ds_test))))
+        test_n = n if inference_only else max(1, n // 5)
+        ds_test = ds_test.select(range(min(test_n, len(ds_test))))
 
     schema = None
     def _has_value(value):
@@ -264,6 +274,7 @@ def load_huggingface_source(**kwargs):
         "task_type": task_type,
         "modality": modality,
         "hf_task": hf_task,
+        "inference_only": inference_only,
         "schema": schema,
         "loader_template": dataset_args.get("loader_template"),
         "dataset_args": dataset_args,

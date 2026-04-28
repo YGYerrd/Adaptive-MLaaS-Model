@@ -1,18 +1,19 @@
 ====================================================================================================
-timestamp: 2026-04-15T22:19:05.991694
-row_index: 15
-external_run_id: hf_imgcls_000016
-case_name: apple_mobilevit-small__beans__finetune_transfer__v0
-run_group_id: c7cf4063-8796-43f3-b70e-ca1263c08654
+timestamp: 2026-04-27T18:20:17.660493
+row_index: 4
+external_run_id: hf_tokencls_000011
+case_name: dslim_bert-base-NER__conll2002_es__finetune_transfer__split0__svc0
+run_group_id: d05c1a63-b028-4c22-a3c6-688a302ed252
 failure_stage: runtime_exception
-error_message: int() argument must be a string, a bytes-like object or a real number, not 'NoneType'
+error_message: Token classification requires Sequence(ClassLabel) style labels.
 resolved_config:
 {
   "db_path": "outputs\\federated.db",
+  "seed": 42,
   "num_clients": 2,
-  "num_rounds": 1,
-  "local_epochs": 1,
-  "batch_size": 16,
+  "num_rounds": 2,
+  "local_epochs": 2,
+  "batch_size": 4,
   "learning_rate": 0.0001,
   "hidden_layers": [
     16,
@@ -24,80 +25,118 @@ resolved_config:
   "dropout": 0.0,
   "weight_decay": 0.001,
   "optimizer": "rmsprop",
-  "distribution_type": "iid",
+  "distribution_type": "dirichlet",
   "distribution_param": null,
-  "sample_size": 30000,
-  "sample_frac": 1.0,
+  "sample_size": 2000,
+  "sample_frac": null,
   "client_dropout_rate": 0.0,
   "task_type": "classification",
   "distribution_bins": 10,
   "dataset_args": null,
   "early_stopping_patience": null,
-  "client_participation_rate": 1.0,
-  "seed": 42,
-  "distribution": "iid",
-  "external_run_id": "hf_imgcls_000016",
+  "save_weights": false,
+  "save_final_model_params": true,
+  "final_model_params_dir": "outputs\\final_model_params",
+  "update_signature_enabled": true,
+  "update_signature_dim": 256,
+  "update_signature_dir": null,
+  "update_signature_max_source_elements": null,
+  "enable_perturbation_metrics": true,
+  "perturbation_final_round_only": true,
+  "perturbation_sample_count": 10,
+  "perturbation_candidate_units": 16,
+  "perturbation_trust_trials": 5,
+  "perturbation_target_units": 2,
+  "perturbation_random_strength": 0.02,
+  "perturbation_progress_logging": true,
+  "perturbation_progress_sample_interval": 1,
+  "explainability_random_trials": 8,
+  "explainability_budget_fractions": [
+    0.1,
+    0.2,
+    0.3
+  ],
+  "explainability_meaningful_drop_threshold": 0.2,
+  "explainability_selectivity_floor": 0.5,
+  "client_participation_rate": 0.5,
+  "distribution": "dirichlet",
+  "external_run_id": "hf_tokencls_000011",
   "dataset": "hf",
-  "run_group_id": "c7cf4063-8796-43f3-b70e-ca1263c08654",
-  "case_name": "apple_mobilevit-small__beans__finetune_transfer__v0",
+  "run_group_id": "d05c1a63-b028-4c22-a3c6-688a302ed252",
+  "case_name": "dslim_bert-base-NER__conll2002_es__finetune_transfer__split0__svc0",
   "notes": "Generated from scored registry-defined HF model and dataset compatibility",
   "enabled": true,
   "measure_system_metrics": true,
-  "mixed_precision": true,
-  "max_samples": 120,
+  "mixed_precision": false,
+  "max_samples": 900,
+  "max_length": 128,
   "num_workers": 2,
-  "timeout_s": 900,
+  "timeout_s": 3600,
   "momentum": 0.9,
-  "save_weights": true,
+  "dirichlet_alpha": 0.3,
   "model_type": "hf_finetune",
-  "hf_task": "image_classification",
-  "modality": "image",
-  "dataset_name": "beans",
-  "hf_model_id": "apple/mobilevit-small",
+  "hf_task": "token_classification",
+  "modality": "text",
+  "dataset_name": "BramVanroy/conll2002",
+  "dataset_config": "es",
+  "hf_model_id": "dslim/bert-base-NER",
   "train_split": "train",
   "test_split": "validation",
-  "label_column": "labels",
-  "text_column": "text",
-  "image_column": "image",
+  "label_column": "ner_tags",
+  "text_column": "tokens",
   "run_regime": "finetune_transfer",
   "explainability_enabled": true,
+  "explainability_method": "integrated_gradients",
+  "explainability_target": "token_label",
   "model_role": "task_head",
-  "input_schema": "single_image",
+  "input_schema": "token_sequence",
   "fit_decision": "selected",
-  "fit_reason": "selected score=3.415 (model=1.600, dataset=1.565, regime=finetune_transfer)",
-  "realism_score": 3.4154,
+  "fit_reason": "selected score=4.367 (model=2.400, dataset=1.717, regime=finetune_transfer)",
+  "realism_score": 4.3672,
   "domain_alignment": "registry_curated",
-  "dataset_hint": "beans",
-  "hf_pipeline_tag": "image-classification",
-  "hf_author": "apple",
-  "hf_url": "https://huggingface.co/apple/mobilevit-small",
-  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"image_classification\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"pair_score\": 3.4154}"
+  "dataset_hint": "BramVanroy/conll2002",
+  "hf_pipeline_tag": "token-classification",
+  "hf_author": "dslim",
+  "hf_url": "https://huggingface.co/dslim/bert-base-NER",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"token_classification\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"pair_score\": 4.3672, \"variant_index\": 0, \"service_variant_index\": 0, \"dataset_variant_index\": 0, \"split_variant_index\": 0, \"finetune_validated\": false, \"vqa_label_mode\": null, \"retrieval_positive_policy\": null}"
 }
 traceback:
 Traceback (most recent call last):
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 416, in run_manifest
-    summary = gen.run()
-              ^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 557, in run
-    ignore_index = int(self.meta.get("label_pad_value", self.meta.get("ignore_index", -100)))
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-TypeError: int() argument must be a string, a bytes-like object or a real number, not 'NoneType'
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 515, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 262, in __init__
+    train, test, meta = load_dataset(self.dataset, **loader_dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 181, in preprocess_hf
+    out = preprocess_hf_text_token(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_token.py", line 25, in preprocess_hf_text_token
+    raise ValueError("Token classification requires Sequence(ClassLabel) style labels.")
+ValueError: Token classification requires Sequence(ClassLabel) style labels.
 
 ====================================================================================================
-timestamp: 2026-04-15T22:19:17.577126
-row_index: 16
-external_run_id: hf_imgcls_000017
-case_name: google_vit-base-patch16-224__beans__finetune_transfer__v0
-run_group_id: c7cf4063-8796-43f3-b70e-ca1263c08654
+timestamp: 2026-04-27T18:20:26.483147
+row_index: 5
+external_run_id: hf_tokencls_000012
+case_name: dslim_bert-base-NER__conll2002_nl__finetune_transfer__split0__svc0
+run_group_id: d05c1a63-b028-4c22-a3c6-688a302ed252
 failure_stage: runtime_exception
-error_message: int() argument must be a string, a bytes-like object or a real number, not 'NoneType'
+error_message: Token classification requires Sequence(ClassLabel) style labels.
 resolved_config:
 {
   "db_path": "outputs\\federated.db",
-  "num_clients": 1,
+  "seed": 42,
+  "num_clients": 2,
   "num_rounds": 2,
   "local_epochs": 1,
-  "batch_size": 32,
+  "batch_size": 4,
   "learning_rate": 0.0005,
   "hidden_layers": [
     16,
@@ -107,1063 +146,120 @@ resolved_config:
   ],
   "activation": "relu",
   "dropout": 0.0,
-  "weight_decay": 0.0,
+  "weight_decay": 0.0001,
   "optimizer": "rmsprop",
   "distribution_type": "dirichlet",
   "distribution_param": null,
-  "sample_size": 30000,
-  "sample_frac": 1.0,
+  "sample_size": 2000,
+  "sample_frac": null,
   "client_dropout_rate": 0.0,
   "task_type": "classification",
   "distribution_bins": 10,
   "dataset_args": null,
   "early_stopping_patience": null,
-  "client_participation_rate": 1.0,
-  "seed": 42,
+  "save_weights": false,
+  "save_final_model_params": true,
+  "final_model_params_dir": "outputs\\final_model_params",
+  "update_signature_enabled": true,
+  "update_signature_dim": 256,
+  "update_signature_dir": null,
+  "update_signature_max_source_elements": null,
+  "enable_perturbation_metrics": true,
+  "perturbation_final_round_only": true,
+  "perturbation_sample_count": 10,
+  "perturbation_candidate_units": 16,
+  "perturbation_trust_trials": 5,
+  "perturbation_target_units": 2,
+  "perturbation_random_strength": 0.02,
+  "perturbation_progress_logging": true,
+  "perturbation_progress_sample_interval": 1,
+  "explainability_random_trials": 8,
+  "explainability_budget_fractions": [
+    0.1,
+    0.2,
+    0.3
+  ],
+  "explainability_meaningful_drop_threshold": 0.2,
+  "explainability_selectivity_floor": 0.5,
+  "client_participation_rate": 0.75,
   "distribution": "dirichlet",
-  "external_run_id": "hf_imgcls_000017",
+  "external_run_id": "hf_tokencls_000012",
   "dataset": "hf",
-  "run_group_id": "c7cf4063-8796-43f3-b70e-ca1263c08654",
-  "case_name": "google_vit-base-patch16-224__beans__finetune_transfer__v0",
+  "run_group_id": "d05c1a63-b028-4c22-a3c6-688a302ed252",
+  "case_name": "dslim_bert-base-NER__conll2002_nl__finetune_transfer__split0__svc0",
   "notes": "Generated from scored registry-defined HF model and dataset compatibility",
   "enabled": true,
   "measure_system_metrics": true,
-  "mixed_precision": true,
-  "max_samples": 116,
+  "mixed_precision": false,
+  "max_samples": 900,
+  "max_length": 128,
   "num_workers": 2,
-  "timeout_s": 900,
+  "timeout_s": 3600,
   "momentum": 0.0,
-  "dirichlet_alpha": 0.5,
-  "save_weights": true,
+  "dirichlet_alpha": 0.3,
   "model_type": "hf_finetune",
-  "hf_task": "image_classification",
-  "modality": "image",
-  "dataset_name": "beans",
-  "hf_model_id": "google/vit-base-patch16-224",
+  "hf_task": "token_classification",
+  "modality": "text",
+  "dataset_name": "BramVanroy/conll2002",
+  "dataset_config": "nl",
+  "hf_model_id": "dslim/bert-base-NER",
   "train_split": "train",
   "test_split": "validation",
-  "label_column": "labels",
-  "text_column": "text",
-  "image_column": "image",
+  "label_column": "ner_tags",
+  "text_column": "tokens",
   "run_regime": "finetune_transfer",
   "explainability_enabled": true,
+  "explainability_method": "integrated_gradients",
+  "explainability_target": "token_label",
   "model_role": "task_head",
-  "input_schema": "single_image",
+  "input_schema": "token_sequence",
   "fit_decision": "selected",
-  "fit_reason": "selected score=3.415 (model=1.600, dataset=1.565, regime=finetune_transfer)",
-  "realism_score": 3.4154,
+  "fit_reason": "selected score=4.367 (model=2.400, dataset=1.717, regime=finetune_transfer)",
+  "realism_score": 4.3672,
   "domain_alignment": "registry_curated",
-  "dataset_hint": "beans",
-  "hf_pipeline_tag": "image-classification",
-  "hf_author": "google",
-  "hf_url": "https://huggingface.co/google/vit-base-patch16-224",
-  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"image_classification\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"pair_score\": 3.4154}"
+  "dataset_hint": "BramVanroy/conll2002",
+  "hf_pipeline_tag": "token-classification",
+  "hf_author": "dslim",
+  "hf_url": "https://huggingface.co/dslim/bert-base-NER",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"token_classification\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"pair_score\": 4.3672, \"variant_index\": 0, \"service_variant_index\": 0, \"dataset_variant_index\": 0, \"split_variant_index\": 0, \"finetune_validated\": false, \"vqa_label_mode\": null, \"retrieval_positive_policy\": null}"
 }
 traceback:
 Traceback (most recent call last):
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 416, in run_manifest
-    summary = gen.run()
-              ^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 557, in run
-    ignore_index = int(self.meta.get("label_pad_value", self.meta.get("ignore_index", -100)))
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-TypeError: int() argument must be a string, a bytes-like object or a real number, not 'NoneType'
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 515, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 262, in __init__
+    train, test, meta = load_dataset(self.dataset, **loader_dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 181, in preprocess_hf
+    out = preprocess_hf_text_token(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_token.py", line 25, in preprocess_hf_text_token
+    raise ValueError("Token classification requires Sequence(ClassLabel) style labels.")
+ValueError: Token classification requires Sequence(ClassLabel) style labels.
 
 ====================================================================================================
-timestamp: 2026-04-15T22:19:40.985008
-row_index: 17
-external_run_id: hf_objdet_000018
-case_name: facebook_detr-resnet-50__coco_detection__finetune_transfer__v0
-run_group_id: c7cf4063-8796-43f3-b70e-ca1263c08654
+timestamp: 2026-04-27T18:20:36.360143
+row_index: 6
+external_run_id: hf_tokencls_000013
+case_name: distilroberta-base__conll2002_es__finetune_transfer__split0__svc0
+run_group_id: d05c1a63-b028-4c22-a3c6-688a302ed252
 failure_stage: runtime_exception
-error_message: int() argument must be a string, a bytes-like object or a real number, not 'NoneType'
+error_message: Token classification requires Sequence(ClassLabel) style labels.
 resolved_config:
 {
   "db_path": "outputs\\federated.db",
-  "num_clients": 1,
-  "num_rounds": 2,
-  "local_epochs": 1,
-  "batch_size": 4,
-  "learning_rate": 5e-05,
-  "hidden_layers": [
-    16,
-    32,
-    64,
-    128
-  ],
-  "activation": "relu",
-  "dropout": 0.0,
-  "weight_decay": 0.0,
-  "optimizer": "adamw",
-  "distribution_type": "iid",
-  "distribution_param": null,
-  "sample_size": 30000,
-  "sample_frac": 1.0,
-  "client_dropout_rate": 0.0,
-  "task_type": "detection",
-  "distribution_bins": 10,
-  "dataset_args": null,
-  "early_stopping_patience": null,
-  "client_participation_rate": 1.0,
   "seed": 42,
-  "distribution": "iid",
-  "external_run_id": "hf_objdet_000018",
-  "dataset": "hf",
-  "run_group_id": "c7cf4063-8796-43f3-b70e-ca1263c08654",
-  "case_name": "facebook_detr-resnet-50__coco_detection__finetune_transfer__v0",
-  "notes": "Generated from scored registry-defined HF model and dataset compatibility",
-  "enabled": true,
-  "measure_system_metrics": true,
-  "mixed_precision": true,
-  "max_samples": 235,
-  "num_workers": 2,
-  "timeout_s": 900,
-  "momentum": 0.0,
-  "save_weights": true,
-  "model_type": "hf_finetune",
-  "hf_task": "image_detection",
-  "modality": "image",
-  "dataset_name": "detection-datasets/coco",
-  "hf_model_id": "facebook/detr-resnet-50",
-  "train_split": "train",
-  "test_split": "validation",
-  "label_column": "objects",
-  "text_column": "text",
-  "image_column": "image",
-  "run_regime": "finetune_transfer",
-  "explainability_enabled": true,
-  "model_role": "task_head",
-  "input_schema": "image_with_boxes",
-  "fit_decision": "selected",
-  "fit_reason": "selected score=3.267 (model=1.500, dataset=1.517, regime=finetune_transfer)",
-  "realism_score": 3.2671,
-  "domain_alignment": "registry_curated",
-  "dataset_hint": "detection-datasets/coco",
-  "hf_pipeline_tag": "object-detection",
-  "hf_author": "facebook",
-  "hf_url": "https://huggingface.co/facebook/detr-resnet-50",
-  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"object_detection\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"pair_score\": 3.2671}"
-}
-traceback:
-Traceback (most recent call last):
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 416, in run_manifest
-    summary = gen.run()
-              ^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 557, in run
-    ignore_index = int(self.meta.get("label_pad_value", self.meta.get("ignore_index", -100)))
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-TypeError: int() argument must be a string, a bytes-like object or a real number, not 'NoneType'
-
-====================================================================================================
-timestamp: 2026-04-15T22:20:07.897796
-row_index: 18
-external_run_id: hf_objdet_000019
-case_name: hustvl_yolos-small__coco_detection__finetune_transfer__v0
-run_group_id: c7cf4063-8796-43f3-b70e-ca1263c08654
-failure_stage: runtime_exception
-error_message: int() argument must be a string, a bytes-like object or a real number, not 'NoneType'
-resolved_config:
-{
-  "db_path": "outputs\\federated.db",
   "num_clients": 2,
-  "num_rounds": 2,
-  "local_epochs": 1,
-  "batch_size": 2,
-  "learning_rate": 5e-05,
-  "hidden_layers": [
-    16,
-    32,
-    64,
-    128
-  ],
-  "activation": "relu",
-  "dropout": 0.0,
-  "weight_decay": 0.01,
-  "optimizer": "adamw",
-  "distribution_type": "iid",
-  "distribution_param": null,
-  "sample_size": 30000,
-  "sample_frac": 1.0,
-  "client_dropout_rate": 0.0,
-  "task_type": "detection",
-  "distribution_bins": 10,
-  "dataset_args": null,
-  "early_stopping_patience": null,
-  "client_participation_rate": 1.0,
-  "seed": 42,
-  "distribution": "iid",
-  "external_run_id": "hf_objdet_000019",
-  "dataset": "hf",
-  "run_group_id": "c7cf4063-8796-43f3-b70e-ca1263c08654",
-  "case_name": "hustvl_yolos-small__coco_detection__finetune_transfer__v0",
-  "notes": "Generated from scored registry-defined HF model and dataset compatibility",
-  "enabled": true,
-  "measure_system_metrics": true,
-  "mixed_precision": true,
-  "max_samples": 192,
-  "num_workers": 2,
-  "timeout_s": 900,
-  "momentum": 0.0,
-  "save_weights": true,
-  "model_type": "hf_finetune",
-  "hf_task": "image_detection",
-  "modality": "image",
-  "dataset_name": "detection-datasets/coco",
-  "hf_model_id": "hustvl/yolos-small",
-  "train_split": "train",
-  "test_split": "validation",
-  "label_column": "objects",
-  "text_column": "text",
-  "image_column": "image",
-  "run_regime": "finetune_transfer",
-  "explainability_enabled": true,
-  "model_role": "task_head",
-  "input_schema": "image_with_boxes",
-  "fit_decision": "selected",
-  "fit_reason": "selected score=3.267 (model=1.500, dataset=1.517, regime=finetune_transfer)",
-  "realism_score": 3.2671,
-  "domain_alignment": "registry_curated",
-  "dataset_hint": "detection-datasets/coco",
-  "hf_pipeline_tag": "object-detection",
-  "hf_author": "hustvl",
-  "hf_url": "https://huggingface.co/hustvl/yolos-small",
-  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"object_detection\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"pair_score\": 3.2671}"
-}
-traceback:
-Traceback (most recent call last):
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 416, in run_manifest
-    summary = gen.run()
-              ^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 557, in run
-    ignore_index = int(self.meta.get("label_pad_value", self.meta.get("ignore_index", -100)))
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-TypeError: int() argument must be a string, a bytes-like object or a real number, not 'NoneType'
-
-====================================================================================================
-timestamp: 2026-04-16T18:11:51.292452
-row_index: 1
-external_run_id: hf_imgcls_000017
-case_name: google_vit-base-patch16-224__beans__finetune_transfer__v0
-run_group_id: 40c300d8-2030-4959-ae80-b7a1488a0dc5
-failure_stage: validation_failed
-error_message: windows_rocm_image_finetune_unsupported:path_with_spaces_breaks_hiprtc
-resolved_config:
-{
-  "db_path": "outputs\\federated.db",
-  "num_clients": 1,
-  "num_rounds": 2,
-  "local_epochs": 1,
-  "batch_size": 32,
-  "learning_rate": 0.0005,
-  "hidden_layers": [
-    16,
-    32,
-    64,
-    128
-  ],
-  "activation": "relu",
-  "dropout": 0.0,
-  "weight_decay": 0.0,
-  "optimizer": "rmsprop",
-  "distribution_type": "dirichlet",
-  "distribution_param": null,
-  "sample_size": 30000,
-  "sample_frac": 1.0,
-  "client_dropout_rate": 0.0,
-  "task_type": "classification",
-  "distribution_bins": 10,
-  "dataset_args": null,
-  "early_stopping_patience": null,
-  "client_participation_rate": 1.0,
-  "seed": 42,
-  "distribution": "dirichlet",
-  "external_run_id": "hf_imgcls_000017",
-  "dataset": "hf",
-  "run_group_id": "40c300d8-2030-4959-ae80-b7a1488a0dc5",
-  "case_name": "google_vit-base-patch16-224__beans__finetune_transfer__v0",
-  "notes": "Generated from scored registry-defined HF model and dataset compatibility; forced CPU to avoid windows_rocm_image_finetune_unsupported:path_with_spaces_breaks_hiprtc",
-  "enabled": true,
-  "measure_system_metrics": true,
-  "mixed_precision": false,
-  "max_samples": 116,
-  "num_workers": 2,
-  "timeout_s": 900,
-  "momentum": 0.0,
-  "dirichlet_alpha": 0.5,
-  "save_weights": true,
-  "model_type": "hf_finetune",
-  "hf_task": "image_classification",
-  "modality": "image",
-  "dataset_name": "beans",
-  "hf_model_id": "google/vit-base-patch16-224",
-  "train_split": "train",
-  "test_split": "validation",
-  "label_column": "labels",
-  "text_column": "text",
-  "image_column": "image",
-  "run_regime": "finetune_transfer",
-  "explainability_enabled": true,
-  "model_role": "task_head",
-  "input_schema": "single_image",
-  "fit_decision": "selected",
-  "fit_reason": "selected score=3.415 (model=1.600, dataset=1.565, regime=finetune_transfer); forced device=cpu to avoid windows_rocm_image_finetune_unsupported:path_with_spaces_breaks_hiprtc",
-  "realism_score": 3.4154,
-  "domain_alignment": "registry_curated",
-  "dataset_hint": "beans",
-  "hf_pipeline_tag": "image-classification",
-  "hf_author": "google",
-  "hf_url": "https://huggingface.co/google/vit-base-patch16-224",
-  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"image_classification\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"pair_score\": 3.4154, \"runtime_issue_avoided\": \"windows_rocm_image_finetune_unsupported:path_with_spaces_breaks_hiprtc\"}"
-}
-
-====================================================================================================
-timestamp: 2026-04-16T18:11:51.294457
-row_index: 2
-external_run_id: hf_objdet_000018
-case_name: facebook_detr-resnet-50__coco_detection__finetune_transfer__v0
-run_group_id: 40c300d8-2030-4959-ae80-b7a1488a0dc5
-failure_stage: validation_failed
-error_message: windows_rocm_image_finetune_unsupported:path_with_spaces_breaks_hiprtc
-resolved_config:
-{
-  "db_path": "outputs\\federated.db",
-  "num_clients": 1,
-  "num_rounds": 2,
-  "local_epochs": 1,
-  "batch_size": 4,
-  "learning_rate": 5e-05,
-  "hidden_layers": [
-    16,
-    32,
-    64,
-    128
-  ],
-  "activation": "relu",
-  "dropout": 0.0,
-  "weight_decay": 0.0,
-  "optimizer": "adamw",
-  "distribution_type": "iid",
-  "distribution_param": null,
-  "sample_size": 30000,
-  "sample_frac": 1.0,
-  "client_dropout_rate": 0.0,
-  "task_type": "detection",
-  "distribution_bins": 10,
-  "dataset_args": null,
-  "early_stopping_patience": null,
-  "client_participation_rate": 1.0,
-  "seed": 42,
-  "distribution": "iid",
-  "external_run_id": "hf_objdet_000018",
-  "dataset": "hf",
-  "run_group_id": "40c300d8-2030-4959-ae80-b7a1488a0dc5",
-  "case_name": "facebook_detr-resnet-50__coco_detection__finetune_transfer__v0",
-  "notes": "Generated from scored registry-defined HF model and dataset compatibility; forced CPU to avoid windows_rocm_image_finetune_unsupported:path_with_spaces_breaks_hiprtc",
-  "enabled": true,
-  "measure_system_metrics": true,
-  "mixed_precision": false,
-  "max_samples": 180,
-  "num_workers": 2,
-  "timeout_s": 900,
-  "momentum": 0.0,
-  "save_weights": true,
-  "model_type": "hf_finetune",
-  "hf_task": "image_detection",
-  "modality": "image",
-  "dataset_name": "detection-datasets/coco",
-  "hf_model_id": "facebook/detr-resnet-50",
-  "train_split": "train",
-  "test_split": "validation",
-  "label_column": "objects",
-  "text_column": "text",
-  "image_column": "image",
-  "run_regime": "finetune_transfer",
-  "explainability_enabled": true,
-  "model_role": "task_head",
-  "input_schema": "image_with_boxes",
-  "fit_decision": "selected",
-  "fit_reason": "selected score=3.267 (model=1.500, dataset=1.517, regime=finetune_transfer); forced device=cpu to avoid windows_rocm_image_finetune_unsupported:path_with_spaces_breaks_hiprtc",
-  "realism_score": 3.2671,
-  "domain_alignment": "registry_curated",
-  "dataset_hint": "detection-datasets/coco",
-  "hf_pipeline_tag": "object-detection",
-  "hf_author": "facebook",
-  "hf_url": "https://huggingface.co/facebook/detr-resnet-50",
-  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"object_detection\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"pair_score\": 3.2671, \"runtime_issue_avoided\": \"windows_rocm_image_finetune_unsupported:path_with_spaces_breaks_hiprtc\"}"
-}
-
-====================================================================================================
-timestamp: 2026-04-16T18:11:51.295452
-row_index: 3
-external_run_id: hf_objdet_000019
-case_name: hustvl_yolos-small__coco_detection__finetune_transfer__v0
-run_group_id: 40c300d8-2030-4959-ae80-b7a1488a0dc5
-failure_stage: validation_failed
-error_message: windows_rocm_image_finetune_unsupported:path_with_spaces_breaks_hiprtc
-resolved_config:
-{
-  "db_path": "outputs\\federated.db",
-  "num_clients": 2,
-  "num_rounds": 2,
-  "local_epochs": 1,
-  "batch_size": 2,
-  "learning_rate": 5e-05,
-  "hidden_layers": [
-    16,
-    32,
-    64,
-    128
-  ],
-  "activation": "relu",
-  "dropout": 0.0,
-  "weight_decay": 0.01,
-  "optimizer": "adamw",
-  "distribution_type": "iid",
-  "distribution_param": null,
-  "sample_size": 30000,
-  "sample_frac": 1.0,
-  "client_dropout_rate": 0.0,
-  "task_type": "detection",
-  "distribution_bins": 10,
-  "dataset_args": null,
-  "early_stopping_patience": null,
-  "client_participation_rate": 1.0,
-  "seed": 42,
-  "distribution": "iid",
-  "external_run_id": "hf_objdet_000019",
-  "dataset": "hf",
-  "run_group_id": "40c300d8-2030-4959-ae80-b7a1488a0dc5",
-  "case_name": "hustvl_yolos-small__coco_detection__finetune_transfer__v0",
-  "notes": "Generated from scored registry-defined HF model and dataset compatibility; forced CPU to avoid windows_rocm_image_finetune_unsupported:path_with_spaces_breaks_hiprtc",
-  "enabled": true,
-  "measure_system_metrics": true,
-  "mixed_precision": false,
-  "max_samples": 192,
-  "num_workers": 2,
-  "timeout_s": 900,
-  "momentum": 0.0,
-  "save_weights": true,
-  "model_type": "hf_finetune",
-  "hf_task": "image_detection",
-  "modality": "image",
-  "dataset_name": "detection-datasets/coco",
-  "hf_model_id": "hustvl/yolos-small",
-  "train_split": "train",
-  "test_split": "validation",
-  "label_column": "objects",
-  "text_column": "text",
-  "image_column": "image",
-  "run_regime": "finetune_transfer",
-  "explainability_enabled": true,
-  "model_role": "task_head",
-  "input_schema": "image_with_boxes",
-  "fit_decision": "selected",
-  "fit_reason": "selected score=3.267 (model=1.500, dataset=1.517, regime=finetune_transfer); forced device=cpu to avoid windows_rocm_image_finetune_unsupported:path_with_spaces_breaks_hiprtc",
-  "realism_score": 3.2671,
-  "domain_alignment": "registry_curated",
-  "dataset_hint": "detection-datasets/coco",
-  "hf_pipeline_tag": "object-detection",
-  "hf_author": "hustvl",
-  "hf_url": "https://huggingface.co/hustvl/yolos-small",
-  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"object_detection\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"pair_score\": 3.2671, \"runtime_issue_avoided\": \"windows_rocm_image_finetune_unsupported:path_with_spaces_breaks_hiprtc\"}"
-}
-
-====================================================================================================
-timestamp: 2026-04-16T18:11:51.296451
-row_index: 4
-external_run_id: hf_imgseg_000020
-case_name: nvidia_segformer-b0-finetuned-ade-512-512__scene_parse_150__finetune_transfer__v0
-run_group_id: 40c300d8-2030-4959-ae80-b7a1488a0dc5
-failure_stage: validation_failed
-error_message: windows_rocm_image_finetune_unsupported:path_with_spaces_breaks_hiprtc
-resolved_config:
-{
-  "db_path": "outputs\\federated.db",
-  "num_clients": 1,
-  "num_rounds": 1,
-  "local_epochs": 1,
-  "batch_size": 32,
-  "learning_rate": 0.0001,
-  "hidden_layers": [
-    16,
-    32,
-    64,
-    128
-  ],
-  "activation": "relu",
-  "dropout": 0.0,
-  "weight_decay": 0.0,
-  "optimizer": "adamw",
-  "distribution_type": "iid",
-  "distribution_param": null,
-  "sample_size": 30000,
-  "sample_frac": 1.0,
-  "client_dropout_rate": 0.0,
-  "task_type": "segmentation",
-  "distribution_bins": 10,
-  "dataset_args": null,
-  "early_stopping_patience": null,
-  "client_participation_rate": 1.0,
-  "seed": 42,
-  "distribution": "iid",
-  "external_run_id": "hf_imgseg_000020",
-  "dataset": "hf",
-  "run_group_id": "40c300d8-2030-4959-ae80-b7a1488a0dc5",
-  "case_name": "nvidia_segformer-b0-finetuned-ade-512-512__scene_parse_150__finetune_transfer__v0",
-  "notes": "Generated from scored registry-defined HF model and dataset compatibility; forced CPU to avoid windows_rocm_image_finetune_unsupported:path_with_spaces_breaks_hiprtc",
-  "enabled": true,
-  "measure_system_metrics": true,
-  "mixed_precision": false,
-  "max_samples": 177,
-  "num_workers": 2,
-  "timeout_s": 900,
-  "momentum": 0.0,
-  "save_weights": true,
-  "model_type": "hf_finetune",
-  "hf_task": "image_segmentation",
-  "modality": "image",
-  "dataset_name": "zhoubolei/scene_parse_150",
-  "hf_model_id": "nvidia/segformer-b0-finetuned-ade-512-512",
-  "train_split": "train",
-  "test_split": "validation",
-  "label_column": "annotation",
-  "mask_column": "annotation",
-  "text_column": "text",
-  "image_column": "image",
-  "run_regime": "finetune_transfer",
-  "explainability_enabled": true,
-  "model_role": "task_head",
-  "input_schema": "image_mask_pair",
-  "fit_decision": "selected",
-  "fit_reason": "selected score=3.282 (model=1.500, dataset=1.532, regime=finetune_transfer); forced device=cpu to avoid windows_rocm_image_finetune_unsupported:path_with_spaces_breaks_hiprtc",
-  "realism_score": 3.2821,
-  "domain_alignment": "registry_curated",
-  "dataset_hint": "zhoubolei/scene_parse_150",
-  "hf_pipeline_tag": "image-segmentation",
-  "hf_author": "nvidia",
-  "hf_url": "https://huggingface.co/nvidia/segformer-b0-finetuned-ade-512-512",
-  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"image_segmentation\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"pair_score\": 3.2821, \"runtime_issue_avoided\": \"windows_rocm_image_finetune_unsupported:path_with_spaces_breaks_hiprtc\"}"
-}
-
-====================================================================================================
-timestamp: 2026-04-16T18:58:11.386808
-row_index: 12
-external_run_id: hf_textgen_000013
-case_name: gpt2__wikitext2_lm__finetune_transfer__v0
-run_group_id: 44bcdb02-49f8-465a-8f4c-67523431b1c8
-failure_stage: runtime_exception
-error_message: Python int too large to convert to SQLite INTEGER
-resolved_config:
-{
-  "db_path": "outputs\\federated.db",
-  "num_clients": 1,
   "num_rounds": 2,
   "local_epochs": 1,
   "batch_size": 8,
-  "learning_rate": 0.0005,
-  "hidden_layers": [
-    16,
-    32,
-    64,
-    128
-  ],
-  "activation": "relu",
-  "dropout": 0.0,
-  "weight_decay": 0.0001,
-  "optimizer": "rmsprop",
-  "distribution_type": "iid",
-  "distribution_param": null,
-  "sample_size": 30000,
-  "sample_frac": 1.0,
-  "client_dropout_rate": 0.0,
-  "task_type": "classification",
-  "distribution_bins": 10,
-  "dataset_args": null,
-  "early_stopping_patience": null,
-  "client_participation_rate": 1.0,
-  "seed": 42,
-  "distribution": "iid",
-  "external_run_id": "hf_textgen_000013",
-  "dataset": "hf",
-  "run_group_id": "44bcdb02-49f8-465a-8f4c-67523431b1c8",
-  "case_name": "gpt2__wikitext2_lm__finetune_transfer__v0",
-  "notes": "Generated from scored registry-defined HF model and dataset compatibility",
-  "enabled": true,
-  "measure_system_metrics": true,
-  "mixed_precision": false,
-  "max_samples": 136,
-  "max_length": 256,
-  "num_workers": 2,
-  "timeout_s": 900,
-  "momentum": 0.0,
-  "save_weights": true,
-  "model_type": "hf_finetune",
-  "hf_task": "causal_lm_generation",
-  "modality": "text",
-  "dataset_name": "wikitext",
-  "dataset_config": "wikitext-2-raw-v1",
-  "hf_model_id": "gpt2",
-  "train_split": "train",
-  "test_split": "validation",
-  "label_column": "text",
-  "text_column": "text",
-  "task_tag": "language-modeling",
-  "run_regime": "finetune_transfer",
-  "explainability_enabled": true,
-  "explainability_method": "integrated_gradients",
-  "explainability_target": "generated_token",
-  "model_role": "task_head",
-  "input_schema": "single_text",
-  "fit_decision": "selected",
-  "fit_reason": "selected score=3.296 (model=1.500, dataset=1.546, regime=finetune_transfer)",
-  "realism_score": 3.296,
-  "domain_alignment": "registry_curated",
-  "dataset_hint": "wikitext",
-  "hf_pipeline_tag": "text-generation",
-  "hf_url": "https://huggingface.co/gpt2",
-  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"text_generation\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"pair_score\": 3.296}"
-}
-traceback:
-Traceback (most recent call last):
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 421, in run_manifest
-    summary = gen.run()
-              ^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 966, in run
-    writer.write_measurements(
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\storage\writer.py", line 219, in write_measurements
-    self._ins("measurements", row)
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\storage\writer.py", line 39, in _ins
-    self.conn.execute(sql, [row[k] for k in keys])
-OverflowError: Python int too large to convert to SQLite INTEGER
-
-====================================================================================================
-timestamp: 2026-04-17T16:36:12.377638
-row_index: 11
-external_run_id: hf_textgen_000012
-case_name: distilgpt2__wikitext2_lm__finetune_transfer__v0
-run_group_id: 9fa0091c-e975-4286-b033-a3f500c140c1
-failure_stage: runtime_exception
-error_message: Python int too large to convert to SQLite INTEGER
-resolved_config:
-{
-  "db_path": "outputs\\federated.db",
-  "num_clients": 1,
-  "num_rounds": 1,
-  "local_epochs": 1,
-  "batch_size": 32,
-  "learning_rate": 0.0001,
-  "hidden_layers": [
-    16,
-    32,
-    64,
-    128
-  ],
-  "activation": "relu",
-  "dropout": 0.0,
-  "weight_decay": 0.0001,
-  "optimizer": "rmsprop",
-  "distribution_type": "iid",
-  "distribution_param": null,
-  "sample_size": 30000,
-  "sample_frac": 1.0,
-  "client_dropout_rate": 0.0,
-  "task_type": "classification",
-  "distribution_bins": 10,
-  "dataset_args": null,
-  "early_stopping_patience": null,
-  "enable_perturbation_metrics": true,
-  "perturbation_sample_count": 5,
-  "perturbation_candidate_units": 12,
-  "perturbation_trust_trials": 5,
-  "perturbation_target_units": 2,
-  "perturbation_random_strength": 0.02,
-  "client_participation_rate": 1.0,
-  "seed": 42,
-  "distribution": "iid",
-  "external_run_id": "hf_textgen_000012",
-  "dataset": "hf",
-  "run_group_id": "9fa0091c-e975-4286-b033-a3f500c140c1",
-  "case_name": "distilgpt2__wikitext2_lm__finetune_transfer__v0",
-  "notes": "Generated from scored registry-defined HF model and dataset compatibility",
-  "enabled": true,
-  "measure_system_metrics": true,
-  "mixed_precision": false,
-  "max_samples": 1000,
-  "max_length": 256,
-  "num_workers": 2,
-  "timeout_s": 900,
-  "momentum": 0.9,
-  "save_weights": true,
-  "model_type": "hf_finetune",
-  "hf_task": "causal_lm_generation",
-  "modality": "text",
-  "dataset_name": "wikitext",
-  "dataset_config": "wikitext-2-raw-v1",
-  "hf_model_id": "distilgpt2",
-  "train_split": "train",
-  "test_split": "validation",
-  "label_column": "text",
-  "text_column": "text",
-  "task_tag": "language-modeling",
-  "run_regime": "finetune_transfer",
-  "explainability_enabled": true,
-  "explainability_method": "integrated_gradients",
-  "explainability_target": "generated_token",
-  "model_role": "task_head",
-  "input_schema": "single_text",
-  "fit_decision": "selected",
-  "fit_reason": "selected score=3.652 (model=1.500, dataset=1.902, regime=finetune_transfer)",
-  "realism_score": 3.6516,
-  "domain_alignment": "registry_curated",
-  "dataset_hint": "wikitext",
-  "hf_pipeline_tag": "text-generation",
-  "hf_url": "https://huggingface.co/distilgpt2",
-  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"text_generation\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"pair_score\": 3.6516}"
-}
-traceback:
-Traceback (most recent call last):
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 421, in run_manifest
-    skip_reason = str(summary.get("skip_reason") or "run skipped")
-          ^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 1009, in run
-    "extra_metric": float(outcome.extra_metric) if outcome.extra_metric == outcome.extra_metric else None,
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\storage\writer.py", line 262, in write_measurements
-    self._ins("measurements", row)
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\storage\writer.py", line 39, in _ins
-    self.conn.execute(sql, [row[k] for k in keys])
-OverflowError: Python int too large to convert to SQLite INTEGER
-
-====================================================================================================
-timestamp: 2026-04-17T17:27:10.937363
-row_index: 22
-external_run_id: hf_text2text_000023
-case_name: google_flan-t5-small__wikitext2_text2text__finetune_transfer__v0
-run_group_id: 5b67e8b8-0b5e-4c46-b006-b07e16fb10ae
-failure_stage: runtime_exception
-error_message: Could not resolve target column for task 'seq2seq_generation'. Provide dataset_args.column_mapping. Available columns: ['text']
-resolved_config:
-{
-  "db_path": "outputs\\federated.db",
-  "num_clients": 1,
-  "num_rounds": 1,
-  "local_epochs": 1,
-  "batch_size": 4,
-  "learning_rate": 0.0001,
-  "hidden_layers": [
-    16,
-    32,
-    64,
-    128
-  ],
-  "activation": "relu",
-  "dropout": 0.0,
-  "weight_decay": 0.001,
-  "optimizer": "rmsprop",
-  "distribution_type": "iid",
-  "distribution_param": null,
-  "sample_size": 128,
-  "sample_frac": null,
-  "client_dropout_rate": 0.0,
-  "task_type": "classification",
-  "distribution_bins": 10,
-  "dataset_args": null,
-  "early_stopping_patience": null,
-  "enable_perturbation_metrics": true,
-  "perturbation_sample_count": 5,
-  "perturbation_candidate_units": 12,
-  "perturbation_trust_trials": 5,
-  "perturbation_target_units": 2,
-  "perturbation_random_strength": 0.02,
-  "client_participation_rate": 1.0,
-  "seed": 42,
-  "distribution": "iid",
-  "external_run_id": "hf_text2text_000023",
-  "dataset": "hf",
-  "run_group_id": "5b67e8b8-0b5e-4c46-b006-b07e16fb10ae",
-  "case_name": "google_flan-t5-small__wikitext2_text2text__finetune_transfer__v0",
-  "notes": "Generated from scored registry-defined HF model and dataset compatibility",
-  "enabled": true,
-  "measure_system_metrics": true,
-  "mixed_precision": false,
-  "max_samples": 70,
-  "max_length": 256,
-  "num_workers": 2,
-  "timeout_s": 900,
-  "momentum": 0.0,
-  "save_weights": true,
-  "model_type": "hf_finetune",
-  "hf_task": "seq2seq_generation",
-  "modality": "text",
-  "dataset_name": "wikitext",
-  "dataset_config": "wikitext-2-raw-v1",
-  "hf_model_id": "google/flan-t5-small",
-  "train_split": "train",
-  "test_split": "validation",
-  "label_column": "text",
-  "text_column": "text",
-  "task_tag": "language-modeling",
-  "run_regime": "finetune_transfer",
-  "explainability_enabled": true,
-  "explainability_method": "integrated_gradients",
-  "explainability_target": "generated_token",
-  "model_role": "task_head",
-  "input_schema": "single_text",
-  "fit_decision": "selected",
-  "fit_reason": "selected score=3.396 (model=1.600, dataset=1.546, regime=finetune_transfer)",
-  "realism_score": 3.396,
-  "domain_alignment": "registry_curated",
-  "dataset_hint": "wikitext",
-  "hf_pipeline_tag": "text2text-generation",
-  "hf_author": "google",
-  "hf_url": "https://huggingface.co/google/flan-t5-small",
-  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"text2text_generation\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"pair_score\": 3.396, \"variant_index\": 0, \"split_variant_index\": 0}"
-}
-traceback:
-Traceback (most recent call last):
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 412, in run_manifest
-    gen = FederatedDataGenerator(
-          ^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 198, in __init__
-    train, test, meta = load_dataset(self.dataset, **loader_dataset_args)
-                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
-    return _apply_preprocessors(train, test, meta, preprocessors)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
-    train, test, meta = fn(train, test, meta, **args)
-                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 228, in preprocess_hf
-    out = preprocess_hf_text_seq2seq_generation(
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_generation.py", line 302, in preprocess_hf_text_seq2seq_generation
-    resolved = resolve_generation_columns(ds_train, column_mapping=column_mapping, hf_task="seq2seq_generation")
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_generation.py", line 81, in resolve_generation_columns
-    raise ValueError(
-ValueError: Could not resolve target column for task 'seq2seq_generation'. Provide dataset_args.column_mapping. Available columns: ['text']
-
-====================================================================================================
-timestamp: 2026-04-17T17:27:19.802767
-row_index: 23
-external_run_id: hf_text2text_000024
-case_name: google_flan-t5-small__wikitext2_text2text__inference_only__v0
-run_group_id: 5b67e8b8-0b5e-4c46-b006-b07e16fb10ae
-failure_stage: runtime_exception
-error_message: Could not resolve target column for task 'seq2seq_generation'. Provide dataset_args.column_mapping. Available columns: ['text']
-resolved_config:
-{
-  "db_path": "outputs\\federated.db",
-  "num_clients": 1,
-  "num_rounds": 1,
-  "local_epochs": 1,
-  "batch_size": 32,
-  "learning_rate": 3e-05,
-  "hidden_layers": [
-    16,
-    32,
-    64,
-    128
-  ],
-  "activation": "relu",
-  "dropout": 0.0,
-  "weight_decay": 0.05,
-  "optimizer": "adamw",
-  "distribution_type": "iid",
-  "distribution_param": null,
-  "sample_size": 128,
-  "sample_frac": null,
-  "client_dropout_rate": 0.0,
-  "task_type": "classification",
-  "distribution_bins": 10,
-  "dataset_args": null,
-  "early_stopping_patience": null,
-  "enable_perturbation_metrics": true,
-  "perturbation_sample_count": 5,
-  "perturbation_candidate_units": 12,
-  "perturbation_trust_trials": 5,
-  "perturbation_target_units": 2,
-  "perturbation_random_strength": 0.02,
-  "client_participation_rate": 1.0,
-  "seed": 42,
-  "distribution": "iid",
-  "external_run_id": "hf_text2text_000024",
-  "dataset": "hf",
-  "run_group_id": "5b67e8b8-0b5e-4c46-b006-b07e16fb10ae",
-  "case_name": "google_flan-t5-small__wikitext2_text2text__inference_only__v0",
-  "notes": "Generated from scored registry-defined HF model and dataset compatibility",
-  "enabled": true,
-  "measure_system_metrics": true,
-  "mixed_precision": false,
-  "max_samples": 78,
-  "max_length": 256,
-  "num_workers": 2,
-  "timeout_s": 900,
-  "momentum": 0.0,
-  "save_weights": true,
-  "model_type": "hf",
-  "hf_task": "seq2seq_generation",
-  "modality": "text",
-  "dataset_name": "wikitext",
-  "dataset_config": "wikitext-2-raw-v1",
-  "hf_model_id": "google/flan-t5-small",
-  "train_split": "train",
-  "test_split": "validation",
-  "label_column": "text",
-  "text_column": "text",
-  "task_tag": "language-modeling",
-  "run_regime": "inference_only",
-  "explainability_enabled": true,
-  "explainability_method": "integrated_gradients",
-  "explainability_target": "generated_token",
-  "model_role": "service",
-  "input_schema": "single_text",
-  "fit_decision": "selected",
-  "fit_reason": "selected score=3.246 (model=1.600, dataset=1.546, regime=inference_only)",
-  "realism_score": 3.246,
-  "domain_alignment": "registry_curated",
-  "dataset_hint": "wikitext",
-  "hf_pipeline_tag": "text2text-generation",
-  "hf_author": "google",
-  "hf_url": "https://huggingface.co/google/flan-t5-small",
-  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"text2text_generation\", \"run_regime\": \"inference_only\", \"audit_json_used\": false, \"pair_score\": 3.246, \"variant_index\": 0, \"split_variant_index\": 0}"
-}
-traceback:
-Traceback (most recent call last):
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 412, in run_manifest
-    gen = FederatedDataGenerator(
-          ^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 198, in __init__
-    train, test, meta = load_dataset(self.dataset, **loader_dataset_args)
-                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
-    return _apply_preprocessors(train, test, meta, preprocessors)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
-    train, test, meta = fn(train, test, meta, **args)
-                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 228, in preprocess_hf
-    out = preprocess_hf_text_seq2seq_generation(
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_generation.py", line 302, in preprocess_hf_text_seq2seq_generation
-    resolved = resolve_generation_columns(ds_train, column_mapping=column_mapping, hf_task="seq2seq_generation")
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_generation.py", line 81, in resolve_generation_columns
-    raise ValueError(
-ValueError: Could not resolve target column for task 'seq2seq_generation'. Provide dataset_args.column_mapping. Available columns: ['text']
-
-====================================================================================================
-timestamp: 2026-04-17T17:40:56.692405
-row_index: 36
-external_run_id: hf_imgcap_000037
-case_name: Salesforce_blip-image-captioning-base__flickr8k_captioning__inference_only__v0
-run_group_id: 5b67e8b8-0b5e-4c46-b006-b07e16fb10ae
-failure_stage: runtime_exception
-error_message: HF multimodal modality requires text_column 'caption' to exist in dataset 'jxie/flickr8k'. Available columns: ['caption_0', 'caption_1', 'caption_2', 'caption_3', 'caption_4', 'image']
-resolved_config:
-{
-  "db_path": "outputs\\federated.db",
-  "num_clients": 1,
-  "num_rounds": 1,
-  "local_epochs": 1,
-  "batch_size": 4,
-  "learning_rate": 0.005,
-  "hidden_layers": [
-    16,
-    32,
-    64,
-    128
-  ],
-  "activation": "relu",
-  "dropout": 0.0,
-  "weight_decay": 0.0001,
-  "optimizer": "rmsprop",
-  "distribution_type": "iid",
-  "distribution_param": null,
-  "sample_size": 128,
-  "sample_frac": null,
-  "client_dropout_rate": 0.0,
-  "task_type": "generation",
-  "distribution_bins": 10,
-  "dataset_args": null,
-  "early_stopping_patience": null,
-  "enable_perturbation_metrics": true,
-  "perturbation_sample_count": 5,
-  "perturbation_candidate_units": 12,
-  "perturbation_trust_trials": 5,
-  "perturbation_target_units": 2,
-  "perturbation_random_strength": 0.02,
-  "client_participation_rate": 1.0,
-  "seed": 42,
-  "distribution": "iid",
-  "external_run_id": "hf_imgcap_000037",
-  "dataset": "hf",
-  "run_group_id": "5b67e8b8-0b5e-4c46-b006-b07e16fb10ae",
-  "case_name": "Salesforce_blip-image-captioning-base__flickr8k_captioning__inference_only__v0",
-  "notes": "Generated from scored registry-defined HF model and dataset compatibility",
-  "enabled": true,
-  "measure_system_metrics": true,
-  "mixed_precision": false,
-  "max_samples": 312,
-  "max_length": 64,
-  "num_workers": 2,
-  "timeout_s": 900,
-  "momentum": 0.9,
-  "save_weights": true,
-  "model_type": "hf",
-  "hf_task": "image_captioning",
-  "modality": "multimodal",
-  "dataset_name": "jxie/flickr8k",
-  "hf_model_id": "Salesforce/blip-image-captioning-base",
-  "train_split": "train",
-  "test_split": "test",
-  "label_column": "caption",
-  "text_column": "caption",
-  "image_column": "image",
-  "task_tag": "captioning",
-  "run_regime": "inference_only",
-  "explainability_enabled": true,
-  "model_role": "service",
-  "input_schema": "image_text_pair",
-  "fit_decision": "selected",
-  "fit_reason": "selected score=2.869 (model=1.300, dataset=1.469, regime=inference_only); strict multimodal validation passed",
-  "realism_score": 2.8691,
-  "domain_alignment": "registry_curated",
-  "dataset_hint": "jxie/flickr8k",
-  "hf_pipeline_tag": "image-to-text",
-  "hf_author": "Salesforce",
-  "hf_url": "https://huggingface.co/Salesforce/blip-image-captioning-base",
-  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"image_captioning\", \"run_regime\": \"inference_only\", \"audit_json_used\": false, \"pair_score\": 2.8691, \"variant_index\": 0, \"split_variant_index\": 0}"
-}
-traceback:
-Traceback (most recent call last):
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 412, in run_manifest
-    gen = FederatedDataGenerator(
-          ^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 198, in __init__
-    train, test, meta = load_dataset(self.dataset, **loader_dataset_args)
-                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 99, in load_dataset
-    train, test, meta = load_huggingface_source(**kwargs)
-                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\sources\huggingface.py", line 187, in load_huggingface_source
-    raise ValueError(
-ValueError: HF multimodal modality requires text_column 'caption' to exist in dataset 'jxie/flickr8k'. Available columns: ['caption_0', 'caption_1', 'caption_2', 'caption_3', 'caption_4', 'image']
-
-====================================================================================================
-timestamp: 2026-04-17T17:41:09.799297
-row_index: 37
-external_run_id: hf_imgcap_000038
-case_name: Salesforce_blip-image-captioning-base__flickr8k_captioning__inference_only__v1
-run_group_id: 5b67e8b8-0b5e-4c46-b006-b07e16fb10ae
-failure_stage: runtime_exception
-error_message: HF multimodal modality requires text_column 'caption' to exist in dataset 'jxie/flickr8k'. Available columns: ['caption_0', 'caption_1', 'caption_2', 'caption_3', 'caption_4', 'image']
-resolved_config:
-{
-  "db_path": "outputs\\federated.db",
-  "num_clients": 1,
-  "num_rounds": 1,
-  "local_epochs": 1,
-  "batch_size": 4,
   "learning_rate": 0.001,
   "hidden_layers": [
     16,
@@ -1174,583 +270,116 @@ resolved_config:
   "activation": "relu",
   "dropout": 0.0,
   "weight_decay": 0.0,
-  "optimizer": "rmsprop",
-  "distribution_type": "iid",
-  "distribution_param": null,
-  "sample_size": 128,
-  "sample_frac": null,
-  "client_dropout_rate": 0.0,
-  "task_type": "generation",
-  "distribution_bins": 10,
-  "dataset_args": null,
-  "early_stopping_patience": null,
-  "enable_perturbation_metrics": true,
-  "perturbation_sample_count": 5,
-  "perturbation_candidate_units": 12,
-  "perturbation_trust_trials": 5,
-  "perturbation_target_units": 2,
-  "perturbation_random_strength": 0.02,
-  "client_participation_rate": 1.0,
-  "seed": 42,
-  "distribution": "iid",
-  "external_run_id": "hf_imgcap_000038",
-  "dataset": "hf",
-  "run_group_id": "5b67e8b8-0b5e-4c46-b006-b07e16fb10ae",
-  "case_name": "Salesforce_blip-image-captioning-base__flickr8k_captioning__inference_only__v1",
-  "notes": "Generated from scored registry-defined HF model and dataset compatibility",
-  "enabled": true,
-  "measure_system_metrics": true,
-  "mixed_precision": false,
-  "max_samples": 304,
-  "max_length": 64,
-  "num_workers": 2,
-  "timeout_s": 900,
-  "momentum": 0.0,
-  "save_weights": true,
-  "model_type": "hf",
-  "hf_task": "image_captioning",
-  "modality": "multimodal",
-  "dataset_name": "jxie/flickr8k",
-  "hf_model_id": "Salesforce/blip-image-captioning-base",
-  "train_split": "train[:80%]",
-  "test_split": "train[80%:]",
-  "label_column": "caption",
-  "text_column": "caption",
-  "image_column": "image",
-  "task_tag": "captioning",
-  "run_regime": "inference_only",
-  "explainability_enabled": true,
-  "model_role": "service",
-  "input_schema": "image_text_pair",
-  "fit_decision": "selected",
-  "fit_reason": "selected score=2.869 (model=1.300, dataset=1.469, regime=inference_only); strict multimodal validation passed",
-  "realism_score": 2.8691,
-  "domain_alignment": "registry_curated",
-  "dataset_hint": "jxie/flickr8k",
-  "hf_pipeline_tag": "image-to-text",
-  "hf_author": "Salesforce",
-  "hf_url": "https://huggingface.co/Salesforce/blip-image-captioning-base",
-  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"image_captioning\", \"run_regime\": \"inference_only\", \"audit_json_used\": false, \"pair_score\": 2.8691, \"variant_index\": 1, \"split_variant_index\": 1}"
-}
-traceback:
-Traceback (most recent call last):
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 412, in run_manifest
-    gen = FederatedDataGenerator(
-          ^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 198, in __init__
-    train, test, meta = load_dataset(self.dataset, **loader_dataset_args)
-                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 99, in load_dataset
-    train, test, meta = load_huggingface_source(**kwargs)
-                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\sources\huggingface.py", line 187, in load_huggingface_source
-    raise ValueError(
-ValueError: HF multimodal modality requires text_column 'caption' to exist in dataset 'jxie/flickr8k'. Available columns: ['caption_0', 'caption_1', 'caption_2', 'caption_3', 'caption_4', 'image']
-
-====================================================================================================
-timestamp: 2026-04-17T17:41:23.248087
-row_index: 38
-external_run_id: hf_imgcap_000039
-case_name: Salesforce_blip-image-captioning-base__flickr8k_captioning__inference_only__v2
-run_group_id: 5b67e8b8-0b5e-4c46-b006-b07e16fb10ae
-failure_stage: runtime_exception
-error_message: HF multimodal modality requires text_column 'caption' to exist in dataset 'jxie/flickr8k'. Available columns: ['caption_0', 'caption_1', 'caption_2', 'caption_3', 'caption_4', 'image']
-resolved_config:
-{
-  "db_path": "outputs\\federated.db",
-  "num_clients": 1,
-  "num_rounds": 1,
-  "local_epochs": 1,
-  "batch_size": 16,
-  "learning_rate": 0.005,
-  "hidden_layers": [
-    16,
-    32,
-    64,
-    128
-  ],
-  "activation": "relu",
-  "dropout": 0.0,
-  "weight_decay": 0.0001,
-  "optimizer": "rmsprop",
-  "distribution_type": "iid",
-  "distribution_param": null,
-  "sample_size": 128,
-  "sample_frac": null,
-  "client_dropout_rate": 0.0,
-  "task_type": "generation",
-  "distribution_bins": 10,
-  "dataset_args": null,
-  "early_stopping_patience": null,
-  "enable_perturbation_metrics": true,
-  "perturbation_sample_count": 5,
-  "perturbation_candidate_units": 12,
-  "perturbation_trust_trials": 5,
-  "perturbation_target_units": 2,
-  "perturbation_random_strength": 0.02,
-  "client_participation_rate": 1.0,
-  "seed": 42,
-  "distribution": "iid",
-  "external_run_id": "hf_imgcap_000039",
-  "dataset": "hf",
-  "run_group_id": "5b67e8b8-0b5e-4c46-b006-b07e16fb10ae",
-  "case_name": "Salesforce_blip-image-captioning-base__flickr8k_captioning__inference_only__v2",
-  "notes": "Generated from scored registry-defined HF model and dataset compatibility",
-  "enabled": true,
-  "measure_system_metrics": true,
-  "mixed_precision": false,
-  "max_samples": 297,
-  "max_length": 64,
-  "num_workers": 2,
-  "timeout_s": 900,
-  "momentum": 0.9,
-  "save_weights": true,
-  "model_type": "hf",
-  "hf_task": "image_captioning",
-  "modality": "multimodal",
-  "dataset_name": "jxie/flickr8k",
-  "hf_model_id": "Salesforce/blip-image-captioning-base",
-  "train_split": "train[:90%]",
-  "test_split": "train[90%:]",
-  "label_column": "caption",
-  "text_column": "caption",
-  "image_column": "image",
-  "task_tag": "captioning",
-  "run_regime": "inference_only",
-  "explainability_enabled": true,
-  "model_role": "service",
-  "input_schema": "image_text_pair",
-  "fit_decision": "selected",
-  "fit_reason": "selected score=2.869 (model=1.300, dataset=1.469, regime=inference_only); strict multimodal validation passed",
-  "realism_score": 2.8691,
-  "domain_alignment": "registry_curated",
-  "dataset_hint": "jxie/flickr8k",
-  "hf_pipeline_tag": "image-to-text",
-  "hf_author": "Salesforce",
-  "hf_url": "https://huggingface.co/Salesforce/blip-image-captioning-base",
-  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"image_captioning\", \"run_regime\": \"inference_only\", \"audit_json_used\": false, \"pair_score\": 2.8691, \"variant_index\": 2, \"split_variant_index\": 2}"
-}
-traceback:
-Traceback (most recent call last):
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 412, in run_manifest
-    gen = FederatedDataGenerator(
-          ^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 198, in __init__
-    train, test, meta = load_dataset(self.dataset, **loader_dataset_args)
-                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 99, in load_dataset
-    train, test, meta = load_huggingface_source(**kwargs)
-                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\sources\huggingface.py", line 187, in load_huggingface_source
-    raise ValueError(
-ValueError: HF multimodal modality requires text_column 'caption' to exist in dataset 'jxie/flickr8k'. Available columns: ['caption_0', 'caption_1', 'caption_2', 'caption_3', 'caption_4', 'image']
-
-====================================================================================================
-timestamp: 2026-04-17T17:41:36.452930
-row_index: 39
-external_run_id: hf_imgcap_000040
-case_name: Salesforce_blip-image-captioning-base__flickr8k_captioning__inference_only__v3
-run_group_id: 5b67e8b8-0b5e-4c46-b006-b07e16fb10ae
-failure_stage: runtime_exception
-error_message: HF multimodal modality requires text_column 'caption' to exist in dataset 'jxie/flickr8k'. Available columns: ['caption_0', 'caption_1', 'caption_2', 'caption_3', 'caption_4', 'image']
-resolved_config:
-{
-  "db_path": "outputs\\federated.db",
-  "num_clients": 1,
-  "num_rounds": 1,
-  "local_epochs": 1,
-  "batch_size": 8,
-  "learning_rate": 2e-05,
-  "hidden_layers": [
-    16,
-    32,
-    64,
-    128
-  ],
-  "activation": "relu",
-  "dropout": 0.0,
-  "weight_decay": 0.0,
-  "optimizer": "adamw",
-  "distribution_type": "iid",
-  "distribution_param": null,
-  "sample_size": 128,
-  "sample_frac": null,
-  "client_dropout_rate": 0.0,
-  "task_type": "generation",
-  "distribution_bins": 10,
-  "dataset_args": null,
-  "early_stopping_patience": null,
-  "enable_perturbation_metrics": true,
-  "perturbation_sample_count": 5,
-  "perturbation_candidate_units": 12,
-  "perturbation_trust_trials": 5,
-  "perturbation_target_units": 2,
-  "perturbation_random_strength": 0.02,
-  "client_participation_rate": 1.0,
-  "seed": 42,
-  "distribution": "iid",
-  "external_run_id": "hf_imgcap_000040",
-  "dataset": "hf",
-  "run_group_id": "5b67e8b8-0b5e-4c46-b006-b07e16fb10ae",
-  "case_name": "Salesforce_blip-image-captioning-base__flickr8k_captioning__inference_only__v3",
-  "notes": "Generated from scored registry-defined HF model and dataset compatibility",
-  "enabled": true,
-  "measure_system_metrics": true,
-  "mixed_precision": false,
-  "max_samples": 281,
-  "max_length": 64,
-  "num_workers": 2,
-  "timeout_s": 900,
-  "momentum": 0.0,
-  "save_weights": true,
-  "model_type": "hf",
-  "hf_task": "image_captioning",
-  "modality": "multimodal",
-  "dataset_name": "jxie/flickr8k",
-  "hf_model_id": "Salesforce/blip-image-captioning-base",
-  "train_split": "train",
-  "test_split": "test",
-  "label_column": "caption",
-  "text_column": "caption",
-  "image_column": "image",
-  "task_tag": "captioning",
-  "run_regime": "inference_only",
-  "explainability_enabled": true,
-  "model_role": "service",
-  "input_schema": "image_text_pair",
-  "fit_decision": "selected",
-  "fit_reason": "selected score=2.869 (model=1.300, dataset=1.469, regime=inference_only); strict multimodal validation passed",
-  "realism_score": 2.8691,
-  "domain_alignment": "registry_curated",
-  "dataset_hint": "jxie/flickr8k",
-  "hf_pipeline_tag": "image-to-text",
-  "hf_author": "Salesforce",
-  "hf_url": "https://huggingface.co/Salesforce/blip-image-captioning-base",
-  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"image_captioning\", \"run_regime\": \"inference_only\", \"audit_json_used\": false, \"pair_score\": 2.8691, \"variant_index\": 3, \"split_variant_index\": 0}"
-}
-traceback:
-Traceback (most recent call last):
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 412, in run_manifest
-    gen = FederatedDataGenerator(
-          ^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 198, in __init__
-    train, test, meta = load_dataset(self.dataset, **loader_dataset_args)
-                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 99, in load_dataset
-    train, test, meta = load_huggingface_source(**kwargs)
-                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\sources\huggingface.py", line 187, in load_huggingface_source
-    raise ValueError(
-ValueError: HF multimodal modality requires text_column 'caption' to exist in dataset 'jxie/flickr8k'. Available columns: ['caption_0', 'caption_1', 'caption_2', 'caption_3', 'caption_4', 'image']
-
-====================================================================================================
-timestamp: 2026-04-17T17:41:49.896085
-row_index: 40
-external_run_id: hf_imgtxtret_000041
-case_name: openai_clip-vit-base-patch32__flickr8k_retrieval__inference_only__v0
-run_group_id: 5b67e8b8-0b5e-4c46-b006-b07e16fb10ae
-failure_stage: runtime_exception
-error_message: HF multimodal modality requires text_column 'caption' to exist in dataset 'jxie/flickr8k'. Available columns: ['caption_0', 'caption_1', 'caption_2', 'caption_3', 'caption_4', 'image']
-resolved_config:
-{
-  "db_path": "outputs\\federated.db",
-  "num_clients": 1,
-  "num_rounds": 1,
-  "local_epochs": 1,
-  "batch_size": 8,
-  "learning_rate": 0.0001,
-  "hidden_layers": [
-    16,
-    32,
-    64,
-    128
-  ],
-  "activation": "relu",
-  "dropout": 0.0,
-  "weight_decay": 0.001,
-  "optimizer": "rmsprop",
-  "distribution_type": "iid",
-  "distribution_param": null,
-  "sample_size": 128,
-  "sample_frac": null,
-  "client_dropout_rate": 0.0,
-  "task_type": "retrieval",
-  "distribution_bins": 10,
-  "dataset_args": null,
-  "early_stopping_patience": null,
-  "enable_perturbation_metrics": true,
-  "perturbation_sample_count": 5,
-  "perturbation_candidate_units": 12,
-  "perturbation_trust_trials": 5,
-  "perturbation_target_units": 2,
-  "perturbation_random_strength": 0.02,
-  "client_participation_rate": 1.0,
-  "seed": 42,
-  "distribution": "iid",
-  "external_run_id": "hf_imgtxtret_000041",
-  "dataset": "hf",
-  "run_group_id": "5b67e8b8-0b5e-4c46-b006-b07e16fb10ae",
-  "case_name": "openai_clip-vit-base-patch32__flickr8k_retrieval__inference_only__v0",
-  "notes": "Generated from scored registry-defined HF model and dataset compatibility",
-  "enabled": true,
-  "measure_system_metrics": true,
-  "mixed_precision": false,
-  "max_samples": 269,
-  "max_length": 64,
-  "num_workers": 2,
-  "timeout_s": 900,
-  "momentum": 0.0,
-  "save_weights": true,
-  "model_type": "hf",
-  "hf_task": "text_image_retrieval",
-  "modality": "multimodal",
-  "dataset_name": "jxie/flickr8k",
-  "hf_model_id": "openai/clip-vit-base-patch32",
-  "train_split": "train",
-  "test_split": "test",
-  "label_column": "caption",
-  "text_column": "caption",
-  "image_column": "image",
-  "task_tag": "retrieval",
-  "run_regime": "inference_only",
-  "explainability_enabled": true,
-  "model_role": "service",
-  "input_schema": "image_text_pair",
-  "fit_decision": "selected",
-  "fit_reason": "selected score=2.869 (model=1.300, dataset=1.469, regime=inference_only); strict multimodal validation passed",
-  "realism_score": 2.8691,
-  "domain_alignment": "registry_curated",
-  "dataset_hint": "jxie/flickr8k",
-  "hf_pipeline_tag": "zero-shot-image-classification",
-  "hf_author": "openai",
-  "hf_url": "https://huggingface.co/openai/clip-vit-base-patch32",
-  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"text_image_retrieval\", \"run_regime\": \"inference_only\", \"audit_json_used\": false, \"pair_score\": 2.8691, \"variant_index\": 0, \"split_variant_index\": 0}"
-}
-traceback:
-Traceback (most recent call last):
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 412, in run_manifest
-    gen = FederatedDataGenerator(
-          ^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 198, in __init__
-    train, test, meta = load_dataset(self.dataset, **loader_dataset_args)
-                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 99, in load_dataset
-    train, test, meta = load_huggingface_source(**kwargs)
-                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\sources\huggingface.py", line 187, in load_huggingface_source
-    raise ValueError(
-ValueError: HF multimodal modality requires text_column 'caption' to exist in dataset 'jxie/flickr8k'. Available columns: ['caption_0', 'caption_1', 'caption_2', 'caption_3', 'caption_4', 'image']
-
-====================================================================================================
-timestamp: 2026-04-17T17:42:03.346996
-row_index: 41
-external_run_id: hf_imgtxtret_000042
-case_name: openai_clip-vit-large-patch14__flickr8k_retrieval__inference_only__v0
-run_group_id: 5b67e8b8-0b5e-4c46-b006-b07e16fb10ae
-failure_stage: runtime_exception
-error_message: HF multimodal modality requires text_column 'caption' to exist in dataset 'jxie/flickr8k'. Available columns: ['caption_0', 'caption_1', 'caption_2', 'caption_3', 'caption_4', 'image']
-resolved_config:
-{
-  "db_path": "outputs\\federated.db",
-  "num_clients": 1,
-  "num_rounds": 1,
-  "local_epochs": 1,
-  "batch_size": 8,
-  "learning_rate": 0.05,
-  "hidden_layers": [
-    16,
-    32,
-    64,
-    128
-  ],
-  "activation": "relu",
-  "dropout": 0.0,
-  "weight_decay": 0.0001,
   "optimizer": "sgd",
   "distribution_type": "iid",
   "distribution_param": null,
-  "sample_size": 128,
+  "sample_size": 2000,
   "sample_frac": null,
   "client_dropout_rate": 0.0,
-  "task_type": "retrieval",
+  "task_type": "classification",
   "distribution_bins": 10,
   "dataset_args": null,
   "early_stopping_patience": null,
+  "save_weights": false,
+  "save_final_model_params": true,
+  "final_model_params_dir": "outputs\\final_model_params",
+  "update_signature_enabled": true,
+  "update_signature_dim": 256,
+  "update_signature_dir": null,
+  "update_signature_max_source_elements": null,
   "enable_perturbation_metrics": true,
-  "perturbation_sample_count": 5,
-  "perturbation_candidate_units": 12,
+  "perturbation_final_round_only": true,
+  "perturbation_sample_count": 10,
+  "perturbation_candidate_units": 16,
   "perturbation_trust_trials": 5,
   "perturbation_target_units": 2,
   "perturbation_random_strength": 0.02,
-  "client_participation_rate": 1.0,
-  "seed": 42,
-  "distribution": "iid",
-  "external_run_id": "hf_imgtxtret_000042",
-  "dataset": "hf",
-  "run_group_id": "5b67e8b8-0b5e-4c46-b006-b07e16fb10ae",
-  "case_name": "openai_clip-vit-large-patch14__flickr8k_retrieval__inference_only__v0",
-  "notes": "Generated from scored registry-defined HF model and dataset compatibility",
-  "enabled": true,
-  "measure_system_metrics": true,
-  "mixed_precision": false,
-  "max_samples": 266,
-  "max_length": 64,
-  "num_workers": 2,
-  "timeout_s": 900,
-  "momentum": 0.9,
-  "save_weights": true,
-  "model_type": "hf",
-  "hf_task": "text_image_retrieval",
-  "modality": "multimodal",
-  "dataset_name": "jxie/flickr8k",
-  "hf_model_id": "openai/clip-vit-large-patch14",
-  "train_split": "train",
-  "test_split": "test",
-  "label_column": "caption",
-  "text_column": "caption",
-  "image_column": "image",
-  "task_tag": "retrieval",
-  "run_regime": "inference_only",
-  "explainability_enabled": true,
-  "model_role": "service",
-  "input_schema": "image_text_pair",
-  "fit_decision": "selected",
-  "fit_reason": "selected score=2.869 (model=1.300, dataset=1.469, regime=inference_only); strict multimodal validation passed",
-  "realism_score": 2.8691,
-  "domain_alignment": "registry_curated",
-  "dataset_hint": "jxie/flickr8k",
-  "hf_pipeline_tag": "zero-shot-image-classification",
-  "hf_author": "openai",
-  "hf_url": "https://huggingface.co/openai/clip-vit-large-patch14",
-  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"text_image_retrieval\", \"run_regime\": \"inference_only\", \"audit_json_used\": false, \"pair_score\": 2.8691, \"variant_index\": 0, \"split_variant_index\": 0}"
-}
-traceback:
-Traceback (most recent call last):
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 412, in run_manifest
-    gen = FederatedDataGenerator(
-          ^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 198, in __init__
-    train, test, meta = load_dataset(self.dataset, **loader_dataset_args)
-                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 99, in load_dataset
-    train, test, meta = load_huggingface_source(**kwargs)
-                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\sources\huggingface.py", line 187, in load_huggingface_source
-    raise ValueError(
-ValueError: HF multimodal modality requires text_column 'caption' to exist in dataset 'jxie/flickr8k'. Available columns: ['caption_0', 'caption_1', 'caption_2', 'caption_3', 'caption_4', 'image']
-
-====================================================================================================
-timestamp: 2026-04-17T17:42:15.804997
-row_index: 42
-external_run_id: hf_imgtxtret_000043
-case_name: openai_clip-vit-base-patch32__flickr8k_retrieval__inference_only__v1
-run_group_id: 5b67e8b8-0b5e-4c46-b006-b07e16fb10ae
-failure_stage: runtime_exception
-error_message: HF multimodal modality requires text_column 'caption' to exist in dataset 'jxie/flickr8k'. Available columns: ['caption_0', 'caption_1', 'caption_2', 'caption_3', 'caption_4', 'image']
-resolved_config:
-{
-  "db_path": "outputs\\federated.db",
-  "num_clients": 1,
-  "num_rounds": 1,
-  "local_epochs": 1,
-  "batch_size": 32,
-  "learning_rate": 0.0001,
-  "hidden_layers": [
-    16,
-    32,
-    64,
-    128
+  "perturbation_progress_logging": true,
+  "perturbation_progress_sample_interval": 1,
+  "explainability_random_trials": 8,
+  "explainability_budget_fractions": [
+    0.1,
+    0.2,
+    0.3
   ],
-  "activation": "relu",
-  "dropout": 0.0,
-  "weight_decay": 0.0,
-  "optimizer": "rmsprop",
-  "distribution_type": "iid",
-  "distribution_param": null,
-  "sample_size": 128,
-  "sample_frac": null,
-  "client_dropout_rate": 0.0,
-  "task_type": "retrieval",
-  "distribution_bins": 10,
-  "dataset_args": null,
-  "early_stopping_patience": null,
-  "enable_perturbation_metrics": true,
-  "perturbation_sample_count": 5,
-  "perturbation_candidate_units": 12,
-  "perturbation_trust_trials": 5,
-  "perturbation_target_units": 2,
-  "perturbation_random_strength": 0.02,
-  "client_participation_rate": 1.0,
-  "seed": 42,
+  "explainability_meaningful_drop_threshold": 0.2,
+  "explainability_selectivity_floor": 0.5,
+  "client_participation_rate": 0.5,
   "distribution": "iid",
-  "external_run_id": "hf_imgtxtret_000043",
+  "external_run_id": "hf_tokencls_000013",
   "dataset": "hf",
-  "run_group_id": "5b67e8b8-0b5e-4c46-b006-b07e16fb10ae",
-  "case_name": "openai_clip-vit-base-patch32__flickr8k_retrieval__inference_only__v1",
+  "run_group_id": "d05c1a63-b028-4c22-a3c6-688a302ed252",
+  "case_name": "distilroberta-base__conll2002_es__finetune_transfer__split0__svc0",
   "notes": "Generated from scored registry-defined HF model and dataset compatibility",
   "enabled": true,
   "measure_system_metrics": true,
   "mixed_precision": false,
-  "max_samples": 351,
-  "max_length": 64,
+  "max_samples": 900,
+  "max_length": 128,
   "num_workers": 2,
-  "timeout_s": 900,
-  "momentum": 0.9,
-  "save_weights": true,
-  "model_type": "hf",
-  "hf_task": "text_image_retrieval",
-  "modality": "multimodal",
-  "dataset_name": "jxie/flickr8k",
-  "hf_model_id": "openai/clip-vit-base-patch32",
-  "train_split": "train[:80%]",
-  "test_split": "train[80%:]",
-  "label_column": "caption",
-  "text_column": "caption",
-  "image_column": "image",
-  "task_tag": "retrieval",
-  "run_regime": "inference_only",
+  "timeout_s": 3600,
+  "momentum": 0.0,
+  "model_type": "hf_finetune",
+  "hf_task": "token_classification",
+  "modality": "text",
+  "dataset_name": "BramVanroy/conll2002",
+  "dataset_config": "es",
+  "hf_model_id": "distilroberta-base",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "ner_tags",
+  "text_column": "tokens",
+  "run_regime": "finetune_transfer",
   "explainability_enabled": true,
-  "model_role": "service",
-  "input_schema": "image_text_pair",
+  "explainability_method": "integrated_gradients",
+  "explainability_target": "token_label",
+  "model_role": "task_head",
+  "input_schema": "token_sequence",
   "fit_decision": "selected",
-  "fit_reason": "selected score=2.869 (model=1.300, dataset=1.469, regime=inference_only); strict multimodal validation passed",
-  "realism_score": 2.8691,
+  "fit_reason": "selected score=4.267 (model=2.300, dataset=1.717, regime=finetune_transfer)",
+  "realism_score": 4.2672,
   "domain_alignment": "registry_curated",
-  "dataset_hint": "jxie/flickr8k",
-  "hf_pipeline_tag": "zero-shot-image-classification",
-  "hf_author": "openai",
-  "hf_url": "https://huggingface.co/openai/clip-vit-base-patch32",
-  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"text_image_retrieval\", \"run_regime\": \"inference_only\", \"audit_json_used\": false, \"pair_score\": 2.8691, \"variant_index\": 1, \"split_variant_index\": 1}"
+  "dataset_hint": "BramVanroy/conll2002",
+  "hf_pipeline_tag": "token-classification",
+  "hf_url": "https://huggingface.co/distilroberta-base",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"token_classification\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"pair_score\": 4.2672, \"variant_index\": 0, \"service_variant_index\": 0, \"dataset_variant_index\": 0, \"split_variant_index\": 0, \"finetune_validated\": false, \"vqa_label_mode\": null, \"retrieval_positive_policy\": null}"
 }
 traceback:
 Traceback (most recent call last):
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 412, in run_manifest
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 515, in run_manifest
     gen = FederatedDataGenerator(
           ^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 198, in __init__
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 262, in __init__
     train, test, meta = load_dataset(self.dataset, **loader_dataset_args)
                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 99, in load_dataset
-    train, test, meta = load_huggingface_source(**kwargs)
-                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\sources\huggingface.py", line 187, in load_huggingface_source
-    raise ValueError(
-ValueError: HF multimodal modality requires text_column 'caption' to exist in dataset 'jxie/flickr8k'. Available columns: ['caption_0', 'caption_1', 'caption_2', 'caption_3', 'caption_4', 'image']
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 181, in preprocess_hf
+    out = preprocess_hf_text_token(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_token.py", line 25, in preprocess_hf_text_token
+    raise ValueError("Token classification requires Sequence(ClassLabel) style labels.")
+ValueError: Token classification requires Sequence(ClassLabel) style labels.
 
 ====================================================================================================
-timestamp: 2026-04-17T17:42:29.657824
-row_index: 43
-external_run_id: hf_imgtxtret_000044
-case_name: openai_clip-vit-large-patch14__flickr8k_retrieval__inference_only__v1
-run_group_id: 5b67e8b8-0b5e-4c46-b006-b07e16fb10ae
+timestamp: 2026-04-27T18:20:42.379293
+row_index: 7
+external_run_id: hf_tokencls_000014
+case_name: distilroberta-base__conll2002_nl__finetune_transfer__split0__svc0
+run_group_id: d05c1a63-b028-4c22-a3c6-688a302ed252
 failure_stage: runtime_exception
-error_message: HF multimodal modality requires text_column 'caption' to exist in dataset 'jxie/flickr8k'. Available columns: ['caption_0', 'caption_1', 'caption_2', 'caption_3', 'caption_4', 'image']
+error_message: Token classification requires Sequence(ClassLabel) style labels.
 resolved_config:
 {
   "db_path": "outputs\\federated.db",
-  "num_clients": 1,
-  "num_rounds": 1,
-  "local_epochs": 1,
+  "seed": 42,
+  "num_clients": 2,
+  "num_rounds": 2,
+  "local_epochs": 2,
   "batch_size": 16,
   "learning_rate": 0.01,
   "hidden_layers": [
@@ -1761,426 +390,120 @@ resolved_config:
   ],
   "activation": "relu",
   "dropout": 0.0,
-  "weight_decay": 0.0001,
+  "weight_decay": 0.0005,
   "optimizer": "sgd",
-  "distribution_type": "iid",
+  "distribution_type": "dirichlet",
   "distribution_param": null,
-  "sample_size": 128,
+  "sample_size": 2000,
   "sample_frac": null,
   "client_dropout_rate": 0.0,
-  "task_type": "retrieval",
+  "task_type": "classification",
   "distribution_bins": 10,
   "dataset_args": null,
   "early_stopping_patience": null,
+  "save_weights": false,
+  "save_final_model_params": true,
+  "final_model_params_dir": "outputs\\final_model_params",
+  "update_signature_enabled": true,
+  "update_signature_dim": 256,
+  "update_signature_dir": null,
+  "update_signature_max_source_elements": null,
   "enable_perturbation_metrics": true,
-  "perturbation_sample_count": 5,
-  "perturbation_candidate_units": 12,
+  "perturbation_final_round_only": true,
+  "perturbation_sample_count": 10,
+  "perturbation_candidate_units": 16,
   "perturbation_trust_trials": 5,
   "perturbation_target_units": 2,
   "perturbation_random_strength": 0.02,
+  "perturbation_progress_logging": true,
+  "perturbation_progress_sample_interval": 1,
+  "explainability_random_trials": 8,
+  "explainability_budget_fractions": [
+    0.1,
+    0.2,
+    0.3
+  ],
+  "explainability_meaningful_drop_threshold": 0.2,
+  "explainability_selectivity_floor": 0.5,
   "client_participation_rate": 1.0,
-  "seed": 42,
-  "distribution": "iid",
-  "external_run_id": "hf_imgtxtret_000044",
+  "distribution": "dirichlet",
+  "external_run_id": "hf_tokencls_000014",
   "dataset": "hf",
-  "run_group_id": "5b67e8b8-0b5e-4c46-b006-b07e16fb10ae",
-  "case_name": "openai_clip-vit-large-patch14__flickr8k_retrieval__inference_only__v1",
+  "run_group_id": "d05c1a63-b028-4c22-a3c6-688a302ed252",
+  "case_name": "distilroberta-base__conll2002_nl__finetune_transfer__split0__svc0",
   "notes": "Generated from scored registry-defined HF model and dataset compatibility",
   "enabled": true,
   "measure_system_metrics": true,
   "mixed_precision": false,
-  "max_samples": 268,
-  "max_length": 64,
+  "max_samples": 900,
+  "max_length": 128,
   "num_workers": 2,
-  "timeout_s": 900,
+  "timeout_s": 3600,
   "momentum": 0.9,
-  "save_weights": true,
-  "model_type": "hf",
-  "hf_task": "text_image_retrieval",
-  "modality": "multimodal",
-  "dataset_name": "jxie/flickr8k",
-  "hf_model_id": "openai/clip-vit-large-patch14",
-  "train_split": "train[:80%]",
-  "test_split": "train[80%:]",
-  "label_column": "caption",
-  "text_column": "caption",
-  "image_column": "image",
-  "task_tag": "retrieval",
-  "run_regime": "inference_only",
+  "dirichlet_alpha": 0.5,
+  "model_type": "hf_finetune",
+  "hf_task": "token_classification",
+  "modality": "text",
+  "dataset_name": "BramVanroy/conll2002",
+  "dataset_config": "nl",
+  "hf_model_id": "distilroberta-base",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "ner_tags",
+  "text_column": "tokens",
+  "run_regime": "finetune_transfer",
   "explainability_enabled": true,
-  "model_role": "service",
-  "input_schema": "image_text_pair",
+  "explainability_method": "integrated_gradients",
+  "explainability_target": "token_label",
+  "model_role": "task_head",
+  "input_schema": "token_sequence",
   "fit_decision": "selected",
-  "fit_reason": "selected score=2.869 (model=1.300, dataset=1.469, regime=inference_only); strict multimodal validation passed",
-  "realism_score": 2.8691,
+  "fit_reason": "selected score=4.267 (model=2.300, dataset=1.717, regime=finetune_transfer)",
+  "realism_score": 4.2672,
   "domain_alignment": "registry_curated",
-  "dataset_hint": "jxie/flickr8k",
-  "hf_pipeline_tag": "zero-shot-image-classification",
-  "hf_author": "openai",
-  "hf_url": "https://huggingface.co/openai/clip-vit-large-patch14",
-  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"text_image_retrieval\", \"run_regime\": \"inference_only\", \"audit_json_used\": false, \"pair_score\": 2.8691, \"variant_index\": 1, \"split_variant_index\": 1}"
+  "dataset_hint": "BramVanroy/conll2002",
+  "hf_pipeline_tag": "token-classification",
+  "hf_url": "https://huggingface.co/distilroberta-base",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"token_classification\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"pair_score\": 4.2672, \"variant_index\": 0, \"service_variant_index\": 0, \"dataset_variant_index\": 0, \"split_variant_index\": 0, \"finetune_validated\": false, \"vqa_label_mode\": null, \"retrieval_positive_policy\": null}"
 }
 traceback:
 Traceback (most recent call last):
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 412, in run_manifest
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 515, in run_manifest
     gen = FederatedDataGenerator(
           ^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 198, in __init__
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 262, in __init__
     train, test, meta = load_dataset(self.dataset, **loader_dataset_args)
                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 99, in load_dataset
-    train, test, meta = load_huggingface_source(**kwargs)
-                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\sources\huggingface.py", line 187, in load_huggingface_source
-    raise ValueError(
-ValueError: HF multimodal modality requires text_column 'caption' to exist in dataset 'jxie/flickr8k'. Available columns: ['caption_0', 'caption_1', 'caption_2', 'caption_3', 'caption_4', 'image']
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 181, in preprocess_hf
+    out = preprocess_hf_text_token(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_token.py", line 25, in preprocess_hf_text_token
+    raise ValueError("Token classification requires Sequence(ClassLabel) style labels.")
+ValueError: Token classification requires Sequence(ClassLabel) style labels.
 
 ====================================================================================================
-timestamp: 2026-04-18T00:52:34.211179
-row_index: 10
-external_run_id: hf_imgcap_000037
-case_name: Salesforce_blip-image-captioning-base__flickr8k_captioning__inference_only__v0
-run_group_id: 5b67e8b8-0b5e-4c46-b006-b07e16fb10ae
+timestamp: 2026-04-27T18:20:48.363224
+row_index: 8
+external_run_id: hf_tokencls_000015
+case_name: google_electra-base-discriminator__conll2002_es__finetune_transfer__split0__svc0
+run_group_id: d05c1a63-b028-4c22-a3c6-688a302ed252
 failure_stage: runtime_exception
-error_message: module transformers has no attribute AutoModelForVision2Seq
+error_message: Token classification requires Sequence(ClassLabel) style labels.
 resolved_config:
 {
   "db_path": "outputs\\federated.db",
-  "num_clients": 1,
-  "num_rounds": 1,
-  "local_epochs": 1,
+  "seed": 42,
+  "num_clients": 2,
+  "num_rounds": 2,
+  "local_epochs": 2,
   "batch_size": 4,
-  "learning_rate": 0.005,
-  "hidden_layers": [
-    16,
-    32,
-    64,
-    128
-  ],
-  "activation": "relu",
-  "dropout": 0.0,
-  "weight_decay": 0.0001,
-  "optimizer": "rmsprop",
-  "distribution_type": "iid",
-  "distribution_param": null,
-  "sample_size": 128,
-  "sample_frac": null,
-  "client_dropout_rate": 0.0,
-  "task_type": "generation",
-  "distribution_bins": 10,
-  "dataset_args": null,
-  "early_stopping_patience": null,
-  "enable_perturbation_metrics": true,
-  "perturbation_sample_count": 5,
-  "perturbation_candidate_units": 12,
-  "perturbation_trust_trials": 5,
-  "perturbation_target_units": 2,
-  "perturbation_random_strength": 0.02,
-  "client_participation_rate": 1.0,
-  "seed": 42,
-  "distribution": "iid",
-  "external_run_id": "hf_imgcap_000037",
-  "dataset": "hf",
-  "run_group_id": "5b67e8b8-0b5e-4c46-b006-b07e16fb10ae",
-  "case_name": "Salesforce_blip-image-captioning-base__flickr8k_captioning__inference_only__v0",
-  "notes": "Generated from scored registry-defined HF model and dataset compatibility",
-  "enabled": true,
-  "measure_system_metrics": true,
-  "mixed_precision": false,
-  "max_samples": 312,
-  "max_length": 64,
-  "num_workers": 2,
-  "timeout_s": 900,
-  "momentum": 0.9,
-  "save_weights": true,
-  "model_type": "hf",
-  "hf_task": "image_captioning",
-  "modality": "multimodal",
-  "dataset_name": "jxie/flickr8k",
-  "hf_model_id": "Salesforce/blip-image-captioning-base",
-  "train_split": "train",
-  "test_split": "test",
-  "label_column": "caption",
-  "text_column": "caption",
-  "image_column": "image",
-  "task_tag": "captioning",
-  "run_regime": "inference_only",
-  "explainability_enabled": true,
-  "model_role": "service",
-  "input_schema": "image_text_pair",
-  "fit_decision": "selected",
-  "fit_reason": "selected score=2.869 (model=1.300, dataset=1.469, regime=inference_only); strict multimodal validation passed",
-  "realism_score": 2.8691,
-  "domain_alignment": "registry_curated",
-  "dataset_hint": "jxie/flickr8k",
-  "hf_pipeline_tag": "image-to-text",
-  "hf_author": "Salesforce",
-  "hf_url": "https://huggingface.co/Salesforce/blip-image-captioning-base",
-  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"image_captioning\", \"run_regime\": \"inference_only\", \"audit_json_used\": false, \"pair_score\": 2.8691, \"variant_index\": 0, \"split_variant_index\": 0}"
-}
-traceback:
-Traceback (most recent call last):
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 419, in run_manifest
-    summary = gen.run()
-              ^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 591, in run
-    global_model = self.strategy.build_model()
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\strategies\base.py", line 299, in build_model
-    return create_model(**common)
-           ^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\models\builders.py", line 163, in create_model
-    return TransformersTextClassifierAdapter(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\models\adapters\hf_adapter.py", line 130, in __init__
-    core = HFCore(
-           ^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\models\adapters\hf_core.py", line 71, in __init__
-    self.model = self.task_spec.build_model(transformers, model_id, num_labels)
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\models\adapters\hf_task.py", line 1793, in build_model
-    AutoModel = transformers.AutoModelForVision2Seq
-                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\utils\import_utils.py", line 2281, in __getattr__
-    raise AttributeError(f"module {self.__name__} has no attribute {name}")
-AttributeError: module transformers has no attribute AutoModelForVision2Seq
-
-====================================================================================================
-timestamp: 2026-04-18T00:52:44.884354
-row_index: 11
-external_run_id: hf_imgcap_000038
-case_name: Salesforce_blip-image-captioning-base__flickr8k_captioning__inference_only__v1
-run_group_id: 5b67e8b8-0b5e-4c46-b006-b07e16fb10ae
-failure_stage: runtime_exception
-error_message: module transformers has no attribute AutoModelForVision2Seq
-resolved_config:
-{
-  "db_path": "outputs\\federated.db",
-  "num_clients": 1,
-  "num_rounds": 1,
-  "local_epochs": 1,
-  "batch_size": 4,
-  "learning_rate": 0.001,
-  "hidden_layers": [
-    16,
-    32,
-    64,
-    128
-  ],
-  "activation": "relu",
-  "dropout": 0.0,
-  "weight_decay": 0.0,
-  "optimizer": "rmsprop",
-  "distribution_type": "iid",
-  "distribution_param": null,
-  "sample_size": 128,
-  "sample_frac": null,
-  "client_dropout_rate": 0.0,
-  "task_type": "generation",
-  "distribution_bins": 10,
-  "dataset_args": null,
-  "early_stopping_patience": null,
-  "enable_perturbation_metrics": true,
-  "perturbation_sample_count": 5,
-  "perturbation_candidate_units": 12,
-  "perturbation_trust_trials": 5,
-  "perturbation_target_units": 2,
-  "perturbation_random_strength": 0.02,
-  "client_participation_rate": 1.0,
-  "seed": 42,
-  "distribution": "iid",
-  "external_run_id": "hf_imgcap_000038",
-  "dataset": "hf",
-  "run_group_id": "5b67e8b8-0b5e-4c46-b006-b07e16fb10ae",
-  "case_name": "Salesforce_blip-image-captioning-base__flickr8k_captioning__inference_only__v1",
-  "notes": "Generated from scored registry-defined HF model and dataset compatibility",
-  "enabled": true,
-  "measure_system_metrics": true,
-  "mixed_precision": false,
-  "max_samples": 304,
-  "max_length": 64,
-  "num_workers": 2,
-  "timeout_s": 900,
-  "momentum": 0.0,
-  "save_weights": true,
-  "model_type": "hf",
-  "hf_task": "image_captioning",
-  "modality": "multimodal",
-  "dataset_name": "jxie/flickr8k",
-  "hf_model_id": "Salesforce/blip-image-captioning-base",
-  "train_split": "train[:80%]",
-  "test_split": "train[80%:]",
-  "label_column": "caption",
-  "text_column": "caption",
-  "image_column": "image",
-  "task_tag": "captioning",
-  "run_regime": "inference_only",
-  "explainability_enabled": true,
-  "model_role": "service",
-  "input_schema": "image_text_pair",
-  "fit_decision": "selected",
-  "fit_reason": "selected score=2.869 (model=1.300, dataset=1.469, regime=inference_only); strict multimodal validation passed",
-  "realism_score": 2.8691,
-  "domain_alignment": "registry_curated",
-  "dataset_hint": "jxie/flickr8k",
-  "hf_pipeline_tag": "image-to-text",
-  "hf_author": "Salesforce",
-  "hf_url": "https://huggingface.co/Salesforce/blip-image-captioning-base",
-  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"image_captioning\", \"run_regime\": \"inference_only\", \"audit_json_used\": false, \"pair_score\": 2.8691, \"variant_index\": 1, \"split_variant_index\": 1}"
-}
-traceback:
-Traceback (most recent call last):
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 419, in run_manifest
-    summary = gen.run()
-              ^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 591, in run
-    global_model = self.strategy.build_model()
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\strategies\base.py", line 299, in build_model
-    return create_model(**common)
-           ^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\models\builders.py", line 163, in create_model
-    return TransformersTextClassifierAdapter(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\models\adapters\hf_adapter.py", line 130, in __init__
-    core = HFCore(
-           ^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\models\adapters\hf_core.py", line 71, in __init__
-    self.model = self.task_spec.build_model(transformers, model_id, num_labels)
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\models\adapters\hf_task.py", line 1793, in build_model
-    AutoModel = transformers.AutoModelForVision2Seq
-                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\utils\import_utils.py", line 2281, in __getattr__
-    raise AttributeError(f"module {self.__name__} has no attribute {name}")
-AttributeError: module transformers has no attribute AutoModelForVision2Seq
-
-====================================================================================================
-timestamp: 2026-04-18T00:52:55.103138
-row_index: 12
-external_run_id: hf_imgcap_000039
-case_name: Salesforce_blip-image-captioning-base__flickr8k_captioning__inference_only__v2
-run_group_id: 5b67e8b8-0b5e-4c46-b006-b07e16fb10ae
-failure_stage: runtime_exception
-error_message: module transformers has no attribute AutoModelForVision2Seq
-resolved_config:
-{
-  "db_path": "outputs\\federated.db",
-  "num_clients": 1,
-  "num_rounds": 1,
-  "local_epochs": 1,
-  "batch_size": 16,
-  "learning_rate": 0.005,
-  "hidden_layers": [
-    16,
-    32,
-    64,
-    128
-  ],
-  "activation": "relu",
-  "dropout": 0.0,
-  "weight_decay": 0.0001,
-  "optimizer": "rmsprop",
-  "distribution_type": "iid",
-  "distribution_param": null,
-  "sample_size": 128,
-  "sample_frac": null,
-  "client_dropout_rate": 0.0,
-  "task_type": "generation",
-  "distribution_bins": 10,
-  "dataset_args": null,
-  "early_stopping_patience": null,
-  "enable_perturbation_metrics": true,
-  "perturbation_sample_count": 5,
-  "perturbation_candidate_units": 12,
-  "perturbation_trust_trials": 5,
-  "perturbation_target_units": 2,
-  "perturbation_random_strength": 0.02,
-  "client_participation_rate": 1.0,
-  "seed": 42,
-  "distribution": "iid",
-  "external_run_id": "hf_imgcap_000039",
-  "dataset": "hf",
-  "run_group_id": "5b67e8b8-0b5e-4c46-b006-b07e16fb10ae",
-  "case_name": "Salesforce_blip-image-captioning-base__flickr8k_captioning__inference_only__v2",
-  "notes": "Generated from scored registry-defined HF model and dataset compatibility",
-  "enabled": true,
-  "measure_system_metrics": true,
-  "mixed_precision": false,
-  "max_samples": 297,
-  "max_length": 64,
-  "num_workers": 2,
-  "timeout_s": 900,
-  "momentum": 0.9,
-  "save_weights": true,
-  "model_type": "hf",
-  "hf_task": "image_captioning",
-  "modality": "multimodal",
-  "dataset_name": "jxie/flickr8k",
-  "hf_model_id": "Salesforce/blip-image-captioning-base",
-  "train_split": "train[:90%]",
-  "test_split": "train[90%:]",
-  "label_column": "caption",
-  "text_column": "caption",
-  "image_column": "image",
-  "task_tag": "captioning",
-  "run_regime": "inference_only",
-  "explainability_enabled": true,
-  "model_role": "service",
-  "input_schema": "image_text_pair",
-  "fit_decision": "selected",
-  "fit_reason": "selected score=2.869 (model=1.300, dataset=1.469, regime=inference_only); strict multimodal validation passed",
-  "realism_score": 2.8691,
-  "domain_alignment": "registry_curated",
-  "dataset_hint": "jxie/flickr8k",
-  "hf_pipeline_tag": "image-to-text",
-  "hf_author": "Salesforce",
-  "hf_url": "https://huggingface.co/Salesforce/blip-image-captioning-base",
-  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"image_captioning\", \"run_regime\": \"inference_only\", \"audit_json_used\": false, \"pair_score\": 2.8691, \"variant_index\": 2, \"split_variant_index\": 2}"
-}
-traceback:
-Traceback (most recent call last):
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 419, in run_manifest
-    summary = gen.run()
-              ^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 591, in run
-    global_model = self.strategy.build_model()
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\strategies\base.py", line 299, in build_model
-    return create_model(**common)
-           ^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\models\builders.py", line 163, in create_model
-    return TransformersTextClassifierAdapter(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\models\adapters\hf_adapter.py", line 130, in __init__
-    core = HFCore(
-           ^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\models\adapters\hf_core.py", line 71, in __init__
-    self.model = self.task_spec.build_model(transformers, model_id, num_labels)
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\models\adapters\hf_task.py", line 1793, in build_model
-    AutoModel = transformers.AutoModelForVision2Seq
-                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\utils\import_utils.py", line 2281, in __getattr__
-    raise AttributeError(f"module {self.__name__} has no attribute {name}")
-AttributeError: module transformers has no attribute AutoModelForVision2Seq
-
-====================================================================================================
-timestamp: 2026-04-18T00:53:04.764023
-row_index: 13
-external_run_id: hf_imgcap_000040
-case_name: Salesforce_blip-image-captioning-base__flickr8k_captioning__inference_only__v3
-run_group_id: 5b67e8b8-0b5e-4c46-b006-b07e16fb10ae
-failure_stage: runtime_exception
-error_message: module transformers has no attribute AutoModelForVision2Seq
-resolved_config:
-{
-  "db_path": "outputs\\federated.db",
-  "num_clients": 1,
-  "num_rounds": 1,
-  "local_epochs": 1,
-  "batch_size": 8,
-  "learning_rate": 2e-05,
+  "learning_rate": 3e-05,
   "hidden_layers": [
     16,
     32,
@@ -2191,106 +514,488 @@ resolved_config:
   "dropout": 0.0,
   "weight_decay": 0.0,
   "optimizer": "adamw",
-  "distribution_type": "iid",
+  "distribution_type": "dirichlet",
   "distribution_param": null,
-  "sample_size": 128,
+  "sample_size": 2000,
   "sample_frac": null,
   "client_dropout_rate": 0.0,
-  "task_type": "generation",
+  "task_type": "classification",
   "distribution_bins": 10,
   "dataset_args": null,
   "early_stopping_patience": null,
+  "save_weights": false,
+  "save_final_model_params": true,
+  "final_model_params_dir": "outputs\\final_model_params",
+  "update_signature_enabled": true,
+  "update_signature_dim": 256,
+  "update_signature_dir": null,
+  "update_signature_max_source_elements": null,
   "enable_perturbation_metrics": true,
-  "perturbation_sample_count": 5,
-  "perturbation_candidate_units": 12,
+  "perturbation_final_round_only": true,
+  "perturbation_sample_count": 10,
+  "perturbation_candidate_units": 16,
   "perturbation_trust_trials": 5,
   "perturbation_target_units": 2,
   "perturbation_random_strength": 0.02,
-  "client_participation_rate": 1.0,
-  "seed": 42,
-  "distribution": "iid",
-  "external_run_id": "hf_imgcap_000040",
+  "perturbation_progress_logging": true,
+  "perturbation_progress_sample_interval": 1,
+  "explainability_random_trials": 8,
+  "explainability_budget_fractions": [
+    0.1,
+    0.2,
+    0.3
+  ],
+  "explainability_meaningful_drop_threshold": 0.2,
+  "explainability_selectivity_floor": 0.5,
+  "client_participation_rate": 0.75,
+  "distribution": "dirichlet",
+  "external_run_id": "hf_tokencls_000015",
   "dataset": "hf",
-  "run_group_id": "5b67e8b8-0b5e-4c46-b006-b07e16fb10ae",
-  "case_name": "Salesforce_blip-image-captioning-base__flickr8k_captioning__inference_only__v3",
+  "run_group_id": "d05c1a63-b028-4c22-a3c6-688a302ed252",
+  "case_name": "google_electra-base-discriminator__conll2002_es__finetune_transfer__split0__svc0",
   "notes": "Generated from scored registry-defined HF model and dataset compatibility",
   "enabled": true,
   "measure_system_metrics": true,
   "mixed_precision": false,
-  "max_samples": 281,
-  "max_length": 64,
+  "max_samples": 900,
+  "max_length": 128,
   "num_workers": 2,
-  "timeout_s": 900,
+  "timeout_s": 3600,
   "momentum": 0.0,
-  "save_weights": true,
-  "model_type": "hf",
-  "hf_task": "image_captioning",
-  "modality": "multimodal",
-  "dataset_name": "jxie/flickr8k",
-  "hf_model_id": "Salesforce/blip-image-captioning-base",
+  "dirichlet_alpha": 0.5,
+  "model_type": "hf_finetune",
+  "hf_task": "token_classification",
+  "modality": "text",
+  "dataset_name": "BramVanroy/conll2002",
+  "dataset_config": "es",
+  "hf_model_id": "google/electra-base-discriminator",
   "train_split": "train",
-  "test_split": "test",
-  "label_column": "caption",
-  "text_column": "caption",
-  "image_column": "image",
-  "task_tag": "captioning",
-  "run_regime": "inference_only",
+  "test_split": "validation",
+  "label_column": "ner_tags",
+  "text_column": "tokens",
+  "run_regime": "finetune_transfer",
   "explainability_enabled": true,
-  "model_role": "service",
-  "input_schema": "image_text_pair",
+  "explainability_method": "integrated_gradients",
+  "explainability_target": "token_label",
+  "model_role": "task_head",
+  "input_schema": "token_sequence",
   "fit_decision": "selected",
-  "fit_reason": "selected score=2.869 (model=1.300, dataset=1.469, regime=inference_only); strict multimodal validation passed",
-  "realism_score": 2.8691,
+  "fit_reason": "selected score=4.267 (model=2.300, dataset=1.717, regime=finetune_transfer)",
+  "realism_score": 4.2672,
   "domain_alignment": "registry_curated",
-  "dataset_hint": "jxie/flickr8k",
-  "hf_pipeline_tag": "image-to-text",
-  "hf_author": "Salesforce",
-  "hf_url": "https://huggingface.co/Salesforce/blip-image-captioning-base",
-  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"image_captioning\", \"run_regime\": \"inference_only\", \"audit_json_used\": false, \"pair_score\": 2.8691, \"variant_index\": 3, \"split_variant_index\": 0}"
+  "dataset_hint": "BramVanroy/conll2002",
+  "hf_pipeline_tag": "token-classification",
+  "hf_author": "google",
+  "hf_url": "https://huggingface.co/google/electra-base-discriminator",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"token_classification\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"pair_score\": 4.2672, \"variant_index\": 0, \"service_variant_index\": 0, \"dataset_variant_index\": 0, \"split_variant_index\": 0, \"finetune_validated\": false, \"vqa_label_mode\": null, \"retrieval_positive_policy\": null}"
 }
 traceback:
 Traceback (most recent call last):
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 419, in run_manifest
-    summary = gen.run()
-              ^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 591, in run
-    global_model = self.strategy.build_model()
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\strategies\base.py", line 299, in build_model
-    return create_model(**common)
-           ^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\models\builders.py", line 163, in create_model
-    return TransformersTextClassifierAdapter(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\models\adapters\hf_adapter.py", line 130, in __init__
-    core = HFCore(
-           ^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\models\adapters\hf_core.py", line 71, in __init__
-    self.model = self.task_spec.build_model(transformers, model_id, num_labels)
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\models\adapters\hf_task.py", line 1793, in build_model
-    AutoModel = transformers.AutoModelForVision2Seq
-                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\utils\import_utils.py", line 2281, in __getattr__
-    raise AttributeError(f"module {self.__name__} has no attribute {name}")
-AttributeError: module transformers has no attribute AutoModelForVision2Seq
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 515, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 262, in __init__
+    train, test, meta = load_dataset(self.dataset, **loader_dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 181, in preprocess_hf
+    out = preprocess_hf_text_token(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_token.py", line 25, in preprocess_hf_text_token
+    raise ValueError("Token classification requires Sequence(ClassLabel) style labels.")
+ValueError: Token classification requires Sequence(ClassLabel) style labels.
 
 ====================================================================================================
-timestamp: 2026-04-18T12:33:47.350821
+timestamp: 2026-04-27T18:20:53.224574
 row_index: 9
-external_run_id: hf_imgcap_000010
-case_name: Salesforce_blip-image-captioning-base__flickr8k_captioning__inference_only__v0
-run_group_id: 5319bd2e-a8d7-4e15-84f5-40ce0b8cca03
+external_run_id: hf_tokencls_000016
+case_name: google_electra-base-discriminator__conll2002_nl__finetune_transfer__split0__svc0
+run_group_id: d05c1a63-b028-4c22-a3c6-688a302ed252
 failure_stage: runtime_exception
-error_message: module transformers has no attribute AutoModelForVision2Seq
+error_message: Token classification requires Sequence(ClassLabel) style labels.
 resolved_config:
 {
   "db_path": "outputs\\federated.db",
-  "num_clients": 1,
-  "num_rounds": 1,
+  "seed": 42,
+  "num_clients": 2,
+  "num_rounds": 2,
+  "local_epochs": 2,
+  "batch_size": 8,
+  "learning_rate": 0.001,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.0001,
+  "optimizer": "sgd",
+  "distribution_type": "dirichlet",
+  "distribution_param": null,
+  "sample_size": 2000,
+  "sample_frac": null,
+  "client_dropout_rate": 0.0,
+  "task_type": "classification",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "save_weights": false,
+  "save_final_model_params": true,
+  "final_model_params_dir": "outputs\\final_model_params",
+  "update_signature_enabled": true,
+  "update_signature_dim": 256,
+  "update_signature_dir": null,
+  "update_signature_max_source_elements": null,
+  "enable_perturbation_metrics": true,
+  "perturbation_final_round_only": true,
+  "perturbation_sample_count": 10,
+  "perturbation_candidate_units": 16,
+  "perturbation_trust_trials": 5,
+  "perturbation_target_units": 2,
+  "perturbation_random_strength": 0.02,
+  "perturbation_progress_logging": true,
+  "perturbation_progress_sample_interval": 1,
+  "explainability_random_trials": 8,
+  "explainability_budget_fractions": [
+    0.1,
+    0.2,
+    0.3
+  ],
+  "explainability_meaningful_drop_threshold": 0.2,
+  "explainability_selectivity_floor": 0.5,
+  "client_participation_rate": 0.75,
+  "distribution": "dirichlet",
+  "external_run_id": "hf_tokencls_000016",
+  "dataset": "hf",
+  "run_group_id": "d05c1a63-b028-4c22-a3c6-688a302ed252",
+  "case_name": "google_electra-base-discriminator__conll2002_nl__finetune_transfer__split0__svc0",
+  "notes": "Generated from scored registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 900,
+  "max_length": 128,
+  "num_workers": 2,
+  "timeout_s": 3600,
+  "momentum": 0.0,
+  "dirichlet_alpha": 0.1,
+  "model_type": "hf_finetune",
+  "hf_task": "token_classification",
+  "modality": "text",
+  "dataset_name": "BramVanroy/conll2002",
+  "dataset_config": "nl",
+  "hf_model_id": "google/electra-base-discriminator",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "ner_tags",
+  "text_column": "tokens",
+  "run_regime": "finetune_transfer",
+  "explainability_enabled": true,
+  "explainability_method": "integrated_gradients",
+  "explainability_target": "token_label",
+  "model_role": "task_head",
+  "input_schema": "token_sequence",
+  "fit_decision": "selected",
+  "fit_reason": "selected score=4.267 (model=2.300, dataset=1.717, regime=finetune_transfer)",
+  "realism_score": 4.2672,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "BramVanroy/conll2002",
+  "hf_pipeline_tag": "token-classification",
+  "hf_author": "google",
+  "hf_url": "https://huggingface.co/google/electra-base-discriminator",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"token_classification\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"pair_score\": 4.2672, \"variant_index\": 0, \"service_variant_index\": 0, \"dataset_variant_index\": 0, \"split_variant_index\": 0, \"finetune_validated\": false, \"vqa_label_mode\": null, \"retrieval_positive_policy\": null}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 515, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 262, in __init__
+    train, test, meta = load_dataset(self.dataset, **loader_dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 181, in preprocess_hf
+    out = preprocess_hf_text_token(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_token.py", line 25, in preprocess_hf_text_token
+    raise ValueError("Token classification requires Sequence(ClassLabel) style labels.")
+ValueError: Token classification requires Sequence(ClassLabel) style labels.
+
+====================================================================================================
+timestamp: 2026-04-27T18:20:58.063969
+row_index: 10
+external_run_id: hf_tokencls_000017
+case_name: google_mobilebert-uncased__conll2002_es__finetune_transfer__split0__svc0
+run_group_id: d05c1a63-b028-4c22-a3c6-688a302ed252
+failure_stage: runtime_exception
+error_message: Token classification requires Sequence(ClassLabel) style labels.
+resolved_config:
+{
+  "db_path": "outputs\\federated.db",
+  "seed": 42,
+  "num_clients": 2,
+  "num_rounds": 2,
   "local_epochs": 1,
-  "batch_size": 4,
-  "learning_rate": 0.005,
+  "batch_size": 8,
+  "learning_rate": 3e-05,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.0,
+  "optimizer": "adamw",
+  "distribution_type": "dirichlet",
+  "distribution_param": null,
+  "sample_size": 2000,
+  "sample_frac": null,
+  "client_dropout_rate": 0.0,
+  "task_type": "classification",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "save_weights": false,
+  "save_final_model_params": true,
+  "final_model_params_dir": "outputs\\final_model_params",
+  "update_signature_enabled": true,
+  "update_signature_dim": 256,
+  "update_signature_dir": null,
+  "update_signature_max_source_elements": null,
+  "enable_perturbation_metrics": true,
+  "perturbation_final_round_only": true,
+  "perturbation_sample_count": 10,
+  "perturbation_candidate_units": 16,
+  "perturbation_trust_trials": 5,
+  "perturbation_target_units": 2,
+  "perturbation_random_strength": 0.02,
+  "perturbation_progress_logging": true,
+  "perturbation_progress_sample_interval": 1,
+  "explainability_random_trials": 8,
+  "explainability_budget_fractions": [
+    0.1,
+    0.2,
+    0.3
+  ],
+  "explainability_meaningful_drop_threshold": 0.2,
+  "explainability_selectivity_floor": 0.5,
+  "client_participation_rate": 1.0,
+  "distribution": "dirichlet",
+  "external_run_id": "hf_tokencls_000017",
+  "dataset": "hf",
+  "run_group_id": "d05c1a63-b028-4c22-a3c6-688a302ed252",
+  "case_name": "google_mobilebert-uncased__conll2002_es__finetune_transfer__split0__svc0",
+  "notes": "Generated from scored registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 900,
+  "max_length": 128,
+  "num_workers": 2,
+  "timeout_s": 3600,
+  "momentum": 0.0,
+  "dirichlet_alpha": 0.3,
+  "model_type": "hf_finetune",
+  "hf_task": "token_classification",
+  "modality": "text",
+  "dataset_name": "BramVanroy/conll2002",
+  "dataset_config": "es",
+  "hf_model_id": "google/mobilebert-uncased",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "ner_tags",
+  "text_column": "tokens",
+  "run_regime": "finetune_transfer",
+  "explainability_enabled": true,
+  "explainability_method": "integrated_gradients",
+  "explainability_target": "token_label",
+  "model_role": "task_head",
+  "input_schema": "token_sequence",
+  "fit_decision": "selected",
+  "fit_reason": "selected score=4.267 (model=2.300, dataset=1.717, regime=finetune_transfer)",
+  "realism_score": 4.2672,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "BramVanroy/conll2002",
+  "hf_pipeline_tag": "token-classification",
+  "hf_author": "google",
+  "hf_url": "https://huggingface.co/google/mobilebert-uncased",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"token_classification\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"pair_score\": 4.2672, \"variant_index\": 0, \"service_variant_index\": 0, \"dataset_variant_index\": 0, \"split_variant_index\": 0, \"finetune_validated\": false, \"vqa_label_mode\": null, \"retrieval_positive_policy\": null}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 515, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 262, in __init__
+    train, test, meta = load_dataset(self.dataset, **loader_dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 181, in preprocess_hf
+    out = preprocess_hf_text_token(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_token.py", line 25, in preprocess_hf_text_token
+    raise ValueError("Token classification requires Sequence(ClassLabel) style labels.")
+ValueError: Token classification requires Sequence(ClassLabel) style labels.
+
+====================================================================================================
+timestamp: 2026-04-27T18:21:03.103079
+row_index: 11
+external_run_id: hf_tokencls_000018
+case_name: google_mobilebert-uncased__conll2002_nl__finetune_transfer__split0__svc0
+run_group_id: d05c1a63-b028-4c22-a3c6-688a302ed252
+failure_stage: runtime_exception
+error_message: Token classification requires Sequence(ClassLabel) style labels.
+resolved_config:
+{
+  "db_path": "outputs\\federated.db",
+  "seed": 42,
+  "num_clients": 2,
+  "num_rounds": 2,
+  "local_epochs": 2,
+  "batch_size": 8,
+  "learning_rate": 0.0001,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.05,
+  "optimizer": "adamw",
+  "distribution_type": "dirichlet",
+  "distribution_param": null,
+  "sample_size": 2000,
+  "sample_frac": null,
+  "client_dropout_rate": 0.0,
+  "task_type": "classification",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "save_weights": false,
+  "save_final_model_params": true,
+  "final_model_params_dir": "outputs\\final_model_params",
+  "update_signature_enabled": true,
+  "update_signature_dim": 256,
+  "update_signature_dir": null,
+  "update_signature_max_source_elements": null,
+  "enable_perturbation_metrics": true,
+  "perturbation_final_round_only": true,
+  "perturbation_sample_count": 10,
+  "perturbation_candidate_units": 16,
+  "perturbation_trust_trials": 5,
+  "perturbation_target_units": 2,
+  "perturbation_random_strength": 0.02,
+  "perturbation_progress_logging": true,
+  "perturbation_progress_sample_interval": 1,
+  "explainability_random_trials": 8,
+  "explainability_budget_fractions": [
+    0.1,
+    0.2,
+    0.3
+  ],
+  "explainability_meaningful_drop_threshold": 0.2,
+  "explainability_selectivity_floor": 0.5,
+  "client_participation_rate": 1.0,
+  "distribution": "dirichlet",
+  "external_run_id": "hf_tokencls_000018",
+  "dataset": "hf",
+  "run_group_id": "d05c1a63-b028-4c22-a3c6-688a302ed252",
+  "case_name": "google_mobilebert-uncased__conll2002_nl__finetune_transfer__split0__svc0",
+  "notes": "Generated from scored registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 900,
+  "max_length": 128,
+  "num_workers": 2,
+  "timeout_s": 3600,
+  "momentum": 0.0,
+  "dirichlet_alpha": 0.5,
+  "model_type": "hf_finetune",
+  "hf_task": "token_classification",
+  "modality": "text",
+  "dataset_name": "BramVanroy/conll2002",
+  "dataset_config": "nl",
+  "hf_model_id": "google/mobilebert-uncased",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "ner_tags",
+  "text_column": "tokens",
+  "run_regime": "finetune_transfer",
+  "explainability_enabled": true,
+  "explainability_method": "integrated_gradients",
+  "explainability_target": "token_label",
+  "model_role": "task_head",
+  "input_schema": "token_sequence",
+  "fit_decision": "selected",
+  "fit_reason": "selected score=4.267 (model=2.300, dataset=1.717, regime=finetune_transfer)",
+  "realism_score": 4.2672,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "BramVanroy/conll2002",
+  "hf_pipeline_tag": "token-classification",
+  "hf_author": "google",
+  "hf_url": "https://huggingface.co/google/mobilebert-uncased",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"token_classification\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"pair_score\": 4.2672, \"variant_index\": 0, \"service_variant_index\": 0, \"dataset_variant_index\": 0, \"split_variant_index\": 0, \"finetune_validated\": false, \"vqa_label_mode\": null, \"retrieval_positive_policy\": null}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 515, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 262, in __init__
+    train, test, meta = load_dataset(self.dataset, **loader_dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 181, in preprocess_hf
+    out = preprocess_hf_text_token(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_token.py", line 25, in preprocess_hf_text_token
+    raise ValueError("Token classification requires Sequence(ClassLabel) style labels.")
+ValueError: Token classification requires Sequence(ClassLabel) style labels.
+
+====================================================================================================
+timestamp: 2026-04-27T18:21:07.930685
+row_index: 12
+external_run_id: hf_tokencls_000019
+case_name: roberta-base__conll2002_es__finetune_transfer__split0__svc0
+run_group_id: d05c1a63-b028-4c22-a3c6-688a302ed252
+failure_stage: runtime_exception
+error_message: Token classification requires Sequence(ClassLabel) style labels.
+resolved_config:
+{
+  "db_path": "outputs\\federated.db",
+  "seed": 42,
+  "num_clients": 2,
+  "num_rounds": 2,
+  "local_epochs": 2,
+  "batch_size": 32,
+  "learning_rate": 0.0005,
   "hidden_layers": [
     16,
     32,
@@ -2303,85 +1008,217 @@ resolved_config:
   "optimizer": "rmsprop",
   "distribution_type": "iid",
   "distribution_param": null,
-  "sample_size": 128,
+  "sample_size": 2000,
   "sample_frac": null,
   "client_dropout_rate": 0.0,
-  "task_type": "generation",
+  "task_type": "classification",
   "distribution_bins": 10,
   "dataset_args": null,
   "early_stopping_patience": null,
+  "save_weights": false,
+  "save_final_model_params": true,
+  "final_model_params_dir": "outputs\\final_model_params",
+  "update_signature_enabled": true,
+  "update_signature_dim": 256,
+  "update_signature_dir": null,
+  "update_signature_max_source_elements": null,
   "enable_perturbation_metrics": true,
-  "perturbation_sample_count": 5,
-  "perturbation_candidate_units": 12,
+  "perturbation_final_round_only": true,
+  "perturbation_sample_count": 10,
+  "perturbation_candidate_units": 16,
   "perturbation_trust_trials": 5,
   "perturbation_target_units": 2,
   "perturbation_random_strength": 0.02,
-  "client_participation_rate": 1.0,
-  "seed": 42,
+  "perturbation_progress_logging": true,
+  "perturbation_progress_sample_interval": 1,
+  "explainability_random_trials": 8,
+  "explainability_budget_fractions": [
+    0.1,
+    0.2,
+    0.3
+  ],
+  "explainability_meaningful_drop_threshold": 0.2,
+  "explainability_selectivity_floor": 0.5,
+  "client_participation_rate": 0.75,
   "distribution": "iid",
-  "external_run_id": "hf_imgcap_000010",
+  "external_run_id": "hf_tokencls_000019",
   "dataset": "hf",
-  "run_group_id": "5319bd2e-a8d7-4e15-84f5-40ce0b8cca03",
-  "case_name": "Salesforce_blip-image-captioning-base__flickr8k_captioning__inference_only__v0",
+  "run_group_id": "d05c1a63-b028-4c22-a3c6-688a302ed252",
+  "case_name": "roberta-base__conll2002_es__finetune_transfer__split0__svc0",
   "notes": "Generated from scored registry-defined HF model and dataset compatibility",
   "enabled": true,
   "measure_system_metrics": true,
   "mixed_precision": false,
-  "max_samples": 332,
-  "max_length": 64,
+  "max_samples": 900,
+  "max_length": 128,
   "num_workers": 2,
   "timeout_s": 3600,
-  "momentum": 0.9,
-  "save_weights": true,
-  "model_type": "hf",
-  "hf_task": "image_captioning",
-  "modality": "multimodal",
-  "dataset_name": "jxie/flickr8k",
-  "hf_model_id": "Salesforce/blip-image-captioning-base",
+  "momentum": 0.0,
+  "model_type": "hf_finetune",
+  "hf_task": "token_classification",
+  "modality": "text",
+  "dataset_name": "BramVanroy/conll2002",
+  "dataset_config": "es",
+  "hf_model_id": "roberta-base",
   "train_split": "train",
-  "test_split": "test",
-  "label_column": "caption_0",
-  "text_column": "caption_0",
-  "image_column": "image",
-  "task_tag": "captioning",
-  "run_regime": "inference_only",
+  "test_split": "validation",
+  "label_column": "ner_tags",
+  "text_column": "tokens",
+  "run_regime": "finetune_transfer",
   "explainability_enabled": true,
-  "model_role": "service",
-  "input_schema": "image_text_pair",
+  "explainability_method": "integrated_gradients",
+  "explainability_target": "token_label",
+  "model_role": "task_head",
+  "input_schema": "token_sequence",
   "fit_decision": "selected",
-  "fit_reason": "selected score=2.869 (model=1.300, dataset=1.469, regime=inference_only); strict multimodal validation passed",
-  "realism_score": 2.8691,
+  "fit_reason": "selected score=4.267 (model=2.300, dataset=1.717, regime=finetune_transfer)",
+  "realism_score": 4.2672,
   "domain_alignment": "registry_curated",
-  "dataset_hint": "jxie/flickr8k",
-  "hf_pipeline_tag": "image-to-text",
-  "hf_author": "Salesforce",
-  "hf_url": "https://huggingface.co/Salesforce/blip-image-captioning-base",
-  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"image_captioning\", \"run_regime\": \"inference_only\", \"audit_json_used\": false, \"pair_score\": 2.8691, \"variant_index\": 0, \"split_variant_index\": 0}"
+  "dataset_hint": "BramVanroy/conll2002",
+  "hf_pipeline_tag": "token-classification",
+  "hf_url": "https://huggingface.co/roberta-base",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"token_classification\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"pair_score\": 4.2672, \"variant_index\": 0, \"service_variant_index\": 0, \"dataset_variant_index\": 0, \"split_variant_index\": 0, \"finetune_validated\": false, \"vqa_label_mode\": null, \"retrieval_positive_policy\": null}"
 }
 traceback:
 Traceback (most recent call last):
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 419, in run_manifest
-    summary = gen.run()
-              ^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 633, in run
-    global_model = self.strategy.build_model()
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\strategies\base.py", line 299, in build_model
-    return create_model(**common)
-           ^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\models\builders.py", line 163, in create_model
-    return TransformersTextClassifierAdapter(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\models\adapters\hf_adapter.py", line 130, in __init__
-    core = HFCore(
-           ^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\models\adapters\hf_core.py", line 71, in __init__
-    self.model = self.task_spec.build_model(transformers, model_id, num_labels)
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\models\adapters\hf_task.py", line 1793, in build_model
-    AutoModel = transformers.AutoModelForVision2Seq
-                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\utils\import_utils.py", line 2281, in __getattr__
-    raise AttributeError(f"module {self.__name__} has no attribute {name}")
-AttributeError: module transformers has no attribute AutoModelForVision2Seq
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 515, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 262, in __init__
+    train, test, meta = load_dataset(self.dataset, **loader_dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 181, in preprocess_hf
+    out = preprocess_hf_text_token(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_token.py", line 25, in preprocess_hf_text_token
+    raise ValueError("Token classification requires Sequence(ClassLabel) style labels.")
+ValueError: Token classification requires Sequence(ClassLabel) style labels.
+
+====================================================================================================
+timestamp: 2026-04-27T18:21:12.725490
+row_index: 13
+external_run_id: hf_tokencls_000020
+case_name: roberta-base__conll2002_nl__finetune_transfer__split0__svc0
+run_group_id: d05c1a63-b028-4c22-a3c6-688a302ed252
+failure_stage: runtime_exception
+error_message: Token classification requires Sequence(ClassLabel) style labels.
+resolved_config:
+{
+  "db_path": "outputs\\federated.db",
+  "seed": 42,
+  "num_clients": 2,
+  "num_rounds": 2,
+  "local_epochs": 2,
+  "batch_size": 8,
+  "learning_rate": 3e-05,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.0,
+  "optimizer": "adamw",
+  "distribution_type": "dirichlet",
+  "distribution_param": null,
+  "sample_size": 2000,
+  "sample_frac": null,
+  "client_dropout_rate": 0.0,
+  "task_type": "classification",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "save_weights": false,
+  "save_final_model_params": true,
+  "final_model_params_dir": "outputs\\final_model_params",
+  "update_signature_enabled": true,
+  "update_signature_dim": 256,
+  "update_signature_dir": null,
+  "update_signature_max_source_elements": null,
+  "enable_perturbation_metrics": true,
+  "perturbation_final_round_only": true,
+  "perturbation_sample_count": 10,
+  "perturbation_candidate_units": 16,
+  "perturbation_trust_trials": 5,
+  "perturbation_target_units": 2,
+  "perturbation_random_strength": 0.02,
+  "perturbation_progress_logging": true,
+  "perturbation_progress_sample_interval": 1,
+  "explainability_random_trials": 8,
+  "explainability_budget_fractions": [
+    0.1,
+    0.2,
+    0.3
+  ],
+  "explainability_meaningful_drop_threshold": 0.2,
+  "explainability_selectivity_floor": 0.5,
+  "client_participation_rate": 1.0,
+  "distribution": "dirichlet",
+  "external_run_id": "hf_tokencls_000020",
+  "dataset": "hf",
+  "run_group_id": "d05c1a63-b028-4c22-a3c6-688a302ed252",
+  "case_name": "roberta-base__conll2002_nl__finetune_transfer__split0__svc0",
+  "notes": "Generated from scored registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 900,
+  "max_length": 128,
+  "num_workers": 2,
+  "timeout_s": 3600,
+  "momentum": 0.0,
+  "dirichlet_alpha": 0.1,
+  "model_type": "hf_finetune",
+  "hf_task": "token_classification",
+  "modality": "text",
+  "dataset_name": "BramVanroy/conll2002",
+  "dataset_config": "nl",
+  "hf_model_id": "roberta-base",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "ner_tags",
+  "text_column": "tokens",
+  "run_regime": "finetune_transfer",
+  "explainability_enabled": true,
+  "explainability_method": "integrated_gradients",
+  "explainability_target": "token_label",
+  "model_role": "task_head",
+  "input_schema": "token_sequence",
+  "fit_decision": "selected",
+  "fit_reason": "selected score=4.267 (model=2.300, dataset=1.717, regime=finetune_transfer)",
+  "realism_score": 4.2672,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "BramVanroy/conll2002",
+  "hf_pipeline_tag": "token-classification",
+  "hf_url": "https://huggingface.co/roberta-base",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"token_classification\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"pair_score\": 4.2672, \"variant_index\": 0, \"service_variant_index\": 0, \"dataset_variant_index\": 0, \"split_variant_index\": 0, \"finetune_validated\": false, \"vqa_label_mode\": null, \"retrieval_positive_policy\": null}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 515, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 262, in __init__
+    train, test, meta = load_dataset(self.dataset, **loader_dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 181, in preprocess_hf
+    out = preprocess_hf_text_token(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_token.py", line 25, in preprocess_hf_text_token
+    raise ValueError("Token classification requires Sequence(ClassLabel) style labels.")
+ValueError: Token classification requires Sequence(ClassLabel) style labels.
 

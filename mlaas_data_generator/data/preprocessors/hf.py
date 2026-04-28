@@ -149,9 +149,14 @@ def preprocess_hf(train, test, meta, **dataset_args):
             label_column=dataset_args.get("label_column"),
             max_length=dataset_args.get("max_length", meta.get("max_length", 128)),
             missing_pair_handling=dataset_args.get("missing_pair_handling", "drop"),
+            on_decode_error=dataset_args.get("on_decode_error", "skip"),
+            report_decode_errors=dataset_args.get("report_decode_errors", True),
             question_column=dataset_args.get("question_column"),
             answer_column=dataset_args.get("answer_column"),
             ranking_label_column=dataset_args.get("ranking_label_column"),
+            vqa_label_mode=dataset_args.get("vqa_label_mode", "auto"),
+            vqa_answer_vocab_size=dataset_args.get("vqa_answer_vocab_size"),
+            vqa_unseen_answer_policy=dataset_args.get("vqa_unseen_answer_policy", "ignore"),
         )
         return _validate_hf_preprocessor_output(*out)
 

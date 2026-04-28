@@ -15,10 +15,13 @@ SEQ2SEQ_SOURCE_CANDIDATES = [
     "source",
     "article",
     "document",
+    "dialogue",
+    "report",
     "context",
     "question",
     "src",
     "input_text",
+    "email_body",
 ]
 
 SEQ2SEQ_TARGET_CANDIDATES = [
@@ -30,7 +33,11 @@ SEQ2SEQ_TARGET_CANDIDATES = [
     "target",
     "highlights",
     "summary",
+    "abstract",
     "answer",
+    "subject",
+    "subject_line",
+    "tldr",
     "tgt",
     "output_text",
 ]
@@ -91,6 +98,8 @@ def _to_text_list(values):
     for v in values:
         if v is None:
             out.append("")
+        elif isinstance(v, (list, tuple)):
+            out.append(" ".join(str(item) for item in v if item is not None))
         else:
             out.append(str(v))
     return out
@@ -121,6 +130,15 @@ def _dataset_size(ds, fallback_column):
         return int(len(ds[fallback_column]))
 
 
+def _load_auto_tokenizer(hf_model_id):
+    from transformers import AutoTokenizer
+
+    try:
+        return AutoTokenizer.from_pretrained(hf_model_id, use_fast=True)
+    except Exception:
+        return AutoTokenizer.from_pretrained(hf_model_id, use_fast=False)
+
+
 def preprocess_hf_text_causal_lm_generation(
     train,
     test,
@@ -138,9 +156,7 @@ def preprocess_hf_text_causal_lm_generation(
     ds_train, _ = train
     ds_test, _ = test
 
-    from transformers import AutoTokenizer
-
-    tokenizer = AutoTokenizer.from_pretrained(hf_model_id, use_fast=True)
+    tokenizer = _load_auto_tokenizer(hf_model_id)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "left"
@@ -294,9 +310,7 @@ def preprocess_hf_text_seq2seq_generation(
     ds_train, _ = train
     ds_test, _ = test
 
-    from transformers import AutoTokenizer
-
-    tokenizer = AutoTokenizer.from_pretrained(hf_model_id, use_fast=True)
+    tokenizer = _load_auto_tokenizer(hf_model_id)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "left"

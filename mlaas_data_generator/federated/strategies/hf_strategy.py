@@ -82,7 +82,11 @@ class HFStrategy(TaskStrategy):
             "language-modeling",
             "language_modeling",
             "seq2seq_generation",
+            "image_captioning",
         }
+        label_format = str((self.meta or {}).get("label_format") or "").strip().lower()
+        if task == "visual_question_answering" and label_format == "vqa_token_index":
+            return "supervised_token_count"
         sequence_weighted_tasks = {
             "sequence_classification",
             "text_classification",
@@ -91,6 +95,8 @@ class HFStrategy(TaskStrategy):
             "image_detection",
             "object_detection",
             "image_segmentation",
+            "text_image_retrieval",
+            "visual_question_answering",
         }
         if task in token_weighted_tasks:
             return "supervised_token_count"
@@ -281,6 +287,13 @@ class HFStrategy(TaskStrategy):
             dataset["label_column"] = ds_args.get("label_column")
         if inferred_modality == "multimodal":
             dataset["missing_pair_handling"] = ds_args.get("missing_pair_handling")
+            dataset["question_column"] = ds_args.get("question_column")
+            dataset["answer_column"] = ds_args.get("answer_column")
+            dataset["ranking_label_column"] = ds_args.get("ranking_label_column")
+            dataset["vqa_label_mode"] = ds_args.get("vqa_label_mode")
+            dataset["vqa_answer_vocab_size"] = ds_args.get("vqa_answer_vocab_size")
+            dataset["vqa_unseen_answer_policy"] = ds_args.get("vqa_unseen_answer_policy")
+            dataset["retrieval_positive_policy"] = ds_args.get("retrieval_positive_policy")
         if uses_tokenization:
             dataset["dynamic_padding"] = ds_args.get("dynamic_padding")
             dataset["padding_mode"] = ("dynamic" if ds_args.get("dynamic_padding") else "max_length")
@@ -553,8 +566,8 @@ class HFStrategy(TaskStrategy):
             if self.inference_only:
                 adapter = global_model if global_model is not None else self.build_model()
                 loss, primary, secondary, qos = adapter.evaluate(
-                    self.x_test,
-                    self.y_test,
+                    x,
+                    y,
                     inference_only=True,
                     max_eval_time_s=self.knobs.get("max_eval_time_s", self.config.get("max_eval_time_s")),
                     progress_log_interval=self.knobs.get(
@@ -573,7 +586,16 @@ class HFStrategy(TaskStrategy):
                 weighting = self._resolve_client_weighting(samples_count, qos)
                 extras = qos if isinstance(qos, dict) else {}
                 extras = dict(extras)
-                extras.update(self.perturbation_metrics(adapter, client_id=client_id, round_idx=round_idx))
+                extras["client_partition_sample_count"] = int(samples_count)
+                extras.update(
+                    self.perturbation_metrics(
+                        adapter,
+                        client_id=client_id,
+                        round_idx=round_idx,
+                        x_eval=x,
+                        y_eval=y,
+                    )
+                )
 
                 return ClientOutcome(
                     participated=True,

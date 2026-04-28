@@ -56,3 +56,10 @@ def test_get_data_distribution_detection_supports_nested_annotation_schemas():
     assert stats["samples"] == 2
     assert stats["total_boxes"] == 2
     assert stats["class_counts"] == {3: 1, 4: 1}
+
+
+def test_get_data_distribution_counts_object_labels_when_num_classes_unknown():
+    stats = get_data_distribution(["cat", "cat", "home", None], num_classes=None, bins=2)
+
+    assert stats["cat"] == 2
+    assert stats["home"] == 1

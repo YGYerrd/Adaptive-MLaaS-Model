@@ -6,6 +6,136 @@ import importlib.util
 # HF Task Specs
 # ----------------------------
 
+def _load_auto_model_with_safetensor_fallback(transformers, model_id, auto_model_names, **from_pretrained_kwargs):
+    last_error = None
+    missing = []
+    for auto_model_name in auto_model_names:
+        AutoModel = getattr(transformers, auto_model_name, None)
+        if AutoModel is None:
+            missing.append(auto_model_name)
+            continue
+        try:
+            return AutoModel.from_pretrained(
+                model_id,
+                use_safetensors=True,
+                **from_pretrained_kwargs,
+            ), "safetensors"
+        except OSError as e:
+            if "safetensors" not in str(e).lower():
+                last_error = e
+                continue
+            try:
+                return AutoModel.from_pretrained(
+                    model_id,
+                    use_safetensors=False,
+                    **from_pretrained_kwargs,
+                ), "pickle"
+            except Exception as fallback_error:
+                last_error = fallback_error
+                continue
+        except ValueError as e:
+            last_error = e
+            continue
+
+    if last_error is not None:
+        raise last_error
+    raise AttributeError(f"transformers is missing AutoModel classes: {', '.join(missing)}")
+
+
+_TEXT_METRIC_TOKEN_RE = re.compile(r"\w+|[^\w\s]", re.UNICODE)
+
+
+def _text_metric_tokens(text):
+    return _TEXT_METRIC_TOKEN_RE.findall(str(text or "").lower())
+
+
+def _ngram_counts(tokens, n):
+    if n <= 0 or len(tokens) < n:
+        return {}
+    counts = {}
+    for i in range(0, len(tokens) - n + 1):
+        gram = tuple(tokens[i:i + n])
+        counts[gram] = counts.get(gram, 0) + 1
+    return counts
+
+
+def _overlap_f1(pred_items, ref_items):
+    pred_total = sum(pred_items.values())
+    ref_total = sum(ref_items.values())
+    if pred_total == 0 and ref_total == 0:
+        return 0.0
+    if pred_total == 0 or ref_total == 0:
+        return 0.0
+    overlap = 0
+    for item, count in pred_items.items():
+        overlap += min(count, ref_items.get(item, 0))
+    if overlap == 0:
+        return 0.0
+    precision = overlap / pred_total
+    recall = overlap / ref_total
+    return (2.0 * precision * recall) / (precision + recall)
+
+
+def _lcs_len(a, b):
+    if not a or not b:
+        return 0
+    prev = [0] * (len(b) + 1)
+    for token_a in a:
+        cur = [0] * (len(b) + 1)
+        for j, token_b in enumerate(b, start=1):
+            if token_a == token_b:
+                cur[j] = prev[j - 1] + 1
+            else:
+                cur[j] = max(prev[j], cur[j - 1])
+        prev = cur
+    return prev[-1]
+
+
+def _rouge_from_texts(pred_texts, ref_texts):
+    rouge1, rouge2, rougel = [], [], []
+    for pred, ref in zip(pred_texts, ref_texts):
+        pred_tokens = _text_metric_tokens(pred)
+        ref_tokens = _text_metric_tokens(ref)
+        rouge1.append(_overlap_f1(_ngram_counts(pred_tokens, 1), _ngram_counts(ref_tokens, 1)))
+        rouge2.append(_overlap_f1(_ngram_counts(pred_tokens, 2), _ngram_counts(ref_tokens, 2)))
+
+        if not pred_tokens and not ref_tokens:
+            rougel.append(1.0)
+        elif not pred_tokens or not ref_tokens:
+            rougel.append(0.0)
+        else:
+            lcs = _lcs_len(pred_tokens, ref_tokens)
+            precision = lcs / len(pred_tokens)
+            recall = lcs / len(ref_tokens)
+            rougel.append(0.0 if (precision + recall) == 0 else (2.0 * precision * recall) / (precision + recall))
+
+    if not rouge1:
+        return np.nan, np.nan, np.nan
+    return float(np.mean(rouge1)), float(np.mean(rouge2)), float(np.mean(rougel))
+
+
+def _decode_token_id_batch(tokenizer, values, *, ignore_index=-100):
+    if tokenizer is None or not hasattr(tokenizer, "batch_decode"):
+        return None
+    arr = np.asarray(values)
+    if arr.size == 0:
+        return []
+    if arr.ndim == 1:
+        arr = arr.reshape(1, -1)
+    if not np.issubdtype(arr.dtype, np.integer):
+        return None
+
+    pad_id = getattr(tokenizer, "pad_token_id", None)
+    if pad_id is None:
+        pad_id = getattr(tokenizer, "eos_token_id", None)
+    if pad_id is None:
+        pad_id = 0
+
+    cleaned = arr.astype("int64", copy=True)
+    cleaned[cleaned == int(ignore_index)] = int(pad_id)
+    return list(tokenizer.batch_decode(cleaned, skip_special_tokens=True, clean_up_tokenization_spaces=True))
+
+
 class HFTaskSpec:
     """
     Task-specific behaviour for HF fine-tuning/evaluation.
@@ -1557,6 +1687,21 @@ class CausalLMGenerationSpec(HFTaskSpec):
 
         return shifted_ids, shifted_mask
 
+    @staticmethod
+    def _left_pad_labels(labels, attention_mask, ignore_index):
+        labels_np = np.asarray(labels)
+        mask_np = np.asarray(attention_mask)
+        if labels_np.ndim != 2 or mask_np.ndim != 2 or labels_np.shape != mask_np.shape:
+            return labels
+
+        shifted_labels = np.full(labels_np.shape, int(ignore_index), dtype=labels_np.dtype)
+        for row_idx in range(labels_np.shape[0]):
+            valid = int(mask_np[row_idx].sum())
+            if valid <= 0:
+                continue
+            shifted_labels[row_idx, -valid:] = labels_np[row_idx, :valid]
+        return shifted_labels
+
     def build_model(self, transformers, model_id, num_labels):
         AutoModel = transformers.AutoModelForCausalLM
         self.weight_format = None
@@ -1614,13 +1759,15 @@ class CausalLMGenerationSpec(HFTaskSpec):
                     batch["input_ids"] = np.asarray(padded_ids, dtype=input_ids.dtype)
                     batch["attention_mask"] = np.asarray(padded_mask, dtype=attention_mask.dtype)
             if "input_ids" in batch and "attention_mask" in batch:
+                if labels_np is not None and labels_np.shape == np.asarray(batch["input_ids"]).shape:
+                    labels_np = self._left_pad_labels(labels_np, batch["attention_mask"], ignore_index)
                 batch["input_ids"], batch["attention_mask"] = self._left_pad_batch(
                     tokenizer,
                     batch["input_ids"],
                     batch["attention_mask"],
                 )
             enc = {k: torch.tensor(v, dtype=torch.long, device=device) for k, v in batch.items()}
-            labels_t = None if yb is None else torch.tensor(yb, dtype=torch.long, device=device)
+            labels_t = None if labels_np is None else torch.tensor(labels_np, dtype=torch.long, device=device)
             return enc, labels_t, {"ignore_index": int(ignore_index)}
 
         prompts = list(xb)
@@ -1652,6 +1799,8 @@ class CausalLMGenerationSpec(HFTaskSpec):
 
     def loss_fn(self, torch, logits, labels_t, extra):
         ignore_index = int(extra.get("ignore_index", -100))
+        if not torch.any(labels_t != ignore_index):
+            return logits.sum() * 0.0
         return torch.nn.functional.cross_entropy(logits.transpose(1, 2), labels_t, ignore_index=ignore_index)
 
     def preds_from_logits(self, torch, logits, extra):
@@ -1743,10 +1892,12 @@ class Seq2SeqGenerationSpec(HFTaskSpec):
         task_tag = ""
         loss_mean = np.nan
         ignore_index = -100
+        tokenizer = None
         if isinstance(y_extra, dict):
             task_tag = str(y_extra.get("task_tag") or "").strip().lower().replace("-", "_")
             loss_mean = float(y_extra.get("loss_mean", np.nan))
             ignore_index = int(y_extra.get("ignore_index", ignore_index))
+            tokenizer = y_extra.get("tokenizer")
 
         ppl = float(np.exp(np.clip(loss_mean, a_min=-50.0, a_max=50.0))) if loss_mean == loss_mean else np.nan
 
@@ -1754,6 +1905,37 @@ class Seq2SeqGenerationSpec(HFTaskSpec):
         y_pred = np.asarray(y_pred)
         if y_true.size == 0 or y_pred.size == 0:
             return {"primary": np.nan, "secondary": np.nan, "named_metrics": {}}
+
+        pred_texts = _decode_token_id_batch(tokenizer, y_pred, ignore_index=ignore_index)
+        ref_texts = _decode_token_id_batch(tokenizer, y_true, ignore_index=ignore_index)
+        if pred_texts is not None and ref_texts is not None:
+            pair_count = min(len(pred_texts), len(ref_texts))
+            pred_texts = pred_texts[:pair_count]
+            ref_texts = ref_texts[:pair_count]
+
+            if task_tag == "summarization":
+                rouge1, rouge2, rougeL = _rouge_from_texts(pred_texts, ref_texts)
+                named = {"rouge1": rouge1, "rouge2": rouge2, "rougel": rougeL, "perplexity": ppl}
+                return {"primary": rouge1, "secondary": rouge2, "named_metrics": named}
+
+            if task_tag == "translation":
+                # Lightweight decoded-text BLEU proxy when sacrebleu is not installed:
+                # unigram overlap with a brevity penalty. This avoids comparing raw token ids.
+                scores = []
+                for pred, ref in zip(pred_texts, ref_texts):
+                    pred_tokens = _text_metric_tokens(pred)
+                    ref_tokens = _text_metric_tokens(ref)
+                    unigram_f1 = _overlap_f1(_ngram_counts(pred_tokens, 1), _ngram_counts(ref_tokens, 1))
+                    if not pred_tokens and ref_tokens:
+                        brevity = 0.0
+                    elif not ref_tokens:
+                        brevity = 1.0
+                    else:
+                        brevity = min(1.0, len(pred_tokens) / max(1, len(ref_tokens)))
+                    scores.append(float(unigram_f1 * brevity))
+                bleu = float(np.mean(scores)) if scores else np.nan
+                named = {"sacrebleu": bleu, "perplexity": ppl}
+                return {"primary": bleu, "secondary": ppl, "named_metrics": named}
 
         common = min(y_true.shape[-1], y_pred.shape[-1])
         yt = y_true[..., :common]
@@ -1793,17 +1975,17 @@ class ImageCaptioningSpec(HFTaskSpec):
     supports_generation = True
 
     def build_model(self, transformers, model_id, num_labels):
-        AutoModel = transformers.AutoModelForVision2Seq
-        self.weight_format = None
-        try:
-            model = AutoModel.from_pretrained(model_id, use_safetensors=True)
-            self.weight_format = "safetensors"
-        except OSError as e:
-            if "safetensors" in str(e).lower():
-                model = AutoModel.from_pretrained(model_id, use_safetensors=False)
-                self.weight_format = "pickle"
-            else:
-                raise
+        model, self.weight_format = _load_auto_model_with_safetensor_fallback(
+            transformers,
+            model_id,
+            (
+                "AutoModelForVision2Seq",
+                "AutoModelForImageTextToText",
+                "BlipForConditionalGeneration",
+                "GitForCausalLM",
+                "AutoModelForCausalLM",
+            ),
+        )
         return model
 
     def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
@@ -1841,6 +2023,31 @@ class ImageCaptioningSpec(HFTaskSpec):
         if y_true.size == 0 or y_pred.size == 0:
             return {"primary": np.nan, "secondary": np.nan, "named_metrics": {"cider": np.nan, "bleu": np.nan}}
 
+        tokenizer = None
+        ignore_index = -100
+        if isinstance(y_extra, dict):
+            tokenizer = y_extra.get("tokenizer")
+            ignore_index = int(y_extra.get("ignore_index", ignore_index))
+        ref_texts = _decode_token_id_batch(tokenizer, y_true, ignore_index=ignore_index)
+        pred_texts = _decode_token_id_batch(tokenizer, y_pred, ignore_index=ignore_index)
+        if ref_texts is not None and pred_texts is not None:
+            common_text = min(len(ref_texts), len(pred_texts))
+            rouge1, rouge2, rougeL = _rouge_from_texts(
+                pred_texts[:common_text],
+                ref_texts[:common_text],
+            )
+            bleu = rouge1
+            cider = (
+                0.7 * rouge1 + 0.3 * rouge2
+                if rouge1 == rouge1 and rouge2 == rouge2
+                else np.nan
+            )
+            return {
+                "primary": cider,
+                "secondary": bleu,
+                "named_metrics": {"cider": cider, "bleu": bleu, "rougel": rougeL},
+            }
+
         common = min(y_true.shape[-1], y_pred.shape[-1])
         yt = y_true[..., :common]
         yp = y_pred[..., :common]
@@ -1861,6 +2068,51 @@ class TextImageRetrievalSpec(HFTaskSpec):
     name = "text_image_retrieval"
     requires_num_labels = False
     supports_unlabeled_metric_statistics = True
+
+    def init_metric_accumulator(self):
+        return {"image_embeds": [], "text_embeds": []}
+
+    def accumulate_metric_statistics(self, accumulator, batch_stats):
+        if accumulator is None:
+            accumulator = self.init_metric_accumulator()
+        if not batch_stats:
+            return accumulator
+
+        if "image_embeds" in batch_stats and "text_embeds" in batch_stats:
+            accumulator.setdefault("image_embeds", []).append(np.asarray(batch_stats["image_embeds"], dtype=np.float32))
+            accumulator.setdefault("text_embeds", []).append(np.asarray(batch_stats["text_embeds"], dtype=np.float32))
+            return accumulator
+
+        for key, value in batch_stats.items():
+            try:
+                accumulator[str(key)] = float(accumulator.get(str(key), 0.0)) + float(value)
+            except Exception:
+                continue
+        return accumulator
+
+    def has_metric_statistics(self, accumulator):
+        if not isinstance(accumulator, dict):
+            return False
+        if accumulator.get("image_embeds") and accumulator.get("text_embeds"):
+            return True
+        return float(accumulator.get("total", 0.0) or 0.0) > 0.0
+
+    def metric_statistics_summary(self, accumulator):
+        if not isinstance(accumulator, dict):
+            return {}
+        if accumulator.get("image_embeds") and accumulator.get("text_embeds"):
+            return self._retrieval_stats_from_embedding_batches(
+                accumulator.get("image_embeds", []),
+                accumulator.get("text_embeds", []),
+            )
+        summary = {}
+        for key in ("r1_correct", "r5_correct", "r10_correct", "total", "mrr_sum"):
+            if key in accumulator:
+                try:
+                    summary[key] = float(accumulator[key])
+                except Exception:
+                    continue
+        return summary
 
     def build_model(self, transformers, model_id, num_labels):
         AutoModel = transformers.AutoModel
@@ -1885,13 +2137,24 @@ class TextImageRetrievalSpec(HFTaskSpec):
             "pixel_values": torch.tensor(xb["pixel_values"], dtype=torch.float32, device=device),
         }
         labels_t = None if yb is None else torch.tensor(yb, dtype=torch.long, device=device)
-        return enc, labels_t, {}
+        return enc, labels_t, {"retrieval_positive_policy": "diagonal_in_batch"}
 
     def build_forward_inputs(self, enc, labels_t=None, inference_only=False):
         return dict(enc)
 
     def loss_fn(self, torch, logits, labels_t, extra):
-        return None
+        if logits is None or logits.ndim != 2:
+            raise ValueError("Text-image retrieval contrastive loss requires 2D logits")
+        if int(logits.shape[0]) != int(logits.shape[1]):
+            raise ValueError(
+                "Text-image retrieval contrastive loss requires square in-batch logits "
+                f"(got {tuple(int(dim) for dim in logits.shape)})"
+            )
+        batch = int(logits.shape[0])
+        targets = torch.arange(batch, device=logits.device, dtype=torch.long)
+        text_to_image = torch.nn.functional.cross_entropy(logits, targets)
+        image_to_text = torch.nn.functional.cross_entropy(logits.transpose(0, 1), targets)
+        return 0.5 * (text_to_image + image_to_text)
 
     def extract_logits(self, outputs):
         logits_per_text = getattr(outputs, "logits_per_text", None)
@@ -1922,11 +2185,17 @@ class TextImageRetrievalSpec(HFTaskSpec):
         return torch.argmax(logits, dim=-1)
 
     def batch_metric_statistics_from_outputs(self, torch, outputs, labels_t, extra):
+        img = getattr(outputs, "image_embeds", None)
+        txt = getattr(outputs, "text_embeds", None)
+        if img is not None and txt is not None:
+            return {
+                "image_embeds": img.detach().cpu().numpy(),
+                "text_embeds": txt.detach().cpu().numpy(),
+            }
+
         try:
             sims = self.extract_logits(outputs)
         except Exception:
-            img = getattr(outputs, "image_embeds", None)
-            txt = getattr(outputs, "text_embeds", None)
             if img is None or txt is None:
                 return None
 
@@ -1948,13 +2217,51 @@ class TextImageRetrievalSpec(HFTaskSpec):
         r1 = (idx[:, :1] == targets[:, None]).any(dim=1).float().sum().item()
         r5 = (idx[:, : min(5, topk)] == targets[:, None]).any(dim=1).float().sum().item()
         r10 = (idx[:, : min(10, topk)] == targets[:, None]).any(dim=1).float().sum().item()
-        return {"r1_correct": r1, "r5_correct": r5, "r10_correct": r10, "total": float(total)}
+        ranks = torch.argsort(sims, dim=1, descending=True)
+        target_positions = (ranks == targets[:, None]).nonzero(as_tuple=False)[:, 1].float()
+        mrr_sum = torch.sum(1.0 / (target_positions + 1.0)).detach().cpu().item()
+        return {"r1_correct": r1, "r5_correct": r5, "r10_correct": r10, "total": float(total), "mrr_sum": mrr_sum}
+
+    @staticmethod
+    def _retrieval_stats_from_embedding_batches(image_batches, text_batches):
+        if not image_batches or not text_batches:
+            return {}
+        try:
+            image_embeds = np.concatenate([np.asarray(batch, dtype=np.float32) for batch in image_batches], axis=0)
+            text_embeds = np.concatenate([np.asarray(batch, dtype=np.float32) for batch in text_batches], axis=0)
+        except Exception:
+            return {}
+
+        total = min(int(image_embeds.shape[0]), int(text_embeds.shape[0]))
+        if total <= 0:
+            return {}
+        image_embeds = image_embeds[:total]
+        text_embeds = text_embeds[:total]
+
+        image_norm = image_embeds / np.maximum(np.linalg.norm(image_embeds, axis=1, keepdims=True), 1e-12)
+        text_norm = text_embeds / np.maximum(np.linalg.norm(text_embeds, axis=1, keepdims=True), 1e-12)
+        sims = text_norm @ image_norm.T
+        ranks = np.argsort(-sims, axis=1)
+        targets = np.arange(total)
+        target_positions = np.argmax(ranks == targets[:, None], axis=1)
+
+        return {
+            "r1_correct": float(np.count_nonzero(target_positions < 1)),
+            "r5_correct": float(np.count_nonzero(target_positions < 5)),
+            "r10_correct": float(np.count_nonzero(target_positions < 10)),
+            "mrr_sum": float(np.sum(1.0 / (target_positions.astype(np.float64) + 1.0))),
+            "total": float(total),
+            "candidate_count": float(total),
+        }
 
     def metrics_from_statistics(self, stats):
+        if isinstance(stats, dict) and stats.get("image_embeds") and stats.get("text_embeds"):
+            stats = self.metric_statistics_summary(stats)
         total = max(1.0, float(stats.get("total", 0.0)))
         r1 = float(stats.get("r1_correct", 0.0)) / total
         r5 = float(stats.get("r5_correct", 0.0)) / total
         r10 = float(stats.get("r10_correct", 0.0)) / total
+        mrr = float(stats.get("mrr_sum", 0.0)) / total
         return {
             "primary": r1,
             "secondary": r5,
@@ -1964,6 +2271,7 @@ class TextImageRetrievalSpec(HFTaskSpec):
                 "r@1": r1,
                 "r@5": r5,
                 "r@10": r10,
+                "mrr": mrr,
             },
         }
 
@@ -1975,36 +2283,135 @@ class VQASpec(HFTaskSpec):
 
     _ARTICLES = {"a", "an", "the"}
 
+    def __init__(self, label_format="single_index"):
+        self.label_format = str(label_format or "single_index").strip().lower()
+
+    def _label_mode(self):
+        if self.label_format in {"vqa_class_index", "class_index", "single_index"}:
+            return "classification"
+        if self.label_format in {"vqa_token_index", "token_index", "token_labels"}:
+            return "generation"
+        return "auto"
+
     def build_model(self, transformers, model_id, num_labels):
-        AutoModel = transformers.AutoModelForVisualQuestionAnswering
-        self.weight_format = None
-        try:
-            model = AutoModel.from_pretrained(model_id, use_safetensors=True)
-            self.weight_format = "safetensors"
-        except OSError as e:
-            if "safetensors" in str(e).lower():
-                model = AutoModel.from_pretrained(model_id, use_safetensors=False)
-                self.weight_format = "pickle"
-            else:
-                raise
+        mode = self._label_mode()
+        if mode == "classification":
+            kwargs = {}
+            if num_labels is not None:
+                kwargs["num_labels"] = int(num_labels)
+                kwargs["ignore_mismatched_sizes"] = True
+            model, self.weight_format = _load_auto_model_with_safetensor_fallback(
+                transformers,
+                model_id,
+                ("AutoModelForVisualQuestionAnswering",),
+                **kwargs,
+            )
+            return model
+
+        if mode == "generation":
+            model, self.weight_format = _load_auto_model_with_safetensor_fallback(
+                transformers,
+                model_id,
+                (
+                    "AutoModelForVision2Seq",
+                    "AutoModelForImageTextToText",
+                    "BlipForQuestionAnswering",
+                    "GitForCausalLM",
+                    "AutoModelForCausalLM",
+                    "AutoModelForVisualQuestionAnswering",
+                ),
+            )
+            return model
+
+        model, self.weight_format = _load_auto_model_with_safetensor_fallback(
+            transformers,
+            model_id,
+            (
+                "AutoModelForVisualQuestionAnswering",
+                "AutoModelForVision2Seq",
+                "AutoModelForImageTextToText",
+                "BlipForQuestionAnswering",
+                "GitForCausalLM",
+                "AutoModelForCausalLM",
+            ),
+        )
         return model
 
     def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
         if not isinstance(xb, dict):
             raise TypeError("VQA expects multimodal dict features")
+        max_len = int(max_length) if max_length is not None else None
+
+        def _text_array(name):
+            arr = np.asarray(xb[name])
+            if max_len is not None and max_len > 0:
+                arr = arr[..., :max_len]
+            return arr
+
         enc = {
-            "input_ids": torch.tensor(xb["input_ids"], dtype=torch.long, device=device),
-            "attention_mask": torch.tensor(xb["attention_mask"], dtype=torch.long, device=device),
+            "input_ids": torch.tensor(_text_array("input_ids"), dtype=torch.long, device=device),
+            "attention_mask": torch.tensor(_text_array("attention_mask"), dtype=torch.long, device=device),
             "pixel_values": torch.tensor(xb["pixel_values"], dtype=torch.float32, device=device),
         }
-        labels_t = None if yb is None else torch.tensor(yb, dtype=torch.long, device=device)
-        return enc, labels_t, {"ignore_index": int(ignore_index)}
+        if "token_type_ids" in xb:
+            enc["token_type_ids"] = torch.tensor(_text_array("token_type_ids"), dtype=torch.long, device=device)
+        if "pixel_mask" in xb:
+            enc["pixel_mask"] = torch.tensor(xb["pixel_mask"], dtype=torch.long, device=device)
+        extra = {"ignore_index": int(ignore_index)}
+        labels_t = None
+        if yb is not None:
+            y_arr = np.asarray(yb)
+            if y_arr.dtype.kind in {"U", "S", "O"}:
+                extra["answer_texts"] = np.asarray(yb, dtype=object).reshape(-1)
+            else:
+                labels_t = torch.tensor(yb, dtype=torch.long, device=device)
+                extra["vqa_label_mode"] = "generation" if labels_t.ndim >= 2 else "classification"
+        return enc, labels_t, extra
+
+    def build_forward_inputs(self, enc, labels_t=None, inference_only=False):
+        model_inputs = dict(enc)
+        if labels_t is not None and getattr(labels_t, "ndim", 0) >= 2 and not inference_only:
+            model_inputs["labels"] = labels_t
+        return model_inputs
 
     def loss_fn(self, torch, logits, labels_t, extra):
-        return torch.nn.functional.cross_entropy(logits, labels_t)
+        ignore_index = int(extra.get("ignore_index", -100))
+        if labels_t is not None and labels_t.ndim >= 2:
+            if not torch.any(labels_t != ignore_index):
+                return logits.sum() * 0.0
+            return torch.nn.functional.cross_entropy(
+                logits.transpose(1, 2),
+                labels_t,
+                ignore_index=ignore_index,
+            )
+        if labels_t is not None and not torch.any(labels_t != ignore_index):
+            return logits.sum() * 0.0
+        return torch.nn.functional.cross_entropy(logits, labels_t, ignore_index=ignore_index)
 
     def preds_from_logits(self, torch, logits, extra):
+        if logits is not None and logits.ndim >= 3:
+            return torch.argmax(logits, dim=-1)
         return torch.argmax(logits, dim=-1)
+
+    def generate_predictions(self, model, enc, tokenizer, torch, generation_config):
+        if hasattr(model, "generate") and callable(getattr(model, "generate", None)):
+            generation_kwargs = {}
+            for key in ("max_new_tokens", "num_beams", "do_sample", "temperature", "top_k", "top_p", "length_penalty"):
+                if key in generation_config and generation_config[key] is not None:
+                    generation_kwargs[key] = generation_config[key]
+            generated = model.generate(**enc, **generation_kwargs)
+            if tokenizer is not None and hasattr(tokenizer, "batch_decode"):
+                return np.asarray(tokenizer.batch_decode(generated, skip_special_tokens=True), dtype=object)
+            return generated
+
+        outputs = model(**enc)
+        logits = self.extract_logits(outputs)
+        pred_ids = torch.argmax(logits, dim=-1)
+        id2label = getattr(getattr(model, "config", None), "id2label", None)
+        if isinstance(id2label, dict) and id2label:
+            labels = [str(id2label.get(int(idx), int(idx))) for idx in pred_ids.detach().cpu().reshape(-1).tolist()]
+            return np.asarray(labels, dtype=object)
+        return pred_ids
 
     @classmethod
     def _normalize_answer(cls, text):
@@ -2019,12 +2426,34 @@ class VQASpec(HFTaskSpec):
         if y_true.size == 0 or y_pred.size == 0:
             return {"primary": np.nan, "secondary": np.nan, "named_metrics": {"exact_match": np.nan}}
 
+        tokenizer = None
+        ignore_index = -100
+        if isinstance(y_extra, dict):
+            tokenizer = y_extra.get("tokenizer")
+            ignore_index = int(y_extra.get("ignore_index", ignore_index))
+
+        if y_true.dtype.kind not in {"U", "S", "O"} and y_pred.dtype.kind not in {"U", "S", "O"}:
+            ref_texts = _decode_token_id_batch(tokenizer, y_true, ignore_index=ignore_index)
+            pred_texts = _decode_token_id_batch(tokenizer, y_pred, ignore_index=ignore_index)
+            if ref_texts is not None and pred_texts is not None and (y_true.ndim >= 2 or y_pred.ndim >= 2):
+                common_text = min(len(ref_texts), len(pred_texts))
+                yt = np.asarray([self._normalize_answer(v) for v in ref_texts[:common_text]], dtype=object)
+                yp = np.asarray([self._normalize_answer(v) for v in pred_texts[:common_text]], dtype=object)
+                exact = float((yt == yp).mean()) if common_text else np.nan
+                return {"primary": exact, "secondary": np.nan, "named_metrics": {"exact_match": exact}}
+
         if y_true.dtype.kind in {"U", "S", "O"} or y_pred.dtype.kind in {"U", "S", "O"}:
             yt = np.asarray([self._normalize_answer(v) for v in y_true.reshape(-1)], dtype=object)
             yp = np.asarray([self._normalize_answer(v) for v in y_pred.reshape(-1)], dtype=object)
             exact = float((yt == yp).mean())
         else:
-            exact = float((y_true.reshape(-1) == y_pred.reshape(-1)).mean())
+            yt = y_true.reshape(-1)
+            yp = y_pred.reshape(-1)
+            common = min(int(yt.size), int(yp.size))
+            yt = yt[:common]
+            yp = yp[:common]
+            mask = yt != int(ignore_index)
+            exact = float((yt[mask] == yp[mask]).mean()) if np.any(mask) else np.nan
 
         return {"primary": exact, "secondary": np.nan, "named_metrics": {"exact_match": exact}}
 

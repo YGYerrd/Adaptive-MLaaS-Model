@@ -140,7 +140,28 @@ CREATE INDEX IF NOT EXISTS idx_measurements_metric ON measurements(metric_id);
 
 
 -- =========================
--- 7) Convenience View
+-- 7) Run Failures
+-- =========================
+CREATE TABLE IF NOT EXISTS run_failures (
+  failure_id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  external_run_id      TEXT,
+  row_index            INTEGER,
+  case_name            TEXT,
+  run_group_id         TEXT,
+  failure_stage        TEXT NOT NULL,
+  error_message        TEXT,
+  resolved_config_json TEXT,
+  traceback_text       TEXT,
+  created_at           TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_run_failures_external_run_id ON run_failures(external_run_id);
+CREATE INDEX IF NOT EXISTS idx_run_failures_run_group_id ON run_failures(run_group_id);
+CREATE INDEX IF NOT EXISTS idx_run_failures_stage ON run_failures(failure_stage);
+
+
+-- =========================
+-- 8) Convenience View
 -- =========================
 CREATE VIEW IF NOT EXISTS v_measurements AS
 SELECT

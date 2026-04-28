@@ -2,6 +2,8 @@ from .base import TaskStrategy, ClientOutcome, metric_score_value, _nanmean, wei
 import time
 import numpy as np
 from ..system_metrics import ResourceTracker
+from ..model_params import extract_model_parameters
+from .keras_strategy import _generic_runtime_metrics, _merge_runtime_metrics
 
 class ClusteringStrategy(TaskStrategy):
     def task_type(self) -> str: return "clustering"
@@ -18,10 +20,12 @@ class ClusteringStrategy(TaskStrategy):
             duration = time.time() - t0
             usage = tracker.stop(duration)
 
+            eval_start = time.time()
             try:
                 loss, sil, inertia = local_model.evaluate(self.x_test)
             except Exception:
                 loss, sil, inertia = (np.nan, np.nan, np.nan)
+            eval_latency_s = time.time() - eval_start
             ari = nmi = np.nan
 
             try:
@@ -38,8 +42,31 @@ class ClusteringStrategy(TaskStrategy):
                 comm_up = weights_size(local_model.get_weights())
             except Exception:
                 comm_up = 0
+            model_params = extract_model_parameters(
+                model=local_model,
+                config=self.config,
+                metadata={"client_id": client_id, "round": round_idx},
+            )
 
             mscore = metric_score_value("clustering", sil)
+            extras = _merge_runtime_metrics(
+                {
+                    "silhouette": sil,
+                    "inertia": inertia,
+                    "ari": ari,
+                    "nmi": nmi,
+                    "clustering_k": getattr(local_model, "k", np.nan),
+                    "clustering_agg": "local_only",
+                },
+                _generic_runtime_metrics(
+                    local_model,
+                    eval_latency_s=eval_latency_s,
+                    metric_score=mscore,
+                    loss=loss,
+                    include_trust_metrics=self.should_run_perturbation_metrics(round_idx),
+                ),
+            )
+
             return ClientOutcome(
                 participated=True, fail_reason="", samples_count=len(X), duration=duration,
                 loss=np.nan, metric_value=sil, metric_score=mscore, extra_metric=inertia,
@@ -52,14 +79,8 @@ class ClusteringStrategy(TaskStrategy):
                 peak_host_ram_mb=usage.peak_host_ram_mb,
                 avg_host_ram_mb=usage.avg_host_ram_mb,
                 payload=None,
-                extras={
-                    "silhouette": sil,
-                    "inertia": inertia,
-                    "ari": ari,
-                    "nmi": nmi,
-                    "clustering_k": getattr(local_model, "k", np.nan),
-                    "clustering_agg": "local_only",
-                },
+                extras=extras,
+                model_params=model_params,
             )
         except Exception:
             duration = time.time() - t0

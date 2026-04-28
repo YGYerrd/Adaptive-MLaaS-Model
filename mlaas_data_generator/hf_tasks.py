@@ -98,6 +98,9 @@ MODEL_TEMPLATE_TO_HF_TASK = {
     "hf_fill_mask": "fill_mask",
     "hf_causal_lm": "causal_lm_generation",
     "hf_seq2seq": "seq2seq_generation",
+    "auto_image_to_text": "image_captioning",
+    "auto_clip_retrieval": "text_image_retrieval",
+    "auto_vqa": "visual_question_answering",
     "auto_sequence_classification": "sequence_classification",
     "auto_token_classification": "token_classification",
     "auto_masked_lm": "fill_mask",
@@ -117,6 +120,9 @@ DATASET_TEMPLATE_TO_HF_TASK = {
     "hf_text_similarity": "sentence_similarity",
     "hf_text_fill_mask": "fill_mask",
     "hf_text_generation": None,
+    "hf_image_captioning": "image_captioning",
+    "hf_image_text_retrieval": "text_image_retrieval",
+    "hf_visual_question_answering": "visual_question_answering",
 }
 
 @dataclass(frozen=True)

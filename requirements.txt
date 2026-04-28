@@ -73,4 +73,6 @@ torch
 transformers
 torchmetrics
 faster-coco-eval
+sentencepiece
+tiktoken
 

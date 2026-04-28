@@ -15,6 +15,14 @@ def _resolve_text_column_spec(text_column):
         return text_column
     return text_column
 
+
+def _dataset_len(ds, fallback_column):
+    try:
+        return int(len(ds))
+    except Exception:
+        return int(len(ds[fallback_column]))
+
+
 def _is_multilabel_sample(value):
     return isinstance(value, (list, tuple, set, np.ndarray))
 
@@ -245,12 +253,14 @@ def preprocess_hf_text_sequence(
     meta2 = attach_label_schema(meta2, y_train, default_num_labels=num_classes)
     train_sequences = int(X_train["input_ids"].shape[0])
     test_sequences = int(X_test["input_ids"].shape[0])
+    train_count = _dataset_len(ds_train, text_col_1)
+    test_count = _dataset_len(ds_test, text_col_1)
     meta2 = append_accounting_stage(
         meta2,
         stage="hf_text_sequence",
         split="train",
-        input_record_count=len(ds_train),
-        post_filter_record_count=len(ds_train),
+        input_record_count=train_count,
+        post_filter_record_count=train_count,
         tokenized_record_count=train_sequences,
         emitted_record_count=train_sequences,
         sequence_count=train_sequences,
@@ -260,8 +270,8 @@ def preprocess_hf_text_sequence(
         meta2,
         stage="hf_text_sequence",
         split="test",
-        input_record_count=len(ds_test),
-        post_filter_record_count=len(ds_test),
+        input_record_count=test_count,
+        post_filter_record_count=test_count,
         tokenized_record_count=test_sequences,
         emitted_record_count=test_sequences,
         sequence_count=test_sequences,

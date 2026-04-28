@@ -46,7 +46,7 @@ def build_task_spec(hf_task=None, *, loader_template=None, num_labels=None, mult
     if task == "text_image_retrieval":
         return "text_image_retrieval", TextImageRetrievalSpec()
     if task == "visual_question_answering":
-        return "visual_question_answering", VQASpec()
+        return "visual_question_answering", VQASpec(label_format=label_format)
     return "sequence_classification", SequenceClassificationSpec(multilabel=multilabel, label_format=label_format)
 
 
@@ -156,10 +156,36 @@ class TransformersTextClassifierAdapter:
                 if task == "image_segmentation":
                     return transformers.AutoModelForSemanticSegmentation.from_pretrained(model_id)
                 if task == "image_captioning":
-                    return transformers.AutoModelForVision2Seq.from_pretrained(model_id)
+                    for auto_model_name in (
+                        "AutoModelForVision2Seq",
+                        "AutoModelForImageTextToText",
+                        "BlipForConditionalGeneration",
+                        "GitForCausalLM",
+                        "AutoModelForCausalLM",
+                    ):
+                        AutoModel = getattr(transformers, auto_model_name, None)
+                        if AutoModel is not None:
+                            return AutoModel.from_pretrained(model_id)
+                    raise AttributeError(
+                        "transformers is missing image-captioning AutoModel/GIT/BLIP loaders"
+                    )
                 if task == "text_image_retrieval":
                     return transformers.AutoModel.from_pretrained(model_id)
                 if task == "visual_question_answering":
+                    for auto_model_name in (
+                        "AutoModelForVisualQuestionAnswering",
+                        "AutoModelForVision2Seq",
+                        "AutoModelForImageTextToText",
+                        "BlipForQuestionAnswering",
+                        "GitForCausalLM",
+                        "AutoModelForCausalLM",
+                    ):
+                        AutoModel = getattr(transformers, auto_model_name, None)
+                        if AutoModel is not None:
+                            try:
+                                return AutoModel.from_pretrained(model_id)
+                            except Exception:
+                                continue
                     return transformers.AutoModelForVisualQuestionAnswering.from_pretrained(model_id)
                 return transformers.AutoModelForSequenceClassification.from_pretrained(model_id)
 
@@ -172,6 +198,7 @@ class TransformersTextClassifierAdapter:
 
         core.model.to(core.device)
         core.model.eval()
+        core.sync_effective_max_length()
 
         self.core = core
         self.model_id = model_id

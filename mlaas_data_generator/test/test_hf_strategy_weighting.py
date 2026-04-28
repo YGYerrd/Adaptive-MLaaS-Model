@@ -291,7 +291,7 @@ def test_train_client_inference_image_classification_backfills_accuracy_from_qos
     assert math.isclose(outcome.metric_score, 0.42)
 
 
-def test_train_client_inference_uses_heldout_eval_set(monkeypatch):
+def test_train_client_inference_uses_client_partition_as_eval_set(monkeypatch):
     strategy = HFStrategy(
         meta={"accounting": {"sequence_count": 10, "supervised_token_count": 100}},
         knobs={"batch_size": 2, "local_epochs": 1, "learning_rate": 1e-4},
@@ -322,8 +322,8 @@ def test_train_client_inference_uses_heldout_eval_set(monkeypatch):
     )
 
     assert outcome.participated is True
-    assert seen["x"] == strategy.x_test
-    assert seen["y"] == strategy.y_test
+    assert seen["x"] == {"pixel_values": ["client-train"]}
+    assert seen["y"] == ["client-label"]
     assert outcome.sequence_count == 1
 
 

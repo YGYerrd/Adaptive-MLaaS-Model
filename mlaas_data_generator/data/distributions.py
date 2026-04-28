@@ -1,3 +1,5 @@
+from collections import Counter
+
 import numpy as np
 
 
@@ -254,7 +256,25 @@ def get_data_distribution(
         if bins is None:
             bins = 10
 
-        y_arr = np.asarray(y, dtype="float32").reshape(-1)
+        try:
+            y_arr = np.asarray(y, dtype="float32").reshape(-1)
+        except (TypeError, ValueError):
+            y_obj = np.asarray(y, dtype=object).reshape(-1)
+            values = []
+            for value in y_obj:
+                if value is None:
+                    continue
+                text = str(value).strip()
+                if text:
+                    values.append(text)
+            counts = Counter(values)
+            top = counts.most_common(int(bins))
+            summary = {label: int(count) for label, count in top}
+            other = sum(counts.values()) - sum(summary.values())
+            if other > 0:
+                summary["__other__"] = int(other)
+            return summary
+
         if value_range is not None:
             hist, _ = np.histogram(y_arr, bins=int(bins), range=value_range)
         else:
