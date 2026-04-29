@@ -129,6 +129,30 @@ def test_vqa_metrics_decode_generative_token_labels():
     out = spec.metrics(y_true, y_pred, y_extra={"tokenizer": TinyTokenizer(), "ignore_index": -100})
 
     assert np.isclose(out["named_metrics"]["exact_match"], 0.5)
+    assert np.isclose(out["secondary"], 0.0)
+    assert np.isclose(out["named_metrics"]["answer_token_accuracy"], 0.0)
+
+
+def test_vqa_generate_predictions_trims_decoder_only_prompt_tokens():
+    torch = pytest.importorskip("torch")
+
+    class TinyTokenizer:
+        def batch_decode(self, rows, **kwargs):
+            vocab = {1: "what", 2: "color", 3: "blue"}
+            return [" ".join(vocab.get(int(tok), "") for tok in row).strip() for row in rows]
+
+    class PromptEchoModel:
+        def generate(self, **kwargs):
+            input_ids = kwargs["input_ids"]
+            answer = torch.full((input_ids.shape[0], 1), 3, dtype=input_ids.dtype, device=input_ids.device)
+            return torch.cat([input_ids, answer], dim=1)
+
+    spec = VQASpec(label_format="vqa_token_index")
+    enc = {"input_ids": torch.tensor([[1, 2]], dtype=torch.long)}
+
+    preds = spec.generate_predictions(PromptEchoModel(), enc, TinyTokenizer(), torch, {})
+
+    assert preds.tolist() == ["blue"]
 
 
 def test_hfcore_finetune_dummy_retrieval_model():
@@ -299,5 +323,6 @@ def test_hfcore_vqa_inference_keeps_text_answers_for_metrics():
 
     assert np.isnan(loss)
     assert np.isclose(primary, 1.0)
-    assert np.isnan(secondary)
+    assert np.isclose(secondary, 1.0)
     assert np.isclose(qos["exact_match"], 1.0)
+    assert np.isclose(qos["answer_token_accuracy"], 1.0)

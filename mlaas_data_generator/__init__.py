@@ -1,13 +1,5 @@
-"""MLaaS data generator package."""
+"""MLaaS service dataset generator package."""
 
-# The FederatedDataGenerator is intentionally imported lazily to keep optional
-# dependencies light for consumers that only need metadata (e.g. ``--help``).
+from .services.runner import ServiceExecutionResult, execute_service, resolve_service_id
 
-__all__ = ["FederatedDataGenerator"]
-
-
-def __getattr__(name):
-    if name == "FederatedDataGenerator":
-        from .federated import FederatedDataGenerator
-        return FederatedDataGenerator
-    raise AttributeError(name)
+__all__ = ["ServiceExecutionResult", "execute_service", "resolve_service_id"]

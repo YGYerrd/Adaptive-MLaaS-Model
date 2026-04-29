@@ -1,4 +1,5 @@
 from ..accounting import append_accounting_stage, update_accounting
+from ..hf_cache_paths import with_hf_image_decode_disabled
 from ..multimodal_columns import resolve_existing_column
 
 
@@ -115,14 +116,18 @@ def load_huggingface_source(**kwargs):
             return False
         if isinstance(value, str):
             return bool(value.strip())
+        if isinstance(value, dict) and any(k in value for k in ("array", "bytes", "path")):
+            return any(_has_value(value.get(k)) for k in ("array", "bytes", "path"))
         return True
 
     def _apply_pair_integrity(ds, *, split_name, image_column, text_column, policy):
         if policy not in {"drop", "error"}:
             raise ValueError("missing_pair_handling must be one of ['drop', 'error']")
 
-        image_values = ds[image_column]
-        text_values = ds[text_column]
+        raw_ds = with_hf_image_decode_disabled(ds, image_column)
+        original_count = len(raw_ds)
+        image_values = raw_ds[image_column]
+        text_values = raw_ds[text_column]
 
         has_image_mask = [_has_value(value) for value in image_values]
         has_text_mask = [_has_value(value) for value in text_values]
@@ -141,16 +146,16 @@ def load_huggingface_source(**kwargs):
             )
 
         if missing_pair_rows and policy == "drop":
-            ds = ds.select(valid)
+            raw_ds = raw_ds.select(valid)
 
-        return ds, {
+        return raw_ds, {
             "split": split_name,
             "policy": policy,
             "dropped_rows": len(missing_pair_rows) if policy == "drop" else 0,
             "missing_pair_rows": len(missing_pair_rows),
             "aligned_pairs": len(valid),
-            "original_rows": len(ds) + (len(missing_pair_rows) if policy == "drop" else 0),
-            "output_rows": len(ds),
+            "original_rows": original_count,
+            "output_rows": len(raw_ds),
         }
 
     if modality == "image":

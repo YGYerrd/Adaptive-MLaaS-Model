@@ -1,4 +1,9 @@
 from ..accounting import append_accounting_stage, finalize_accounting
+from ..hf_cache_paths import (
+    load_image_from_bytes,
+    load_image_from_path,
+    with_hf_image_decode_disabled,
+)
 from ..multimodal_columns import resolve_existing_column
 import numpy as np
 from collections import Counter
@@ -29,6 +34,8 @@ def _has_value(value):
         return False
     if isinstance(value, str):
         return bool(value.strip())
+    if isinstance(value, dict) and any(k in value for k in ("array", "bytes", "path")):
+        return any(_has_value(value.get(k)) for k in ("array", "bytes", "path"))
     return True
 
 
@@ -47,10 +54,38 @@ def _coerce_image_input(value):
         if value.get("array") is not None:
             return np.asarray(value.get("array"))
         if value.get("bytes") is not None:
-            return value.get("bytes")
+            return load_image_from_bytes(value.get("bytes"))
         if value.get("path"):
-            return value.get("path")
+            return load_image_from_path(value.get("path"))
+    if isinstance(value, (bytes, bytearray)):
+        return load_image_from_bytes(value)
+    if isinstance(value, str):
+        return load_image_from_path(value)
     return value
+
+
+def _infer_image_hw(value):
+    if _is_pil_image(value):
+        width, height = value.size
+        return int(height), int(width)
+    if isinstance(value, dict):
+        height = value.get("height")
+        width = value.get("width")
+        if height is not None and width is not None:
+            return int(height), int(width)
+        if value.get("array") is not None:
+            return _infer_image_hw(np.asarray(value.get("array")))
+        if value.get("path"):
+            try:
+                image = load_image_from_path(value.get("path"))
+                width, height = image.size
+                return int(height), int(width)
+            except Exception:
+                return None, None
+    arr = np.asarray(value) if hasattr(value, "__array__") or hasattr(value, "__array_interface__") else None
+    if arr is not None and arr.ndim >= 2:
+        return int(arr.shape[0]), int(arr.shape[1])
+    return None, None
 
 
 def _resolve_image_target_hw(image_processor):
@@ -244,16 +279,23 @@ def _encode_vqa_token_labels(tokenizer, answer_texts, *, max_length, ignore_inde
             padding="max_length",
             max_length=int(max_length),
             return_attention_mask=True,
+            return_special_tokens_mask=True,
             return_tensors=None,
         )
         label_ids = np.asarray(label_enc["input_ids"], dtype=np.int64)
         label_mask = np.asarray(label_enc["attention_mask"], dtype=np.int64)
+        special_mask = np.asarray(label_enc.get("special_tokens_mask", np.zeros_like(label_ids)), dtype=np.int64)
         if label_ids.ndim == 2:
             label_ids = label_ids[0]
         if label_mask.ndim == 2:
             label_mask = label_mask[0]
+        if special_mask.ndim == 2:
+            special_mask = special_mask[0]
         row = label_ids.copy()
-        row[label_mask == 0] = int(ignore_index)
+        row[(label_mask == 0) | (special_mask != 0)] = int(ignore_index)
+        special_ids = getattr(tokenizer, "all_special_ids", None)
+        if special_ids:
+            row[np.isin(row, np.asarray(special_ids, dtype=np.int64))] = int(ignore_index)
         labels.append(row)
     return np.asarray(labels, dtype=np.int64)
 
@@ -368,6 +410,8 @@ def _encode_split(
     attention_masks = []
     pixel_values = []
     labels = []
+    caption_lengths = []
+    image_sizes = []
     decode_errors = []
     image_target_hw = _resolve_image_target_hw(image_processor)
 
@@ -400,6 +444,7 @@ def _encode_split(
 
             if not _has_value(text_val) or image_val is None:
                 continue
+            image_h, image_w = _infer_image_hw(image_val)
 
             text_enc = tokenizer(
                 str(text_val),
@@ -464,6 +509,9 @@ def _encode_split(
         input_ids.append(ids)
         attention_masks.append(mask)
         pixel_values.append(pix)
+        if hf_task == "text_image_retrieval":
+            caption_lengths.append(len(str(text_val).split()))
+            image_sizes.append([image_h or 0, image_w or 0])
         if hf_task == "image_captioning":
             labels.append(row_label)
         elif label_column is not None:
@@ -479,6 +527,9 @@ def _encode_split(
         "attention_mask": np.asarray(attention_masks, dtype=np.int64),
         "pixel_values": np.asarray(pixel_values, dtype=np.float32),
     }
+    if hf_task == "text_image_retrieval":
+        x["caption_lengths"] = np.asarray(caption_lengths, dtype=np.int64)
+        x["image_sizes"] = np.asarray(image_sizes, dtype=np.int64)
     y = np.asarray(labels, dtype=object) if labels and hf_task == "visual_question_answering" else (
         np.asarray(labels) if labels else np.zeros((len(input_ids),), dtype=np.int64)
     )
@@ -605,6 +656,9 @@ def preprocess_hf_multimodal(
             label_column = resolve_existing_column(label_column, train_columns)
             if label_column not in train_column_set:
                 label_column = None
+
+    ds_train = with_hf_image_decode_disabled(ds_train, image_column)
+    ds_test = with_hf_image_decode_disabled(ds_test, image_column)
 
     model_config = None
     if AutoConfig is not None:

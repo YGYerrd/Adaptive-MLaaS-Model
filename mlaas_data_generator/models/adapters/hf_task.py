@@ -2400,6 +2400,22 @@ class VQASpec(HFTaskSpec):
                 if key in generation_config and generation_config[key] is not None:
                     generation_kwargs[key] = generation_config[key]
             generated = model.generate(**enc, **generation_kwargs)
+            input_ids = enc.get("input_ids") if isinstance(enc, dict) else None
+            if (
+                input_ids is not None
+                and hasattr(generated, "ndim")
+                and hasattr(input_ids, "ndim")
+                and generated.ndim == 2
+                and input_ids.ndim == 2
+                and int(generated.shape[0]) == int(input_ids.shape[0])
+                and int(generated.shape[1]) > int(input_ids.shape[1])
+            ):
+                prefix = generated[:, : int(input_ids.shape[1])]
+                try:
+                    if bool(torch.equal(prefix, input_ids)):
+                        generated = generated[:, int(input_ids.shape[1]):]
+                except Exception:
+                    pass
             if tokenizer is not None and hasattr(tokenizer, "batch_decode"):
                 return np.asarray(tokenizer.batch_decode(generated, skip_special_tokens=True), dtype=object)
             return generated
@@ -2432,6 +2448,22 @@ class VQASpec(HFTaskSpec):
             tokenizer = y_extra.get("tokenizer")
             ignore_index = int(y_extra.get("ignore_index", ignore_index))
 
+        def _token_accuracy():
+            if y_true.dtype.kind in {"U", "S", "O"} or y_pred.dtype.kind in {"U", "S", "O"}:
+                return np.nan
+            yt = np.asarray(y_true)
+            yp = np.asarray(y_pred)
+            if yt.ndim < 2 or yp.ndim < 2:
+                return np.nan
+            rows = min(int(yt.shape[0]), int(yp.shape[0]))
+            cols = min(int(yt.shape[1]), int(yp.shape[1]))
+            if rows <= 0 or cols <= 0:
+                return np.nan
+            yt = yt[:rows, :cols]
+            yp = yp[:rows, :cols]
+            mask = yt != int(ignore_index)
+            return float((yt[mask] == yp[mask]).mean()) if np.any(mask) else np.nan
+
         if y_true.dtype.kind not in {"U", "S", "O"} and y_pred.dtype.kind not in {"U", "S", "O"}:
             ref_texts = _decode_token_id_batch(tokenizer, y_true, ignore_index=ignore_index)
             pred_texts = _decode_token_id_batch(tokenizer, y_pred, ignore_index=ignore_index)
@@ -2440,7 +2472,16 @@ class VQASpec(HFTaskSpec):
                 yt = np.asarray([self._normalize_answer(v) for v in ref_texts[:common_text]], dtype=object)
                 yp = np.asarray([self._normalize_answer(v) for v in pred_texts[:common_text]], dtype=object)
                 exact = float((yt == yp).mean()) if common_text else np.nan
-                return {"primary": exact, "secondary": np.nan, "named_metrics": {"exact_match": exact}}
+                token_acc = _token_accuracy()
+                secondary = token_acc if token_acc == token_acc else exact
+                return {
+                    "primary": exact,
+                    "secondary": secondary,
+                    "named_metrics": {
+                        "exact_match": exact,
+                        "answer_token_accuracy": secondary,
+                    },
+                }
 
         if y_true.dtype.kind in {"U", "S", "O"} or y_pred.dtype.kind in {"U", "S", "O"}:
             yt = np.asarray([self._normalize_answer(v) for v in y_true.reshape(-1)], dtype=object)
@@ -2455,5 +2496,9 @@ class VQASpec(HFTaskSpec):
             mask = yt != int(ignore_index)
             exact = float((yt[mask] == yp[mask]).mean()) if np.any(mask) else np.nan
 
-        return {"primary": exact, "secondary": np.nan, "named_metrics": {"exact_match": exact}}
+        return {
+            "primary": exact,
+            "secondary": exact,
+            "named_metrics": {"exact_match": exact, "answer_token_accuracy": exact},
+        }
 

@@ -1,4 +1,5 @@
 from collections import Counter
+import hashlib
 
 import numpy as np
 
@@ -232,6 +233,196 @@ def get_token_label_stats(y, *, ignore_index=-100, pad_token_id=None, top_k=10):
         "unique_supervised_token_ids": int(token_ids.size),
         "top_supervised_token_ids": top,
     }
+
+
+def _array_row_digest(row):
+    arr = np.ascontiguousarray(np.asarray(row))
+    digest = hashlib.blake2b(digest_size=16)
+    digest.update(str(arr.shape).encode("utf-8"))
+    digest.update(str(arr.dtype).encode("utf-8"))
+    digest.update(arr.tobytes())
+    return digest.hexdigest()
+
+
+def _mean_std(values):
+    arr = np.asarray(values, dtype=np.float64).reshape(-1)
+    arr = arr[np.isfinite(arr)]
+    if arr.size == 0:
+        return {"mean": None, "std": None}
+    return {"mean": float(np.mean(arr)), "std": float(np.std(arr))}
+
+
+def get_retrieval_pair_stats(x):
+    """Summarize text-image retrieval partitions without fake numeric bins."""
+    if not isinstance(x, dict):
+        return {
+            "image_caption_pairs": 0,
+            "unique_images": 0,
+            "unique_captions": 0,
+            "caption_length": {"mean": None, "std": None},
+            "image_size": {
+                "height": {"mean": None, "std": None},
+                "width": {"mean": None, "std": None},
+                "area": {"mean": None, "std": None},
+            },
+        }
+
+    input_ids = np.asarray(x.get("input_ids", []))
+    attention_mask = np.asarray(x.get("attention_mask", []))
+    pixel_values = np.asarray(x.get("pixel_values", []))
+    pair_count = int(max(len(input_ids), len(pixel_values)))
+
+    if "caption_lengths" in x:
+        caption_lengths = np.asarray(x.get("caption_lengths"), dtype=np.float64).reshape(-1)
+    elif attention_mask.ndim >= 2:
+        caption_lengths = np.asarray(np.sum(attention_mask > 0, axis=1), dtype=np.float64)
+    else:
+        caption_lengths = np.asarray([], dtype=np.float64)
+
+    if input_ids.ndim >= 2 and attention_mask.ndim >= 2 and len(input_ids) == len(attention_mask):
+        unique_captions = len(
+            {
+                _array_row_digest(np.stack([np.asarray(ids), np.asarray(mask)], axis=0))
+                for ids, mask in zip(input_ids, attention_mask)
+            }
+        )
+    elif input_ids.ndim >= 1:
+        unique_captions = len({_array_row_digest(row) for row in input_ids})
+    else:
+        unique_captions = 0
+
+    if pixel_values.ndim >= 4:
+        unique_images = len({_array_row_digest(row) for row in pixel_values})
+    elif pixel_values.ndim == 3 and pair_count == 1:
+        unique_images = 1
+    else:
+        unique_images = 0
+
+    if "image_sizes" in x:
+        image_sizes = np.asarray(x.get("image_sizes"), dtype=np.float64)
+        if image_sizes.ndim == 2 and image_sizes.shape[1] >= 2:
+            heights = image_sizes[:, 0]
+            widths = image_sizes[:, 1]
+            valid = (heights > 0) & (widths > 0)
+            heights = heights[valid]
+            widths = widths[valid]
+        else:
+            heights = np.asarray([], dtype=np.float64)
+            widths = np.asarray([], dtype=np.float64)
+    elif pixel_values.ndim == 4:
+        heights = np.full((pixel_values.shape[0],), float(pixel_values.shape[2]))
+        widths = np.full((pixel_values.shape[0],), float(pixel_values.shape[3]))
+    else:
+        heights = np.asarray([], dtype=np.float64)
+        widths = np.asarray([], dtype=np.float64)
+
+    return {
+        "image_caption_pairs": pair_count,
+        "unique_images": int(unique_images),
+        "unique_captions": int(unique_captions),
+        "caption_length": _mean_std(caption_lengths),
+        "image_size": {
+            "height": _mean_std(heights),
+            "width": _mean_std(widths),
+            "area": _mean_std(heights * widths if heights.size and widths.size else []),
+        },
+    }
+
+
+def get_vqa_answer_stats(y, *, ignore_index=-100, max_sparse_values=200):
+    y_arr = np.asarray(y)
+    if y is None or y_arr.size == 0:
+        return {
+            "samples": 0,
+            "label_unit": "answer_id",
+            "supervised_answer_tokens": 0,
+            "unique_answer_ids": 0,
+            "answer_length": {"mean": None, "std": None},
+            "distribution": [],
+        }
+
+    sample_count = int(y_arr.shape[0]) if y_arr.ndim else int(y_arr.size)
+    if y_arr.dtype.kind in {"U", "S", "O"}:
+        values = [str(item).strip() for item in y_arr.reshape(-1) if str(item).strip()]
+        counts = Counter(values)
+        return {
+            "samples": sample_count,
+            "label_unit": "answer_text",
+            "unique_answers": int(len(counts)),
+            "answer_length": _mean_std([len(value.split()) for value in values]),
+            "distribution": [
+                {"value": value, "count": int(count)}
+                for value, count in counts.most_common(int(max_sparse_values))
+            ],
+        }
+
+    try:
+        numeric = y_arr.astype("int64", copy=False)
+    except Exception:
+        return get_vqa_answer_stats(np.asarray(y_arr, dtype=object), ignore_index=ignore_index)
+
+    if numeric.ndim >= 2:
+        mask = numeric != int(ignore_index)
+        answer_lengths = np.sum(mask, axis=1)
+        values = numeric[mask]
+        label_unit = "answer_token_id"
+    else:
+        values = numeric.reshape(-1)
+        if ignore_index is not None:
+            values = values[values != int(ignore_index)]
+        answer_lengths = np.ones((int(values.size),), dtype=np.int64)
+        label_unit = "answer_id"
+
+    values = values[values >= 0]
+    if values.size == 0:
+        return {
+            "samples": sample_count,
+            "label_unit": label_unit,
+            "supervised_answer_tokens": 0,
+            "unique_answer_ids": 0,
+            "answer_length": _mean_std(answer_lengths),
+            "distribution": [],
+        }
+
+    ids, counts = np.unique(values, return_counts=True)
+    unique_count = int(ids.size)
+    max_id = int(np.max(ids))
+
+    summary = {
+        "samples": sample_count,
+        "label_unit": label_unit,
+        "supervised_answer_tokens": int(values.size),
+        "unique_answer_ids": unique_count,
+        "answer_length": _mean_std(answer_lengths),
+    }
+
+    if unique_count <= int(max_sparse_values) and max_id <= 1000:
+        summary["distribution"] = [
+            {"bin": int(label_id), "count": int(count)}
+            for label_id, count in zip(ids.tolist(), counts.tolist())
+            if int(count) > 0
+        ]
+        return summary
+
+    base_edges = [0, 10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000]
+    edges = [edge for edge in base_edges if edge <= max_id]
+    if not edges or edges[0] != 0:
+        edges.insert(0, 0)
+    upper = max_id + 1
+    if edges[-1] < upper:
+        edges.append(upper)
+    hist, bin_edges = np.histogram(values, bins=np.asarray(edges, dtype=np.int64))
+    summary["histogram"] = {
+        "bin_edges": [int(edge) for edge in bin_edges.tolist()],
+        "counts": [int(count) for count in hist.tolist()],
+    }
+    top_order = np.argsort(counts)[::-1][: min(20, unique_count)]
+    summary["top_answer_ids"] = [
+        {"value": int(ids[i]), "count": int(counts[i])}
+        for i in top_order
+    ]
+    return summary
+
 
 def get_data_distribution(
     y,

@@ -1,336 +1,445 @@
-# MLaaS Dataset Generator
+# MLaaS Service Dataset Generator
 
-Framework for generating MLaaS service datasets for selection, composition, reliability, and performance experiments.
+Generate comparable MLaaS service records from reviewed manifest rows.
 
-The project simulates Machine Learning as a Service (MLaaS) providers by running configurable local, federated, Hugging Face, and generic model workloads. Runs are written to a SQLite database with normalized run, round, client, and measurement tables. CSV and XLSX files are used as command inputs, generated manifests, and analysis exports.
+The active workflow is:
 
-## Current Capabilities
+```text
+registry -> hf-manifest -> review manifest -> run-manifest --dry-run -> run-manifest -> SQLite service records
+```
 
-- Federated simulation with client-level participation, dropout, aggregation, and per-round measurements.
-- Local datasets: `mnist`, `fashion_mnist`, `cifar10`, `digits`, `iris`, `wine`, `california_housing`, and `diabetes`.
-- Hugging Face text, image, and multimodal task support through manifest rows.
-- Registry-driven manifest builder for compatible model/dataset/task combinations.
-- Generic manifest cases for Keras image classification, sklearn image classification, tabular regression, and clustering.
-- IID, quantity skew, Dirichlet label skew, shard, label-per-client, and custom split strategies.
-- SQLite output in `outputs/federated.db`, plus manifest result logs and optional CSV exports.
-- Runtime metrics for quality, resource use, latency, federated dynamics, perturbation, trust, and explainability.
+Each manifest row describes one independent service instance. Executing a row trains or loads one model, evaluates it on its benchmark split, records functional attributes and service metrics, then stores one service record in SQLite.
 
-## Installation
+## What To Copy To Another Computer
 
-Python 3.11 is recommended.
+Copy the project source, not the virtual environment.
+
+Keep:
+
+- `mlaas_data_generator/`
+- `requirements.txt`
+- `README.md`
+- any custom registry, manifest, SQL, or experiment files you need
+
+Usually do not copy:
+
+- `.venv/` or `venv/`
+- `__pycache__/`
+- `.pytest_cache/`
+- old Hugging Face caches
+
+Copy only if you want previous results:
+
+- `outputs/`
+- `weights/`
+- existing `.db`, `.csv`, and `.xlsx` output files
+
+## Get The Project Onto Linux
+
+### Option 1: Clone From Git
+
+On the Linux computer:
 
 ```bash
-python -m venv .venv
-.\.venv\Scripts\activate
-python -m pip install --upgrade pip
+git clone <your-repository-url> MLaaS-Dataset-Generator
+cd MLaaS-Dataset-Generator
+```
+
+If the repository is private, set up SSH keys or authenticate with HTTPS first.
+
+### Option 2: Transfer A Zip Or Tarball
+
+From the old machine, create an archive of the project folder. Exclude `.venv`, caches, and large old outputs unless you need them.
+
+On Linux, unpack it:
+
+```bash
+tar -xzf MLaaS-Dataset-Generator.tar.gz
+cd MLaaS-Dataset-Generator
+```
+
+If you transferred a `.zip` file:
+
+```bash
+unzip MLaaS-Dataset-Generator.zip
+cd MLaaS-Dataset-Generator
+```
+
+### Option 3: Copy Over SSH
+
+From the old machine, copy the folder to the Linux computer:
+
+```bash
+rsync -av --exclude ".venv" --exclude "__pycache__" --exclude ".pytest_cache" MLaaS-Dataset-Generator/ user@linux-host:~/MLaaS-Dataset-Generator/
+```
+
+Then SSH into the Linux computer:
+
+```bash
+ssh user@linux-host
+cd ~/MLaaS-Dataset-Generator
+```
+
+## Linux Prerequisites
+
+Python 3.11 is recommended. Python 3.12 should also work if your PyTorch and TensorFlow wheels support it.
+
+On Ubuntu or Debian:
+
+```bash
+sudo apt update
+sudo apt install -y git rsync unzip sqlite3 python3 python3-venv python3-dev build-essential
+```
+
+Check Python:
+
+```bash
+python3 --version
+```
+
+If your system has multiple Python versions, use the one you want explicitly:
+
+```bash
+python3.11 --version
+python3.11 -m venv .venv
+```
+
+## Create And Activate A Virtual Environment
+
+From the repository root:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip setuptools wheel
+```
+
+Your shell prompt should now show `(.venv)`.
+
+On Windows PowerShell, the activation command is:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+## Install Dependencies
+
+For CPU-only use, install the requirements directly:
+
+```bash
 python -m pip install -r requirements.txt
 ```
 
-On macOS/Linux, activate with:
+For an NVIDIA, CUDA, or ROCm Linux machine, install the PyTorch wheel recommended by the official PyTorch selector first:
 
 ```bash
-source .venv/bin/activate
+# Choose the exact command for your OS, Python version, and GPU from:
+# https://pytorch.org/get-started/locally/
+python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+python -m pip install -r requirements.txt
 ```
 
-Run commands from the repository root.
+The `requirements.txt` file uses normal package constraints for `torch`, `torchvision`, and `torchaudio`, so a compatible GPU build installed first should remain installed.
 
-## CLI Entry Point
+Verify the key packages:
 
-Use the package module directly:
+```bash
+python - <<'PY'
+import pandas
+import torch
+import transformers
+import datasets
+
+print("pandas", pandas.__version__)
+print("torch", torch.__version__)
+print("cuda_available", torch.cuda.is_available())
+print("transformers", transformers.__version__)
+print("datasets", datasets.__version__)
+PY
+```
+
+## Optional Environment Variables
+
+Set these before running large jobs if you want caches and outputs on a fast disk with enough space:
+
+```bash
+export MLAAS_OUTDIR=/mnt/fast/mlaas-outputs
+export HF_HOME=/mnt/fast/huggingface
+export HF_DATASETS_CACHE=$HF_HOME/datasets
+```
+
+If you need private Hugging Face models or datasets, export a token:
+
+```bash
+export HF_TOKEN=<your-token>
+```
+
+## CLI
+
+Run commands from the repository root:
 
 ```bash
 python -m mlaas_data_generator.cli.main <command> [options]
 ```
 
-Available commands:
+Commands:
 
 | Command | Purpose |
 | --- | --- |
-| `generate` | Run one configured dataset/model experiment. |
-| `wizard` | Interactive helper for building a JSON config. |
-| `merge` | Merge CSV outputs into one CSV. |
-| `autogen` | Generate many local/generic study runs. |
-| `hf-manifest` | Build a registry-driven HF/generic run manifest. |
-| `run-manifest` | Execute manifest rows from CSV or XLSX. |
-| `evaluate-dynamics` | Inspect federated learning dynamics in a SQLite DB. |
+| `hf-manifest` | Build reviewed service rows from the model and dataset registries. |
+| `run-manifest` | Validate or execute reviewed service rows. |
 
-## Recommended Workflow: Manifest Builder
+Check the installed CLI:
 
-The manifest builder is the main workflow for the current project state. It reads the curated registries in:
+```bash
+python -m mlaas_data_generator.cli.main --help
+python -m mlaas_data_generator.cli.main hf-manifest --help
+python -m mlaas_data_generator.cli.main run-manifest --help
+```
+
+## Build A Manifest
+
+The manifest builder reads:
 
 - `mlaas_data_generator/registry/models.py`
 - `mlaas_data_generator/registry/datasets.py`
 
-It scores compatible model/dataset pairs, samples workload settings, and writes a manifest that can be reviewed, edited, dry-run, and executed.
-
-### Build a Small Test Manifest
+Start small on a new machine:
 
 ```bash
-python -m mlaas_data_generator.cli.main hf-manifest ^
-  --manifest-profile test ^
-  --task-keys text_classification,image_classification,tabular_regression,clustering ^
-  --total-runs 8 ^
-  --avg-sample-size 128 ^
-  --output outputs/run_manifest.xlsx
+mkdir -p outputs
+
+python -m mlaas_data_generator.cli.main hf-manifest \
+  --manifest-profile test \
+  --task-keys text_classification,image_classification,tabular_regression \
+  --models-per-task 4 \
+  --datasets-per-model 1 \
+  --training-regimes finetune_transfer,inference_only \
+  --dataset-variants-per-pair 1 \
+  --split-variants-per-pair 1 \
+  --knob-variants-per-pair 2 \
+  --total-services 8 \
+  --output outputs/service_manifest.xlsx
 ```
 
-PowerShell also accepts backticks for line continuation. On macOS/Linux, replace `^` with `\`.
+This writes an Excel workbook with a `services` sheet and a `defaults` sheet.
 
-For broader MLaaS catalogs, prefer explicit coverage over `--total-runs` balancing:
+Useful manifest profiles:
 
-```bash
-python -m mlaas_data_generator.cli.main hf-manifest ^
-  --task-keys text_classification,token_classification,image_classification ^
-  --models-per-task 20 ^
-  --datasets-per-model 1 ^
-  --service-variants-per-pair 3 ^
-  --dataset-split-variants-per-pair 1 ^
-  --max-models-per-family 2 ^
-  --manifest-profile balanced ^
-  --output outputs/run_manifest.xlsx
-```
-
-### Validate a Manifest Without Running Models
-
-```bash
-python -m mlaas_data_generator.cli.main run-manifest ^
-  --file outputs/run_manifest.xlsx ^
-  --sheet runs ^
-  --dry_run
-```
-
-Dry runs resolve defaults, normalize column names, validate required fields, and write a status file to `outputs/run_manifest_results.csv`.
-
-### Execute a Manifest
-
-```bash
-python -m mlaas_data_generator.cli.main run-manifest ^
-  --file outputs/run_manifest.xlsx ^
-  --sheet runs
-```
-
-Successful runs are written to `outputs/federated.db`. Row-level success, skipped, or failed statuses are written to `outputs/run_manifest_results.csv`. Runtime failures are appended to `outputs/run_failures.log`.
-
-## Manifest Builder Options
-
-| Option | Meaning |
+| Profile | Use case |
 | --- | --- |
-| `--task-keys` | Comma-separated registry task keys to include. If omitted, all supported HF and generic tasks are considered. |
-| `--models-per-task` | Maximum models selected per requested HF task. |
-| `--max-models-per-family` | Optional cap on how many selected models may come from the same base family within a task. |
-| `--datasets-per-model` | Maximum compatible datasets selected per model. |
-| `--run-regimes` | Comma-separated run regimes, usually `finetune_transfer`, `inference_only`, or both. |
-| `--variants-per-pair` / `--service-variants-per-pair` | Number of sampled service variants per selected model/dataset pair. These variants keep the same base model and dataset, but vary training and workload knobs such as learning rate, optimizer, clients, and rounds. |
-| `--dataset-split-variants-per-pair` | Number of dataset split variants emitted per selected model/dataset pair. Keep this at `1` if you want services to differ only by training setup. |
-| `--total-runs` | Exact number of rows to emit, balanced across eligible requested task keys. |
-| `--manifest-profile` | Workload profile: `test`, `balanced`, or `benchmark`. |
-| `--avg-sample-size` | Target average `max_samples` across emitted rows. |
-| `--input-json` | Optional Hugging Face audit metadata JSON for enrichment only. |
-| `--output` | Destination `.xlsx` or `.csv` path. |
-| `--sheet` | XLSX sheet name, default `runs`. |
-| `--seed` | Reproducible sampling seed. |
+| `test` | Small smoke runs for a new machine. |
+| `balanced` | Moderate sample sizes and runtime. |
+| `benchmark` | Larger runs for stronger hardware. |
 
-Profiles:
+Common task keys include:
 
-| Profile | Use Case |
+| Task key | Typical workload |
 | --- | --- |
-| `test` | Small, quick smoke manifests with low sample counts and short timeouts. |
-| `balanced` | Default medium workload. |
-| `benchmark` | Larger sample sizes, more clients/rounds, and longer timeouts. |
+| `text_classification` | Text sequence classification. |
+| `token_classification` | Named entity or token label tasks. |
+| `sentence_similarity` | Pair scoring and similarity. |
+| `fill_mask` | Masked language modelling. |
+| `text_generation` | Causal language modelling. |
+| `text2text_generation` | Summarisation and sequence-to-sequence generation. |
+| `image_classification` | Image classification. |
+| `object_detection` | Object detection. |
+| `image_segmentation` | Segmentation. |
+| `image_captioning` | Image-to-text generation. |
+| `text_image_retrieval` | Image/text retrieval. |
+| `visual_question_answering` | VQA. |
+| `tabular_regression` | Generic tabular regression service rows. |
 
-## Supported Manifest Task Keys
+## Review The Manifest
 
-Hugging Face registry tasks:
+Open `outputs/service_manifest.xlsx` before executing it.
 
-```text
-text_classification
-token_classification
-sentence_similarity
-fill_mask
-text_generation
-text2text_generation
-image_classification
-object_detection
-image_segmentation
-image_captioning
-text_image_retrieval
-visual_question_answering
-```
-
-Generic manifest tasks:
-
-```text
-keras_image_classification
-sklearn_image_classification
-tabular_regression
-clustering
-```
-
-## Manifest Columns
-
-The builder emits all columns expected by `run-manifest`. The most useful columns to review or edit are:
+Important columns:
 
 | Column | Purpose |
 | --- | --- |
-| `enabled` | Set false to skip a row. Missing values default to enabled. |
-| `external_run_id` | Stable run ID. If present, this becomes the database `run_id`. |
-| `run_group_id` | Groups related manifest rows. Missing values are filled at runtime. |
+| `enabled` | Set to `false` to skip a row. Missing values default to enabled. |
+| `service_id` | Primary service identifier. Missing values are generated deterministically. |
 | `case_name` | Human-readable model/dataset/regime label. |
-| `dataset` | Dataset source, for example `hf`, `cifar10`, or `synthetic`. |
-| `model_type` | Runner model family, for example `hf`, `hf_finetune`, `cnn`, `mlp`, `randomforest`, or `kmeans`. |
-| `task_type` | Canonical task family such as `classification`, `regression`, `generation`, `detection`, `segmentation`, `retrieval`, `vqa`, or `clustering`. |
-| `hf_task` | HF adapter task such as `sequence_classification`, `image_classification`, `causal_lm_generation`, or `visual_question_answering`. |
-| `modality` | `text`, `image`, `multimodal`, or `tabular`. |
-| `hf_model_id` | Hugging Face model repo ID. |
-| `dataset_name` / `dataset_config` | Hugging Face dataset repo and config. |
-| `train_split` / `test_split` | HF split names or slice expressions. |
-| `text_column`, `image_column`, `label_column`, `mask_column` | Dataset schema mapping. |
-| `task_tag` | Metric subtype such as `summarization`, `language-modeling`, `captioning`, `retrieval`, or `vqa`. |
-| `run_regime` | `finetune_transfer`, `inference_only`, or `generic`. |
-| `num_rounds`, `num_clients`, `local_epochs` | Federated workload size. |
-| `batch_size`, `learning_rate`, `optimizer`, `weight_decay`, `momentum` | Training knobs. |
-| `distribution`, `dirichlet_alpha`, `sample_size`, `max_samples` | Data partitioning and truncation knobs. |
-| `timeout_s`, `device`, `mixed_precision`, `num_workers` | Runtime controls. |
+| `dataset`, `dataset_name`, `dataset_config` | Dataset source and provider identifiers. |
+| `model_type`, `hf_model_id`, `hf_task` | Runner and model identifiers. |
+| `task_type`, `task`, `task_tag`, `modality` | Functional compatibility attributes. |
+| `train_split`, `test_split`, `benchmark_split` | Training and benchmark split names. |
+| `training_regime` | `finetune_transfer`, `inference_only`, or `generic`. |
+| `training_epochs`, `batch_size`, `learning_rate`, `optimizer` | Training and runtime knobs. |
+| `max_samples`, `max_length`, `timeout_s`, `device` | Workload and runtime controls. |
+| `input_schema`, `output_schema` | Compatibility metadata for later composition work. |
 
-For `inference_only` rows, training-only knobs such as `local_epochs`, `learning_rate`, `optimizer`, `weight_decay`, `momentum`, and `dirichlet_alpha` are emitted as `N/A`. `batch_size` remains numeric because the HF adapter still uses it for inference/evaluation batching.
-For HF inference-only runs, `sample_size` is the per-client evaluation partition target. The runner partitions the resolved eval split, and `eval_sequence_count` is the actual number of examples forwarded through the model. If `sample_size * num_clients` exceeds the loaded eval rows, the run summary marks `split.resampled_with_replacement=true`.
+For first runs on a new computer, reduce risk by keeping `max_samples` low, using `--manifest-profile test`, and setting `enabled=false` for rows you do not want to run yet.
 
-CSV manifests can include a row where `external_run_id` is `defaults`; XLSX manifests can include a `defaults` sheet. Those values are applied before row-specific values.
+For GPU runs, leave `device` blank or set it to `auto` unless you need to force a device. The runner resolves CUDA automatically when PyTorch can see it.
 
-## Manual Manifest Rows
+CSV manifests can include a row with `service_id=defaults`. XLSX manifests can include a `defaults` sheet.
 
-You can create or edit a manifest manually. A minimal Hugging Face text classification row needs:
+## Validate A Manifest
 
-```csv
-external_run_id,enabled,dataset,model_type,task_type,hf_task,hf_model_id,dataset_name,dataset_config,train_split,test_split,text_column,label_column,num_rounds,num_clients,local_epochs,batch_size,learning_rate,distribution,max_samples
-demo_sst2,true,hf,hf_finetune,classification,sequence_classification,distilbert-base-uncased,glue,sst2,train,validation,sentence,label,1,2,1,8,0.00002,iid,128
-```
-
-Then run:
+Dry-run validation does not train models. It normalizes column names, applies defaults, validates enabled rows, resolves missing `service_id` values, and writes `outputs/service_manifest_results.csv`.
 
 ```bash
-python -m mlaas_data_generator.cli.main run-manifest --file path/to/manifest.csv --dry_run
-python -m mlaas_data_generator.cli.main run-manifest --file path/to/manifest.csv
+python -m mlaas_data_generator.cli.main run-manifest \
+  --file outputs/service_manifest.xlsx \
+  --sheet services \
+  --dry-run
 ```
 
-## Generation and Multimodal Notes
+If validation fails, check:
 
-Generation task mapping:
+- missing required columns such as `dataset`, `model_type`, or `task_type`
+- invalid `training_regime`
+- missing `hf_model_id` or `hf_task` for Hugging Face rows
+- stale sheet names if you changed `--sheet`
 
-| Pipeline Tag | Manifest `hf_task` |
-| --- | --- |
-| `text-generation` | `causal_lm_generation` |
-| `text2text-generation` | `seq2seq_generation` |
+## Run The Program
 
-`task_tag` selects canonical generation metrics:
-
-| `task_tag` | Eval Metrics |
-| --- | --- |
-| `language-modeling` | `loss`, `perplexity` |
-| `summarization` | `rouge1`, `rouge2`, `rougeL` |
-| `translation` | `sacrebleu` |
-| `captioning` | `cider`, `bleu` |
-
-For multimodal HF rows, set `modality=multimodal`, provide `image_column` and `text_column`, and optionally set `missing_pair_handling` to `drop` or `error`. The loader validates image/text pair integrity per split.
-
-## Single-Run Examples
-
-The legacy `generate` command is still useful for small local runs:
+After the dry run succeeds, execute the enabled service rows:
 
 ```bash
-python -m mlaas_data_generator.cli.main generate ^
-  --clients 5 ^
-  --rounds 2 ^
-  --dataset fashion_mnist ^
-  --strategy iid ^
-  --model-type CNN ^
-  --output clients.csv
+python -m mlaas_data_generator.cli.main run-manifest \
+  --file outputs/service_manifest.xlsx \
+  --sheet services \
+  --db outputs/services.db
 ```
 
-Distribution examples:
-
-```bash
-python -m mlaas_data_generator.cli.main generate --clients 5 --strategy quantity_skew --distribution-param 0.3 --output qskew.csv
-python -m mlaas_data_generator.cli.main generate --clients 10 --strategy dirichlet --distribution-param 0.2 --output dirichlet.csv
-python -m mlaas_data_generator.cli.main generate --clients 5 --strategy shard --distribution-param 2 --output shard.csv
-python -m mlaas_data_generator.cli.main generate --clients 5 --strategy label_per_client --distribution-param 2 --output klabels.csv
-python -m mlaas_data_generator.cli.main generate --clients 5 --strategy custom --distribution custom_distributions.json --output custom.csv
-```
-
-The supported split strategies are:
-
-| Strategy | Meaning |
-| --- | --- |
-| `iid` | Independent and identically distributed split. |
-| `quantity_skew` | Dirichlet allocation over client sample counts. |
-| `dirichlet` | Dirichlet allocation over label distributions. |
-| `shard` | Label-sorted shards assigned to clients. |
-| `label_per_client` | Fixed number of labels per client. |
-| `custom` | Per-client label counts from JSON. |
-
-## Autogenerated Local Studies
-
-`autogen` samples many local/generic experiments across classification, regression, and clustering:
-
-```bash
-python -m mlaas_data_generator.cli.main autogen ^
-  --runs 50 ^
-  --task-split 50,30,20 ^
-  --seed 123
-```
-
-It writes per-run table exports under `outputs/` and a JSON study manifest at `outputs/study_manifest.json`.
-
-## Merging CSV Outputs
-
-```bash
-python -m mlaas_data_generator.cli.main merge outputs/runs/*.csv --output merged.csv --dedupe
-```
-
-Merged files are written under `outputs/merged/`.
-
-## Evaluating Federated Dynamics
-
-```bash
-python -m mlaas_data_generator.cli.main evaluate-dynamics ^
-  --db outputs/federated.db ^
-  --json
-```
-
-Add `--run-id <id>` to inspect one run.
-
-## Output Layout
+The run writes:
 
 | Path | Contents |
 | --- | --- |
-| `outputs/federated.db` | Primary SQLite database for generated runs. |
-| `outputs/run_manifest.xlsx` | Default generated manifest path. |
-| `outputs/run_manifest_results.csv` | Per-manifest-row success, skipped, or failed status. |
-| `outputs/run_failures.log` | Validation and runtime failure details. |
-| `outputs/runs/` | CSV outputs from single-run/export workflows. |
-| `outputs/merged/` | Merged CSV files. |
-| `weights/` | Optional saved model weight JSON files. |
+| `outputs/services.db` | SQLite database containing service records and metrics. |
+| `outputs/service_manifest_results.csv` | Per-row success/failure summary. |
+| `outputs/service_failures.log` | Detailed validation or runtime failures. |
 
-Set `MLAAS_OUTDIR` to redirect `outputs/runs/` and `outputs/merged/`. The default SQLite path remains `outputs/federated.db` unless the run config sets `db_path`.
+Successful rows are written to the SQLite database configured by `CONFIG["db_path"]`, `MLAAS_DB_PATH`, `MLAAS_SQL_DB_PATH`, or the `--db` override.
+
+## Database Tables
+
+The active schema is service-only:
+
+| Table | Contents |
+| --- | --- |
+| `services` | One row per manifest service instance. |
+| `service_metrics` | Typed quality, QoS, latency, runtime, resource, cost, reliability, explainability, and metadata metrics. |
+| `service_artifacts` | Optional model, report, or output artifact references. |
+| `service_split_provenance` | Optional split and distribution provenance. |
+| `service_failures` | Validation and execution failure details. |
+
+There are no active federated workflow or model-averaging tables.
+
+## Query Results
+
+Use SQLite directly:
+
+```bash
+sqlite3 outputs/services.db ".tables"
+sqlite3 outputs/services.db "select service_id, status, task_type, training_regime from services limit 10;"
+```
+
+Or load results in Python:
+
+```bash
+python - <<'PY'
+import sqlite3
+import pandas as pd
+
+conn = sqlite3.connect("outputs/services.db")
+df = pd.read_sql_query("select * from services limit 10", conn)
+print(df)
+PY
+```
+
+## Scaling Up On A More Powerful Machine
+
+After the smoke run works:
+
+1. Increase `--total-services`.
+2. Move from `--manifest-profile test` to `balanced` or `benchmark`.
+3. Add more `--task-keys`.
+4. Increase `--models-per-task` or `--datasets-per-model`.
+5. Increase `max_samples` in the manifest or use `--avg-sample-size`.
+
+Example larger manifest:
+
+```bash
+python -m mlaas_data_generator.cli.main hf-manifest \
+  --manifest-profile balanced \
+  --task-keys text_classification,token_classification,sentence_similarity,image_classification,object_detection \
+  --models-per-task 8 \
+  --datasets-per-model 2 \
+  --training-regimes finetune_transfer,inference_only \
+  --dataset-variants-per-pair 1 \
+  --split-variants-per-pair 1 \
+  --knob-variants-per-pair 2 \
+  --total-services 40 \
+  --output outputs/service_manifest_balanced.xlsx
+```
+
+Validate it:
+
+```bash
+python -m mlaas_data_generator.cli.main run-manifest \
+  --file outputs/service_manifest_balanced.xlsx \
+  --sheet services \
+  --dry-run
+```
+
+Run it:
+
+```bash
+python -m mlaas_data_generator.cli.main run-manifest \
+  --file outputs/service_manifest_balanced.xlsx \
+  --sheet services \
+  --db outputs/services_balanced.db
+```
 
 ## Tests
 
-Run the test suite with:
+Install requirements first, then run:
 
 ```bash
 python -m pytest mlaas_data_generator/test
 ```
 
-Manifest-specific checks:
+Focused checks:
 
 ```bash
-python -m pytest mlaas_data_generator/test/test_hf_manifest_builder_selection.py mlaas_data_generator/test/test_manifest_task_matrix.py
+python -m pytest \
+  mlaas_data_generator/test/test_service_manifest_pipeline.py \
+  mlaas_data_generator/test/test_service_storage.py \
+  mlaas_data_generator/test/test_service_runner.py
 ```
 
-## Notes for Extending the Project
+## Troubleshooting
+
+If `torch.cuda.is_available()` is `False`, check `nvidia-smi`, the installed PyTorch build, and the PyTorch selector command you used.
+
+If a Hugging Face dataset or model fails to download, check internet access, disk space, `HF_HOME`, `HF_DATASETS_CACHE`, and whether the model or dataset requires `HF_TOKEN`.
+
+If Excel output fails, confirm `openpyxl` is installed in the active virtual environment:
+
+```bash
+python -m pip show openpyxl
+```
+
+If a run fails partway through, inspect:
+
+```bash
+tail -n 80 outputs/service_failures.log
+python - <<'PY'
+import sqlite3
+import pandas as pd
+
+conn = sqlite3.connect("outputs/services.db")
+print(pd.read_sql_query("select * from service_failures order by failure_id desc limit 10", conn))
+PY
+```
+
+## Extending
 
 - Add HF models in `mlaas_data_generator/registry/models.py`.
 - Add HF datasets in `mlaas_data_generator/registry/datasets.py`.
-- The manifest builder only emits rows that pass compatibility validation for task, modality, required columns, and run regime.
-- For high-risk multimodal pairs such as image captioning and image/text retrieval, registry entries must be explicitly marked as manifest validated.
-- New metrics should be seeded in `mlaas_data_generator/storage/writer.py` before being written broadly.
+- Keep new execution behavior row-local: one manifest row produces one independent service record.
+- Add future composition logic in a separate layer that reads the service table; do not couple composition to service generation.

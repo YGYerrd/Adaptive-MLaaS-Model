@@ -1222,3 +1222,901 @@ Traceback (most recent call last):
     raise ValueError("Token classification requires Sequence(ClassLabel) style labels.")
 ValueError: Token classification requires Sequence(ClassLabel) style labels.
 
+====================================================================================================
+timestamp: 2026-04-28T18:32:44.908017
+row_index: 3
+external_run_id: hf_text2text_000012
+case_name: Salesforce_codet5-small__scitldr_abstract__finetune_transfer__split0__svc0
+run_group_id: 8e091386-b4f0-4355-ba49-7f63c0cdd37c
+failure_stage: runtime_exception
+error_message: Input must be a List[Union[str, AddedToken]]
+resolved_config:
+{
+  "db_path": "outputs\\test.db",
+  "seed": 42,
+  "num_clients": 2,
+  "num_rounds": 2,
+  "local_epochs": 1,
+  "batch_size": 32,
+  "learning_rate": 0.005,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.0005,
+  "optimizer": "sgd",
+  "distribution_type": "dirichlet",
+  "distribution_param": null,
+  "sample_size": 69,
+  "sample_frac": null,
+  "client_dropout_rate": 0.0,
+  "task_type": "classification",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "save_weights": false,
+  "save_final_model_params": true,
+  "final_model_params_dir": "outputs\\final_model_params",
+  "update_signature_enabled": true,
+  "update_signature_dim": 256,
+  "update_signature_dir": null,
+  "update_signature_max_source_elements": null,
+  "enable_perturbation_metrics": false,
+  "perturbation_final_round_only": true,
+  "perturbation_sample_count": 10,
+  "perturbation_candidate_units": 16,
+  "perturbation_trust_trials": 5,
+  "perturbation_target_units": 2,
+  "perturbation_random_strength": 0.02,
+  "perturbation_progress_logging": true,
+  "perturbation_progress_sample_interval": 1,
+  "explainability_random_trials": 8,
+  "explainability_budget_fractions": [
+    0.1,
+    0.2,
+    0.3
+  ],
+  "explainability_meaningful_drop_threshold": 0.2,
+  "explainability_selectivity_floor": 0.5,
+  "client_participation_rate": 0.75,
+  "distribution": "dirichlet",
+  "external_run_id": "hf_text2text_000012",
+  "dataset": "hf",
+  "run_group_id": "8e091386-b4f0-4355-ba49-7f63c0cdd37c",
+  "case_name": "Salesforce_codet5-small__scitldr_abstract__finetune_transfer__split0__svc0",
+  "notes": "Generated from scored registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 69,
+  "max_length": 256,
+  "num_workers": 2,
+  "timeout_s": 3600,
+  "momentum": 0.9,
+  "dirichlet_alpha": 0.5,
+  "model_type": "hf_finetune",
+  "hf_task": "seq2seq_generation",
+  "modality": "text",
+  "dataset_name": "allenai/scitldr",
+  "dataset_config": "Abstract",
+  "hf_model_id": "Salesforce/codet5-small",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "target",
+  "text_column": "source",
+  "task_tag": "summarization",
+  "run_regime": "finetune_transfer",
+  "explainability_enabled": true,
+  "explainability_method": "integrated_gradients",
+  "explainability_target": "summary_token",
+  "model_role": "task_head",
+  "input_schema": "source_target_text",
+  "fit_decision": "selected",
+  "fit_reason": "selected score=4.229 (model=2.400, dataset=1.579, regime=finetune_transfer)",
+  "realism_score": 4.2285,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "allenai/scitldr",
+  "hf_pipeline_tag": "text2text-generation",
+  "hf_author": "Salesforce",
+  "hf_url": "https://huggingface.co/Salesforce/codet5-small",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"text2text_generation\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"pair_score\": 4.2285, \"variant_index\": 0, \"service_variant_index\": 0, \"dataset_variant_index\": 0, \"split_variant_index\": 0, \"finetune_validated\": false, \"vqa_label_mode\": null, \"retrieval_positive_policy\": null}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_generation.py", line 137, in _load_auto_tokenizer
+    return AutoTokenizer.from_pretrained(hf_model_id, use_fast=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\models\auto\tokenization_auto.py", line 693, in from_pretrained
+    return tokenizer_class_from_name(tokenizer_config_class).from_pretrained(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\tokenization_utils_base.py", line 1721, in from_pretrained
+    return cls._from_pretrained(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\tokenization_utils_base.py", line 1910, in _from_pretrained
+    tokenizer = cls(*init_inputs, **init_kwargs)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\models\roberta\tokenization_roberta.py", line 157, in __init__
+    super().__init__(
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\tokenization_utils_tokenizers.py", line 432, in __init__
+    self.add_tokens(tokens)
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\tokenization_utils_base.py", line 1241, in add_tokens
+    return self._add_tokens(new_tokens, special_tokens=special_tokens)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\tokenization_utils_tokenizers.py", line 695, in _add_tokens
+    return self._tokenizer.add_tokens(new_tokens)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: Input must be a List[Union[str, AddedToken]]
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 545, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 262, in __init__
+    train, test, meta = load_dataset(self.dataset, **loader_dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 233, in preprocess_hf
+    out = preprocess_hf_text_seq2seq_generation(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_generation.py", line 313, in preprocess_hf_text_seq2seq_generation
+    tokenizer = _load_auto_tokenizer(hf_model_id)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_generation.py", line 139, in _load_auto_tokenizer
+    return AutoTokenizer.from_pretrained(hf_model_id, use_fast=False)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\models\auto\tokenization_auto.py", line 693, in from_pretrained
+    return tokenizer_class_from_name(tokenizer_config_class).from_pretrained(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\tokenization_utils_base.py", line 1721, in from_pretrained
+    return cls._from_pretrained(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\tokenization_utils_base.py", line 1910, in _from_pretrained
+    tokenizer = cls(*init_inputs, **init_kwargs)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\models\roberta\tokenization_roberta.py", line 157, in __init__
+    super().__init__(
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\tokenization_utils_tokenizers.py", line 432, in __init__
+    self.add_tokens(tokens)
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\tokenization_utils_base.py", line 1241, in add_tokens
+    return self._add_tokens(new_tokens, special_tokens=special_tokens)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\tokenization_utils_tokenizers.py", line 695, in _add_tokens
+    return self._tokenizer.add_tokens(new_tokens)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: Input must be a List[Union[str, AddedToken]]
+
+====================================================================================================
+timestamp: 2026-04-28T18:41:23.533898
+row_index: 8
+external_run_id: hf_imgseg_000017
+case_name: Intel_dpt-large-ade__ade20k_mini_segmentation__finetune_transfer__split0__svc0
+run_group_id: 8e091386-b4f0-4355-ba49-7f63c0cdd37c
+failure_stage: runtime_exception
+error_message: all samples failed preprocessing for split='train'. sample errors: row 0: expected 2D segmentation mask, got shape=(441, 300, 3); row 1: expected 2D segmentation mask, got shape=(476, 357, 3); row 2: expected 2D segmentation mask, got shape=(512, 683, 3)
+resolved_config:
+{
+  "db_path": "outputs\\test.db",
+  "seed": 42,
+  "num_clients": 2,
+  "num_rounds": 2,
+  "local_epochs": 1,
+  "batch_size": 4,
+  "learning_rate": 0.005,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.001,
+  "optimizer": "rmsprop",
+  "distribution_type": "iid",
+  "distribution_param": null,
+  "sample_size": 24,
+  "sample_frac": null,
+  "client_dropout_rate": 0.0,
+  "task_type": "segmentation",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "save_weights": false,
+  "save_final_model_params": true,
+  "final_model_params_dir": "outputs\\final_model_params",
+  "update_signature_enabled": true,
+  "update_signature_dim": 256,
+  "update_signature_dir": null,
+  "update_signature_max_source_elements": null,
+  "enable_perturbation_metrics": false,
+  "perturbation_final_round_only": true,
+  "perturbation_sample_count": 10,
+  "perturbation_candidate_units": 16,
+  "perturbation_trust_trials": 5,
+  "perturbation_target_units": 2,
+  "perturbation_random_strength": 0.02,
+  "perturbation_progress_logging": true,
+  "perturbation_progress_sample_interval": 1,
+  "explainability_random_trials": 8,
+  "explainability_budget_fractions": [
+    0.1,
+    0.2,
+    0.3
+  ],
+  "explainability_meaningful_drop_threshold": 0.2,
+  "explainability_selectivity_floor": 0.5,
+  "client_participation_rate": 0.75,
+  "distribution": "iid",
+  "external_run_id": "hf_imgseg_000017",
+  "dataset": "hf",
+  "run_group_id": "8e091386-b4f0-4355-ba49-7f63c0cdd37c",
+  "case_name": "Intel_dpt-large-ade__ade20k_mini_segmentation__finetune_transfer__split0__svc0",
+  "notes": "Generated from scored registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": true,
+  "max_samples": 24,
+  "num_workers": 2,
+  "timeout_s": 3600,
+  "momentum": 0.0,
+  "model_type": "hf_finetune",
+  "hf_task": "image_segmentation",
+  "modality": "image",
+  "dataset_name": "qubvel-hf/ade20k-mini",
+  "hf_model_id": "Intel/dpt-large-ade",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "annotation",
+  "mask_column": "annotation",
+  "text_column": "text",
+  "image_column": "image",
+  "run_regime": "finetune_transfer",
+  "explainability_enabled": true,
+  "model_role": "task_head",
+  "input_schema": "image_mask_pair",
+  "fit_decision": "selected",
+  "fit_reason": "selected score=4.534 (model=2.400, dataset=1.884, regime=finetune_transfer)",
+  "realism_score": 4.5336,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "qubvel-hf/ade20k-mini",
+  "hf_pipeline_tag": "image-segmentation",
+  "hf_author": "Intel",
+  "hf_url": "https://huggingface.co/Intel/dpt-large-ade",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"image_segmentation\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"pair_score\": 4.5336, \"variant_index\": 0, \"service_variant_index\": 0, \"dataset_variant_index\": 0, \"split_variant_index\": 0, \"finetune_validated\": false, \"vqa_label_mode\": null, \"retrieval_positive_policy\": null}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 545, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 262, in __init__
+    train, test, meta = load_dataset(self.dataset, **loader_dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 118, in preprocess_hf
+    out = preprocess_hf_image(
+          ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_image.py", line 802, in preprocess_hf_image
+    x_train, y_train, train_report = _process_split(
+                                     ^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_image.py", line 668, in _process_split
+    raise ValueError(
+ValueError: all samples failed preprocessing for split='train'. sample errors: row 0: expected 2D segmentation mask, got shape=(441, 300, 3); row 1: expected 2D segmentation mask, got shape=(476, 357, 3); row 2: expected 2D segmentation mask, got shape=(512, 683, 3)
+
+====================================================================================================
+timestamp: 2026-04-28T18:41:36.514591
+row_index: 9
+external_run_id: hf_imgseg_000018
+case_name: nvidia_segformer-b0-finetuned-ade-512-512__ade20k_mini_segmentation__finetune_transfer__split0__svc0
+run_group_id: 8e091386-b4f0-4355-ba49-7f63c0cdd37c
+failure_stage: runtime_exception
+error_message: all samples failed preprocessing for split='train'. sample errors: row 0: expected 2D segmentation mask, got shape=(441, 300, 3); row 1: expected 2D segmentation mask, got shape=(476, 357, 3); row 2: expected 2D segmentation mask, got shape=(512, 683, 3)
+resolved_config:
+{
+  "db_path": "outputs\\test.db",
+  "seed": 42,
+  "num_clients": 2,
+  "num_rounds": 2,
+  "local_epochs": 1,
+  "batch_size": 4,
+  "learning_rate": 0.0005,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.001,
+  "optimizer": "rmsprop",
+  "distribution_type": "dirichlet",
+  "distribution_param": null,
+  "sample_size": 24,
+  "sample_frac": null,
+  "client_dropout_rate": 0.0,
+  "task_type": "segmentation",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "save_weights": false,
+  "save_final_model_params": true,
+  "final_model_params_dir": "outputs\\final_model_params",
+  "update_signature_enabled": true,
+  "update_signature_dim": 256,
+  "update_signature_dir": null,
+  "update_signature_max_source_elements": null,
+  "enable_perturbation_metrics": false,
+  "perturbation_final_round_only": true,
+  "perturbation_sample_count": 10,
+  "perturbation_candidate_units": 16,
+  "perturbation_trust_trials": 5,
+  "perturbation_target_units": 2,
+  "perturbation_random_strength": 0.02,
+  "perturbation_progress_logging": true,
+  "perturbation_progress_sample_interval": 1,
+  "explainability_random_trials": 8,
+  "explainability_budget_fractions": [
+    0.1,
+    0.2,
+    0.3
+  ],
+  "explainability_meaningful_drop_threshold": 0.2,
+  "explainability_selectivity_floor": 0.5,
+  "client_participation_rate": 0.5,
+  "distribution": "dirichlet",
+  "external_run_id": "hf_imgseg_000018",
+  "dataset": "hf",
+  "run_group_id": "8e091386-b4f0-4355-ba49-7f63c0cdd37c",
+  "case_name": "nvidia_segformer-b0-finetuned-ade-512-512__ade20k_mini_segmentation__finetune_transfer__split0__svc0",
+  "notes": "Generated from scored registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": true,
+  "max_samples": 24,
+  "num_workers": 2,
+  "timeout_s": 3600,
+  "momentum": 0.9,
+  "dirichlet_alpha": 0.1,
+  "model_type": "hf_finetune",
+  "hf_task": "image_segmentation",
+  "modality": "image",
+  "dataset_name": "qubvel-hf/ade20k-mini",
+  "hf_model_id": "nvidia/segformer-b0-finetuned-ade-512-512",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "annotation",
+  "mask_column": "annotation",
+  "text_column": "text",
+  "image_column": "image",
+  "run_regime": "finetune_transfer",
+  "explainability_enabled": true,
+  "model_role": "task_head",
+  "input_schema": "image_mask_pair",
+  "fit_decision": "selected",
+  "fit_reason": "selected score=4.534 (model=2.400, dataset=1.884, regime=finetune_transfer)",
+  "realism_score": 4.5336,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "qubvel-hf/ade20k-mini",
+  "hf_pipeline_tag": "image-segmentation",
+  "hf_author": "nvidia",
+  "hf_url": "https://huggingface.co/nvidia/segformer-b0-finetuned-ade-512-512",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"image_segmentation\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"pair_score\": 4.5336, \"variant_index\": 0, \"service_variant_index\": 0, \"dataset_variant_index\": 0, \"split_variant_index\": 0, \"finetune_validated\": false, \"vqa_label_mode\": null, \"retrieval_positive_policy\": null}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 545, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 262, in __init__
+    train, test, meta = load_dataset(self.dataset, **loader_dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 118, in preprocess_hf
+    out = preprocess_hf_image(
+          ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_image.py", line 802, in preprocess_hf_image
+    x_train, y_train, train_report = _process_split(
+                                     ^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_image.py", line 668, in _process_split
+    raise ValueError(
+ValueError: all samples failed preprocessing for split='train'. sample errors: row 0: expected 2D segmentation mask, got shape=(441, 300, 3); row 1: expected 2D segmentation mask, got shape=(476, 357, 3); row 2: expected 2D segmentation mask, got shape=(512, 683, 3)
+
+====================================================================================================
+timestamp: 2026-04-28T19:05:48.494632
+row_index: 14
+external_run_id: hf_vqa_000023
+case_name: Salesforce_blip-vqa-base__vqav2__finetune_transfer__split0__svc0
+run_group_id: 8e091386-b4f0-4355-ba49-7f63c0cdd37c
+failure_stage: runtime_exception
+error_message: [Errno 2] No such file or directory: 'C:\\Users\\Josh Boland\\.cache\\huggingface\\datasets\\downloads\\extracted\\b04c3f2ff637e5968ef9ff03a8c4f168d1e1e350d5c748957fd104806446bbed\\train2014\\COCO_train2014_000000192867.jpg'
+resolved_config:
+{
+  "db_path": "outputs\\test.db",
+  "seed": 42,
+  "num_clients": 2,
+  "num_rounds": 2,
+  "local_epochs": 2,
+  "batch_size": 16,
+  "learning_rate": 0.005,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.0,
+  "optimizer": "rmsprop",
+  "distribution_type": "iid",
+  "distribution_param": null,
+  "sample_size": 310,
+  "sample_frac": null,
+  "client_dropout_rate": 0.0,
+  "task_type": "vqa",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "save_weights": false,
+  "save_final_model_params": true,
+  "final_model_params_dir": "outputs\\final_model_params",
+  "update_signature_enabled": true,
+  "update_signature_dim": 256,
+  "update_signature_dir": null,
+  "update_signature_max_source_elements": null,
+  "enable_perturbation_metrics": false,
+  "perturbation_final_round_only": true,
+  "perturbation_sample_count": 10,
+  "perturbation_candidate_units": 16,
+  "perturbation_trust_trials": 5,
+  "perturbation_target_units": 2,
+  "perturbation_random_strength": 0.02,
+  "perturbation_progress_logging": true,
+  "perturbation_progress_sample_interval": 1,
+  "explainability_random_trials": 8,
+  "explainability_budget_fractions": [
+    0.1,
+    0.2,
+    0.3
+  ],
+  "explainability_meaningful_drop_threshold": 0.2,
+  "explainability_selectivity_floor": 0.5,
+  "client_participation_rate": 1.0,
+  "distribution": "iid",
+  "external_run_id": "hf_vqa_000023",
+  "dataset": "hf",
+  "run_group_id": "8e091386-b4f0-4355-ba49-7f63c0cdd37c",
+  "case_name": "Salesforce_blip-vqa-base__vqav2__finetune_transfer__split0__svc0",
+  "notes": "Generated from scored registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 310,
+  "max_length": 48,
+  "num_workers": 2,
+  "timeout_s": 3600,
+  "momentum": 0.9,
+  "model_type": "hf_finetune",
+  "hf_task": "visual_question_answering",
+  "modality": "multimodal",
+  "dataset_name": "HuggingFaceM4/VQAv2",
+  "hf_model_id": "Salesforce/blip-vqa-base",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "answers",
+  "text_column": "question",
+  "image_column": "image",
+  "vqa_label_mode": "generation",
+  "vqa_unseen_answer_policy": "ignore",
+  "task_tag": "vqa",
+  "run_regime": "finetune_transfer",
+  "explainability_enabled": true,
+  "model_role": "task_head",
+  "input_schema": "image_question_answer",
+  "fit_decision": "selected",
+  "fit_reason": "selected score=3.231 (model=1.500, dataset=1.481, regime=finetune_transfer); strict multimodal validation passed",
+  "realism_score": 3.2309,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "HuggingFaceM4/VQAv2",
+  "hf_pipeline_tag": "visual-question-answering",
+  "hf_author": "Salesforce",
+  "hf_url": "https://huggingface.co/Salesforce/blip-vqa-base",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"visual_question_answering\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"pair_score\": 3.2309, \"variant_index\": 0, \"service_variant_index\": 0, \"dataset_variant_index\": 0, \"split_variant_index\": 0, \"finetune_validated\": true, \"vqa_label_mode\": \"generation\", \"retrieval_positive_policy\": null}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 545, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 262, in __init__
+    train, test, meta = load_dataset(self.dataset, **loader_dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 99, in load_dataset
+    train, test, meta = load_huggingface_source(**kwargs)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\sources\huggingface.py", line 237, in load_huggingface_source
+    ds_train, train_pair_report = _apply_pair_integrity(
+                                  ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\sources\huggingface.py", line 124, in _apply_pair_integrity
+    image_values = ds[image_column]
+                   ~~^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\datasets\arrow_dataset.py", line 2800, in __getitem__
+    return self._getitem(key)
+           ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\datasets\arrow_dataset.py", line 2785, in _getitem
+    formatted_output = format_table(
+                       ^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\datasets\formatting\formatting.py", line 629, in format_table
+    return formatter(pa_table, query_type=query_type)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\datasets\formatting\formatting.py", line 398, in __call__
+    return self.format_column(pa_table)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\datasets\formatting\formatting.py", line 442, in format_column
+    column = self.python_features_decoder.decode_column(column, pa_table.column_names[0])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\datasets\formatting\formatting.py", line 218, in decode_column
+    return self.features.decode_column(column, column_name) if self.features else column
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\datasets\features\features.py", line 1951, in decode_column
+    [decode_nested_example(self[column_name], value) if value is not None else None for value in column]
+     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\datasets\features\features.py", line 1339, in decode_nested_example
+    return schema.decode_example(obj, token_per_repo_id=token_per_repo_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\datasets\features\image.py", line 166, in decode_example
+    image = PIL.Image.open(path)
+            ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\PIL\Image.py", line 3512, in open
+    fp = builtins.open(filename, "rb")
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Josh Boland\\.cache\\huggingface\\datasets\\downloads\\extracted\\b04c3f2ff637e5968ef9ff03a8c4f168d1e1e350d5c748957fd104806446bbed\\train2014\\COCO_train2014_000000192867.jpg'
+
+====================================================================================================
+timestamp: 2026-04-28T19:06:08.172971
+row_index: 15
+external_run_id: hf_vqa_000024
+case_name: microsoft_git-base-vqav2__vqav2__finetune_transfer__split0__svc0
+run_group_id: 8e091386-b4f0-4355-ba49-7f63c0cdd37c
+failure_stage: runtime_exception
+error_message: [Errno 2] No such file or directory: 'C:\\Users\\Josh Boland\\.cache\\huggingface\\datasets\\downloads\\extracted\\b04c3f2ff637e5968ef9ff03a8c4f168d1e1e350d5c748957fd104806446bbed\\train2014\\COCO_train2014_000000192867.jpg'
+resolved_config:
+{
+  "db_path": "outputs\\test.db",
+  "seed": 42,
+  "num_clients": 2,
+  "num_rounds": 2,
+  "local_epochs": 2,
+  "batch_size": 4,
+  "learning_rate": 0.005,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.0,
+  "optimizer": "rmsprop",
+  "distribution_type": "dirichlet",
+  "distribution_param": null,
+  "sample_size": 298,
+  "sample_frac": null,
+  "client_dropout_rate": 0.0,
+  "task_type": "vqa",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "save_weights": false,
+  "save_final_model_params": true,
+  "final_model_params_dir": "outputs\\final_model_params",
+  "update_signature_enabled": true,
+  "update_signature_dim": 256,
+  "update_signature_dir": null,
+  "update_signature_max_source_elements": null,
+  "enable_perturbation_metrics": false,
+  "perturbation_final_round_only": true,
+  "perturbation_sample_count": 10,
+  "perturbation_candidate_units": 16,
+  "perturbation_trust_trials": 5,
+  "perturbation_target_units": 2,
+  "perturbation_random_strength": 0.02,
+  "perturbation_progress_logging": true,
+  "perturbation_progress_sample_interval": 1,
+  "explainability_random_trials": 8,
+  "explainability_budget_fractions": [
+    0.1,
+    0.2,
+    0.3
+  ],
+  "explainability_meaningful_drop_threshold": 0.2,
+  "explainability_selectivity_floor": 0.5,
+  "client_participation_rate": 0.75,
+  "distribution": "dirichlet",
+  "external_run_id": "hf_vqa_000024",
+  "dataset": "hf",
+  "run_group_id": "8e091386-b4f0-4355-ba49-7f63c0cdd37c",
+  "case_name": "microsoft_git-base-vqav2__vqav2__finetune_transfer__split0__svc0",
+  "notes": "Generated from scored registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 298,
+  "max_length": 48,
+  "num_workers": 2,
+  "timeout_s": 3600,
+  "momentum": 0.9,
+  "dirichlet_alpha": 0.5,
+  "model_type": "hf_finetune",
+  "hf_task": "visual_question_answering",
+  "modality": "multimodal",
+  "dataset_name": "HuggingFaceM4/VQAv2",
+  "hf_model_id": "microsoft/git-base-vqav2",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "answers",
+  "text_column": "question",
+  "image_column": "image",
+  "vqa_label_mode": "generation",
+  "vqa_unseen_answer_policy": "ignore",
+  "task_tag": "vqa",
+  "run_regime": "finetune_transfer",
+  "explainability_enabled": true,
+  "model_role": "task_head",
+  "input_schema": "image_question_answer",
+  "fit_decision": "selected",
+  "fit_reason": "selected score=3.231 (model=1.500, dataset=1.481, regime=finetune_transfer); strict multimodal validation passed",
+  "realism_score": 3.2309,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "HuggingFaceM4/VQAv2",
+  "hf_pipeline_tag": "visual-question-answering",
+  "hf_author": "microsoft",
+  "hf_url": "https://huggingface.co/microsoft/git-base-vqav2",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"visual_question_answering\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"pair_score\": 3.2309, \"variant_index\": 0, \"service_variant_index\": 0, \"dataset_variant_index\": 0, \"split_variant_index\": 0, \"finetune_validated\": true, \"vqa_label_mode\": \"generation\", \"retrieval_positive_policy\": null}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 545, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 262, in __init__
+    train, test, meta = load_dataset(self.dataset, **loader_dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 99, in load_dataset
+    train, test, meta = load_huggingface_source(**kwargs)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\sources\huggingface.py", line 237, in load_huggingface_source
+    ds_train, train_pair_report = _apply_pair_integrity(
+                                  ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\sources\huggingface.py", line 124, in _apply_pair_integrity
+    image_values = ds[image_column]
+                   ~~^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\datasets\arrow_dataset.py", line 2800, in __getitem__
+    return self._getitem(key)
+           ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\datasets\arrow_dataset.py", line 2785, in _getitem
+    formatted_output = format_table(
+                       ^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\datasets\formatting\formatting.py", line 629, in format_table
+    return formatter(pa_table, query_type=query_type)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\datasets\formatting\formatting.py", line 398, in __call__
+    return self.format_column(pa_table)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\datasets\formatting\formatting.py", line 442, in format_column
+    column = self.python_features_decoder.decode_column(column, pa_table.column_names[0])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\datasets\formatting\formatting.py", line 218, in decode_column
+    return self.features.decode_column(column, column_name) if self.features else column
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\datasets\features\features.py", line 1951, in decode_column
+    [decode_nested_example(self[column_name], value) if value is not None else None for value in column]
+     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\datasets\features\features.py", line 1339, in decode_nested_example
+    return schema.decode_example(obj, token_per_repo_id=token_per_repo_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\datasets\features\image.py", line 166, in decode_example
+    image = PIL.Image.open(path)
+            ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\PIL\Image.py", line 3512, in open
+    fp = builtins.open(filename, "rb")
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Josh Boland\\.cache\\huggingface\\datasets\\downloads\\extracted\\b04c3f2ff637e5968ef9ff03a8c4f168d1e1e350d5c748957fd104806446bbed\\train2014\\COCO_train2014_000000192867.jpg'
+
+====================================================================================================
+timestamp: 2026-04-28T19:29:59.676603
+row_index: 1
+external_run_id: hf_text2text_000012
+case_name: Salesforce_codet5-small__scitldr_abstract__finetune_transfer__split0__svc0
+run_group_id: 8e091386-b4f0-4355-ba49-7f63c0cdd37c
+failure_stage: runtime_exception
+error_message: Input must be a List[Union[str, AddedToken]]
+resolved_config:
+{
+  "db_path": "outputs\\test.db",
+  "seed": 42,
+  "num_clients": 2,
+  "num_rounds": 2,
+  "local_epochs": 1,
+  "batch_size": 32,
+  "learning_rate": 0.005,
+  "hidden_layers": [
+    16,
+    32,
+    64,
+    128
+  ],
+  "activation": "relu",
+  "dropout": 0.0,
+  "weight_decay": 0.0005,
+  "optimizer": "sgd",
+  "distribution_type": "dirichlet",
+  "distribution_param": null,
+  "sample_size": 69,
+  "sample_frac": null,
+  "client_dropout_rate": 0.0,
+  "task_type": "classification",
+  "distribution_bins": 10,
+  "dataset_args": null,
+  "early_stopping_patience": null,
+  "save_weights": false,
+  "save_final_model_params": true,
+  "final_model_params_dir": "outputs\\final_model_params",
+  "update_signature_enabled": true,
+  "update_signature_dim": 256,
+  "update_signature_dir": null,
+  "update_signature_max_source_elements": null,
+  "enable_perturbation_metrics": false,
+  "perturbation_final_round_only": true,
+  "perturbation_sample_count": 10,
+  "perturbation_candidate_units": 16,
+  "perturbation_trust_trials": 5,
+  "perturbation_target_units": 2,
+  "perturbation_random_strength": 0.02,
+  "perturbation_progress_logging": true,
+  "perturbation_progress_sample_interval": 1,
+  "explainability_random_trials": 8,
+  "explainability_budget_fractions": [
+    0.1,
+    0.2,
+    0.3
+  ],
+  "explainability_meaningful_drop_threshold": 0.2,
+  "explainability_selectivity_floor": 0.5,
+  "client_participation_rate": 0.75,
+  "distribution": "dirichlet",
+  "external_run_id": "hf_text2text_000012",
+  "dataset": "hf",
+  "run_group_id": "8e091386-b4f0-4355-ba49-7f63c0cdd37c",
+  "case_name": "Salesforce_codet5-small__scitldr_abstract__finetune_transfer__split0__svc0",
+  "notes": "Generated from scored registry-defined HF model and dataset compatibility",
+  "enabled": true,
+  "measure_system_metrics": true,
+  "mixed_precision": false,
+  "max_samples": 69,
+  "max_length": 256,
+  "num_workers": 2,
+  "timeout_s": 3600,
+  "momentum": 0.9,
+  "dirichlet_alpha": 0.5,
+  "model_type": "hf_finetune",
+  "hf_task": "seq2seq_generation",
+  "modality": "text",
+  "dataset_name": "allenai/scitldr",
+  "dataset_config": "Abstract",
+  "hf_model_id": "Salesforce/codet5-small",
+  "train_split": "train",
+  "test_split": "validation",
+  "label_column": "target",
+  "text_column": "source",
+  "task_tag": "summarization",
+  "run_regime": "finetune_transfer",
+  "explainability_enabled": true,
+  "explainability_method": "integrated_gradients",
+  "explainability_target": "summary_token",
+  "model_role": "task_head",
+  "input_schema": "source_target_text",
+  "fit_decision": "selected",
+  "fit_reason": "selected score=4.229 (model=2.400, dataset=1.579, regime=finetune_transfer)",
+  "realism_score": 4.2285,
+  "domain_alignment": "registry_curated",
+  "dataset_hint": "allenai/scitldr",
+  "hf_pipeline_tag": "text2text-generation",
+  "hf_author": "Salesforce",
+  "hf_url": "https://huggingface.co/Salesforce/codet5-small",
+  "hf_service_meta_json": "{\"source\": \"registry\", \"registry_task\": \"text2text_generation\", \"run_regime\": \"finetune_transfer\", \"audit_json_used\": false, \"pair_score\": 4.2285, \"variant_index\": 0, \"service_variant_index\": 0, \"dataset_variant_index\": 0, \"split_variant_index\": 0, \"finetune_validated\": false, \"vqa_label_mode\": null, \"retrieval_positive_policy\": null}"
+}
+traceback:
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_generation.py", line 137, in _load_auto_tokenizer
+    return AutoTokenizer.from_pretrained(hf_model_id, use_fast=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\models\auto\tokenization_auto.py", line 693, in from_pretrained
+    return tokenizer_class_from_name(tokenizer_config_class).from_pretrained(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\tokenization_utils_base.py", line 1721, in from_pretrained
+    return cls._from_pretrained(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\tokenization_utils_base.py", line 1910, in _from_pretrained
+    tokenizer = cls(*init_inputs, **init_kwargs)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\models\roberta\tokenization_roberta.py", line 157, in __init__
+    super().__init__(
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\tokenization_utils_tokenizers.py", line 432, in __init__
+    self.add_tokens(tokens)
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\tokenization_utils_base.py", line 1241, in add_tokens
+    return self._add_tokens(new_tokens, special_tokens=special_tokens)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\tokenization_utils_tokenizers.py", line 695, in _add_tokens
+    return self._tokenizer.add_tokens(new_tokens)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: Input must be a List[Union[str, AddedToken]]
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\cli\run_manifest.py", line 545, in run_manifest
+    gen = FederatedDataGenerator(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\federated\orchestrator.py", line 267, in __init__
+    train, test, meta = load_dataset(self.dataset, **loader_dataset_args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 108, in load_dataset
+    return _apply_preprocessors(train, test, meta, preprocessors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\master_loader.py", line 36, in _apply_preprocessors
+    train, test, meta = fn(train, test, meta, **args)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf.py", line 233, in preprocess_hf
+    out = preprocess_hf_text_seq2seq_generation(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_generation.py", line 313, in preprocess_hf_text_seq2seq_generation
+    tokenizer = _load_auto_tokenizer(hf_model_id)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\mlaas_data_generator\data\preprocessors\hf_text_generation.py", line 139, in _load_auto_tokenizer
+    return AutoTokenizer.from_pretrained(hf_model_id, use_fast=False)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\models\auto\tokenization_auto.py", line 693, in from_pretrained
+    return tokenizer_class_from_name(tokenizer_config_class).from_pretrained(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\tokenization_utils_base.py", line 1721, in from_pretrained
+    return cls._from_pretrained(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\tokenization_utils_base.py", line 1910, in _from_pretrained
+    tokenizer = cls(*init_inputs, **init_kwargs)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\models\roberta\tokenization_roberta.py", line 157, in __init__
+    super().__init__(
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\tokenization_utils_tokenizers.py", line 432, in __init__
+    self.add_tokens(tokens)
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\tokenization_utils_base.py", line 1241, in add_tokens
+    return self._add_tokens(new_tokens, special_tokens=special_tokens)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Josh Boland\OneDrive - Curtin (1)\Documents\University\MLaaS\MLaaS-Dataset-Generator\.venv\Lib\site-packages\transformers\tokenization_utils_tokenizers.py", line 695, in _add_tokens
+    return self._tokenizer.add_tokens(new_tokens)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: Input must be a List[Union[str, AddedToken]]
+

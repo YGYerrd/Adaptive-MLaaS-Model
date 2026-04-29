@@ -1,4 +1,5 @@
 from ..accounting import append_accounting_stage, finalize_accounting
+from ..hf_cache_paths import resolve_hf_cache_path
 import io
 import json
 import os
@@ -75,6 +76,7 @@ def _to_numpy_rgb(image_like):
 
 
 def _decode_path(path):
+    path = resolve_hf_cache_path(path)
     if not os.path.exists(path):
         raise FileNotFoundError(path)
     try:
@@ -94,7 +96,26 @@ def _decode_bytes(data):
         return np.asarray(im.convert("RGB"))
 
 
-def _to_numpy_mask(mask_like):
+def _normalise_dataset_id(dataset_id):
+    if not dataset_id:
+        return ""
+    return str(dataset_id).strip().lower().split("@", 1)[0]
+
+
+def _decode_dataset_specific_rgb_mask(arr, *, dataset_id=None):
+    dataset_id = _normalise_dataset_id(dataset_id)
+    if dataset_id != "qubvel-hf/ade20k-mini" or arr.ndim != 3:
+        return arr
+
+    # qubvel ADE20K mini annotations encode class id in R and instance id in G.
+    if arr.shape[-1] in {3, 4}:
+        return np.asarray(arr[..., 0], dtype=np.int64)
+    if arr.shape[0] in {3, 4}:
+        return np.asarray(arr[0], dtype=np.int64)
+    return arr
+
+
+def _to_numpy_mask(mask_like, *, dataset_id=None):
     if mask_like is None:
         raise ValueError("segmentation mask is missing")
 
@@ -115,7 +136,7 @@ def _to_numpy_mask(mask_like):
                 from PIL import Image
             except Exception as e:
                 raise ImportError("Segmentation mask decoding from path requires Pillow") from e
-            with Image.open(mask_like["path"]) as im:
+            with Image.open(resolve_hf_cache_path(mask_like["path"])) as im:
                 arr = np.asarray(im)
         else:
             raise ValueError("unsupported HF segmentation mask dict payload")
@@ -143,6 +164,7 @@ def _to_numpy_mask(mask_like):
         raise TypeError(f"unsupported segmentation mask payload type={type(mask_like)}")
 
     arr = np.asarray(arr)
+    arr = _decode_dataset_specific_rgb_mask(arr, dataset_id=dataset_id)
     if arr.ndim == 3 and arr.shape[0] == 1:
         arr = arr[0]
     elif arr.ndim == 3 and arr.shape[-1] == 1:
@@ -160,7 +182,7 @@ def _to_numpy_mask(mask_like):
     return arr
 
 
-def _sample_segmentation_mask_range(ds, mask_column, *, limit=None):
+def _sample_segmentation_mask_range(ds, mask_column, *, limit=None, dataset_id=None):
     if not mask_column:
         return None, None
 
@@ -169,7 +191,7 @@ def _sample_segmentation_mask_range(ds, mask_column, *, limit=None):
     sample_count = len(ds) if limit is None else min(int(limit), len(ds))
     for idx in range(sample_count):
         try:
-            arr = _to_numpy_mask(ds[idx].get(mask_column))
+            arr = _to_numpy_mask(ds[idx].get(mask_column), dataset_id=dataset_id)
         except Exception:
             continue
         if arr.size == 0:
@@ -458,6 +480,7 @@ def _process_split(
     boxes_column=None,
     classes_column=None,
     mask_column=None,
+    dataset_id=None,
     on_decode_error="skip",
     report_decode_errors=False,
 ):
@@ -585,7 +608,7 @@ def _process_split(
                 )
                 LOGGER.info("[detection preprocessing] split=%s idx=%d before processor call", split_name, idx)
             if task_type == "segmentation":
-                mask = _to_numpy_mask(row.get(mask_column))
+                mask = _to_numpy_mask(row.get(mask_column), dataset_id=dataset_id)
                 proc = _process_segmentation(image, mask, training_enabled=training)
                 pix = proc.get("pixel_values", proc)
                 label = proc.get("labels", mask)
@@ -762,6 +785,7 @@ def preprocess_hf_image(
     resolved_mask_column = mask_column
     if task_type == "segmentation" and not resolved_mask_column:
         resolved_mask_column = label_column
+    dataset_id = meta.get("hf_id") or (meta.get("dataset_args") or {}).get("dataset_name")
 
     processor_kwargs = {"use_fast": False} if task_type == "segmentation" else {}
     segmentation_model_num_labels = None
@@ -790,7 +814,11 @@ def preprocess_hf_image(
         # The previous probe could miss rare max-label ids and cause the same
         # dataset/model pair to flip between aligned (150 labels) and misaligned
         # (151 labels) runs depending on shuffle order.
-        raw_min, raw_max = _sample_segmentation_mask_range(ds_train, resolved_mask_column)
+        raw_min, raw_max = _sample_segmentation_mask_range(
+            ds_train,
+            resolved_mask_column,
+            dataset_id=dataset_id,
+        )
         if (
             raw_min == 0
             and raw_max is not None
@@ -810,6 +838,7 @@ def preprocess_hf_image(
         boxes_column=boxes_column,
         classes_column=classes_column,
         mask_column=resolved_mask_column,
+        dataset_id=dataset_id,
         on_decode_error=on_decode_error,
         report_decode_errors=report_decode_errors,
     )
@@ -824,6 +853,7 @@ def preprocess_hf_image(
         boxes_column=boxes_column,
         classes_column=classes_column,
         mask_column=resolved_mask_column,
+        dataset_id=dataset_id,
         on_decode_error=on_decode_error,
         report_decode_errors=report_decode_errors,
     )

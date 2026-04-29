@@ -28,43 +28,6 @@ def train_local_model(model, x, y, epochs=1, batch_size=32, lr=None):
     return None
 
 
-def aggregate_weights(client_weights):
-    """Aggregate a list of weight dictionaries by simple FedAvg (mean)."""
-    layers = list(client_weights[0].keys())
-    for w in client_weights[1:]:
-        assert list(w.keys()) == layers, "Mismatched layer keys across clients."
-    aggregated = {}
-    for layer in layers:
-        aggregated[layer] = np.mean([w[layer] for w in client_weights], axis=0)
-    return aggregated
-
-def aggregate_state_dict(payloads, weights=None):
-    """
-    payloads: list[dict[str] -> np.ndarray]
-    weights: list[float] (e.g. samples_count) or None -> uniform
-    """
-    if not payloads:
-        return {}
-
-    keys = payloads[0].keys()
-    if weights is None:
-        weights = [1.0] * len(payloads)
-
-    wsum = float(sum(weights)) if sum(weights) != 0 else 1.0
-    weights = [float(w) / wsum for w in weights]
-
-    out = {}
-    for k in keys:
-        acc = None
-        for p, w in zip(payloads, weights):
-            arr = np.asarray(p[k])
-            if acc is None:
-                acc = arr * w
-            else:
-                acc = acc + (arr * w)
-        out[k] = acc
-    return out
-
 def evaluate_model(model, x_test, y_test, task_type="classification"):
     if hasattr(model, "evaluate"):
         try:

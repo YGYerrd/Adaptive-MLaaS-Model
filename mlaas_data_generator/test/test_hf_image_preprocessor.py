@@ -505,6 +505,69 @@ def test_image_segmentation_reduce_labels_scans_beyond_small_prefix():
     assert meta["num_labels"] == 3
 
 
+def test_qubvel_ade20k_mini_rgb_annotation_decodes_to_2d_semantic_mask():
+    rgb_mask = np.asarray(
+        [
+            [[0, 0, 0], [1, 1, 0]],
+            [[2, 3, 0], [1, 2, 0]],
+        ],
+        dtype=np.uint8,
+    )
+
+    mask = _to_numpy_mask(rgb_mask, dataset_id="qubvel-hf/ade20k-mini")
+
+    assert mask.tolist() == [[0, 1], [2, 1]]
+
+
+def test_image_segmentation_preprocesses_qubvel_ade20k_mini_rgb_annotations():
+    _install_fake_transformers_segmentation()
+    train_rows = [
+        {
+            "image": np.zeros((2, 2, 3), dtype=np.uint8),
+            "annotation": np.asarray(
+                [
+                    [[0, 0, 0], [1, 1, 0]],
+                    [[2, 3, 0], [1, 2, 0]],
+                ],
+                dtype=np.uint8,
+            ),
+        }
+    ]
+    test_rows = [
+        {
+            "image": np.zeros((2, 2, 3), dtype=np.uint8),
+            "annotation": np.asarray(
+                [
+                    [[0, 0, 0], [2, 1, 0]],
+                    [[2, 2, 0], [0, 0, 0]],
+                ],
+                dtype=np.uint8,
+            ),
+        }
+    ]
+
+    (x_train, y_train), (x_test, y_test), meta = preprocess_hf(
+        (DummySplit(train_rows), None),
+        (DummySplit(test_rows), None),
+        {
+            "hf_task": "image_segmentation",
+            "modality": "image",
+            "task_type": "segmentation",
+            "hf_id": "qubvel-hf/ade20k-mini",
+        },
+        hf_model_id="dummy/segmentation",
+        label_column="annotation",
+        mask_column="annotation",
+    )
+
+    assert len(x_train["pixel_values"]) == 1
+    assert len(x_test["pixel_values"]) == 1
+    assert y_train[0].shape == (4, 4)
+    assert y_test[0].shape == (4, 4)
+    assert int(np.max(y_train[0])) == 2
+    assert meta["decode_report"]["train"]["failed"] == 0
+
+
 def test_segmentation_binary_255_masks_are_mapped_to_foreground_class():
     mask = _to_numpy_mask(np.asarray([[0, 255], [255, 0]], dtype=np.uint8))
 

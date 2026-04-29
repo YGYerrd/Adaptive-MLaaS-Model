@@ -1,14 +1,16 @@
+from __future__ import annotations
+
 import argparse
+import hashlib
 import json
-import math
 import random
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
+from mlaas_data_generator.config import DEFAULT_MANIFEST_PATH
 from mlaas_data_generator.registry import DATASET_REGISTRY, MODEL_REGISTRY
 
 
@@ -26,31 +28,10 @@ class TaskSpec:
 class ManifestProfile:
     name: str
     default_avg_sample_size: int
-    finetune_rounds: tuple[int, ...]
-    finetune_clients: tuple[int, ...]
-    finetune_local_epochs: tuple[int, ...]
-    finetune_participation: tuple[float, ...]
+    training_epochs: tuple[int, ...]
+    batch_sizes: tuple[int, ...]
+    learning_rates: tuple[float, ...]
     timeout_s: int
-
-
-@dataclass(frozen=True)
-class ManifestCandidate:
-    task_key: str
-    task_spec: TaskSpec
-    model: dict[str, Any]
-    dataset_spec: dict[str, Any]
-    run_regime: str
-    pair_score: float
-    fit_reason: str
-    service_variant_index: int = 0
-    dataset_variant_index: int = 0
-
-
-@dataclass(frozen=True)
-class GenericManifestCandidate:
-    task_key: str
-    case: dict[str, Any]
-    variant_index: int
 
 
 TASK_SPECS: dict[str, TaskSpec] = {
@@ -58,118 +39,71 @@ TASK_SPECS: dict[str, TaskSpec] = {
     "token_classification": TaskSpec("token-classification", "token_classification", "text", "classification", "tokencls"),
     "sentence_similarity": TaskSpec("sentence-similarity", "sentence_similarity", "text", "classification", "pairscore"),
     "fill_mask": TaskSpec("fill-mask", "fill_mask", "text", "classification", "fillmask"),
-    "text_generation": TaskSpec("text-generation", "causal_lm_generation", "text", "classification", "textgen", "language-modeling"),
-    "text2text_generation": TaskSpec("text2text-generation", "seq2seq_generation", "text", "classification", "text2text", "summarization"),
+    "text_generation": TaskSpec("text-generation", "causal_lm_generation", "text", "generation", "textgen", "language-modeling"),
+    "text2text_generation": TaskSpec("text2text-generation", "seq2seq_generation", "text", "generation", "text2text", "summarization"),
     "image_classification": TaskSpec("image-classification", "image_classification", "image", "classification", "imgcls"),
     "object_detection": TaskSpec("object-detection", "image_detection", "image", "detection", "objdet"),
     "image_segmentation": TaskSpec("image-segmentation", "image_segmentation", "image", "segmentation", "imgseg"),
     "image_captioning": TaskSpec("image-to-text", "image_captioning", "multimodal", "generation", "imgcap", "captioning"),
-    "text_image_retrieval": TaskSpec(
-        "zero-shot-image-classification",
-        "text_image_retrieval",
-        "multimodal",
-        "retrieval",
-        "imgtxtret",
-        "retrieval",
-    ),
-    "visual_question_answering": TaskSpec(
-        "visual-question-answering",
-        "visual_question_answering",
-        "multimodal",
-        "vqa",
-        "vqa",
-        "vqa",
-    ),
+    "text_image_retrieval": TaskSpec("zero-shot-image-classification", "text_image_retrieval", "multimodal", "retrieval", "imgtxtret", "retrieval"),
+    "visual_question_answering": TaskSpec("visual-question-answering", "visual_question_answering", "multimodal", "vqa", "vqa", "vqa"),
 }
+
 
 MANIFEST_PROFILES: dict[str, ManifestProfile] = {
-    "test": ManifestProfile(
-        name="test",
-        default_avg_sample_size=128,
-        finetune_rounds=(1, 2),
-        finetune_clients=(1, 2),
-        finetune_local_epochs=(1,),
-        finetune_participation=(1.0,),
-        timeout_s=900,
-    ),
-    "balanced": ManifestProfile(
-        name="balanced",
-        default_avg_sample_size=768,
-        finetune_rounds=(2, 3),
-        finetune_clients=(2, 3, 4),
-        finetune_local_epochs=(1, 2),
-        finetune_participation=(0.75, 1.0),
-        timeout_s=1800,
-    ),
-    "benchmark": ManifestProfile(
-        name="benchmark",
-        default_avg_sample_size=1600,
-        finetune_rounds=(3, 4, 5),
-        finetune_clients=(3, 4, 5, 6),
-        finetune_local_epochs=(1, 2),
-        finetune_participation=(0.5, 0.75, 1.0),
-        timeout_s=3600,
-    ),
+    "test": ManifestProfile("test", default_avg_sample_size=128, training_epochs=(1,), batch_sizes=(4, 8), learning_rates=(5e-5, 1e-4), timeout_s=900),
+    "balanced": ManifestProfile("balanced", default_avg_sample_size=768, training_epochs=(1, 2), batch_sizes=(8, 16), learning_rates=(2e-5, 5e-5, 1e-4), timeout_s=1800),
+    "benchmark": ManifestProfile("benchmark", default_avg_sample_size=1600, training_epochs=(1, 2, 3), batch_sizes=(8, 16, 32), learning_rates=(2e-5, 5e-5, 1e-4), timeout_s=3600),
 }
 
-STRICT_VALIDATION_TASK_KEYS = {"image_captioning", "text_image_retrieval", "visual_question_answering"}
-FINETUNE_VALIDATION_TASK_KEYS = {"image_captioning", "text_image_retrieval", "visual_question_answering"}
-NOT_APPLICABLE = "N/A"
-INFERENCE_ONLY_TRAINING_COLUMNS = (
-    "local_epochs",
-    "earning_rate",
+
+MANIFEST_COLUMNS = [
+    "service_id",
+    "enabled",
+    "case_name",
+    "notes",
+    "dataset",
+    "dataset_name",
+    "dataset_config",
+    "train_split",
+    "test_split",
+    "benchmark_split",
+    "model_type",
+    "hf_task",
+    "hf_model_id",
+    "task_type",
+    "task",
+    "task_tag",
+    "modality",
+    "input_schema",
+    "output_schema",
+    "training_regime",
+    "dataset_variant",
+    "split_variant",
+    "knob_variant",
+    "service_config",
+    "split_strategy",
+    "distribution_type",
+    "distribution_param",
+    "custom_distributions",
+    "training_epochs",
+    "batch_size",
     "learning_rate",
     "optimizer",
     "weight_decay",
     "momentum",
-    "dirichlet_alpha",
-)
-
-MANIFEST_COLUMNS = [
-    "external_run_id",
-    "dataset",
-    "run_group_id",
-    "case_name",
-    "notes",
-    "enabled",
-    "measure_system_metrics",
-    "mixed_precision",
-    "num_rounds",
-    "num_clients",
-    "client_participation_rate",
-    "local_epochs",
-    "batch_size",
-    "earning_rate",
-    "learning_rate",
-    "optimizer",
-    "seed",
-    "distribution",
     "sample_size",
     "max_samples",
     "max_length",
-    "num_workers",
     "timeout_s",
-    "weight_decay",
-    "momentum",
-    "dirichlet_alpha",
-    "aggregation",
     "device",
+    "mixed_precision",
     "save_weights",
-    "save_final_model_params",
-    "model_type",
-    "hf_task",
-    "task_type",
-    "task",
-    "modality",
-    "dataset_name",
-    "dataset_config",
-    "hf_model_id",
-    "train_split",
-    "test_split",
-    "label_column",
-    "mask_column",
+    "num_workers",
     "text_column",
     "image_column",
+    "label_column",
+    "mask_column",
     "question_column",
     "answer_column",
     "ranking_label_column",
@@ -177,13 +111,27 @@ MANIFEST_COLUMNS = [
     "vqa_answer_vocab_size",
     "vqa_unseen_answer_policy",
     "retrieval_positive_policy",
-    "task_tag",
-    "run_regime",
+    "missing_pair_handling",
+    "on_decode_error",
+    "report_decode_errors",
+    "source_max_length",
+    "target_max_length",
+    "dynamic_padding",
+    "column_mapping",
     "explainability_enabled",
+    "enable_perturbation_metrics",
+    "perturbation_stage_logging",
+    "perturbation_progress_logging",
+    "perturbation_sample_count",
+    "perturbation_candidate_units",
+    "perturbation_target_units",
+    "perturbation_trust_trials",
+    "perturbation_progress_sample_interval",
+    "perturbation_random_strength",
     "explainability_method",
     "explainability_target",
+    "service_source",
     "model_role",
-    "input_schema",
     "fit_decision",
     "fit_reason",
     "realism_score",
@@ -192,10 +140,21 @@ MANIFEST_COLUMNS = [
     "hf_pipeline_tag",
     "hf_downloads",
     "hf_likes",
+    "hf_dataset_id",
+    "downloads",
+    "likes",
+    "model_size",
+    "params_count",
+    "pipeline_tag",
+    "library_name",
+    "license",
+    "tags",
+    "last_modified",
     "hf_author",
     "hf_url",
     "hf_service_meta_json",
 ]
+
 
 GENERIC_MANIFEST_CASES: tuple[dict[str, Any], ...] = (
     {
@@ -208,12 +167,10 @@ GENERIC_MANIFEST_CASES: tuple[dict[str, Any], ...] = (
         "modality": "image",
         "model_type": "cnn",
         "input_schema": "single_image",
-        "source": "keras",
         "max_samples": 1200,
         "batch_size": 32,
         "learning_rate": 1e-3,
         "optimizer": "adam",
-        "notes": "Generated generic Keras image-classification run",
     },
     {
         "task_key": "sklearn_image_classification",
@@ -225,12 +182,10 @@ GENERIC_MANIFEST_CASES: tuple[dict[str, Any], ...] = (
         "modality": "image",
         "model_type": "randomforest",
         "input_schema": "single_image_flattened",
-        "source": "sklearn",
         "max_samples": 1000,
         "batch_size": 64,
         "learning_rate": 1e-3,
         "optimizer": "none",
-        "notes": "Generated generic sklearn image-classification run",
     },
     {
         "task_key": "tabular_regression",
@@ -242,12 +197,10 @@ GENERIC_MANIFEST_CASES: tuple[dict[str, Any], ...] = (
         "modality": "tabular",
         "model_type": "mlp",
         "input_schema": "tabular_features",
-        "source": "sklearn_synthetic",
         "max_samples": 1200,
         "batch_size": 32,
         "learning_rate": 1e-3,
         "optimizer": "adam",
-        "notes": "Generated synthetic tabular regression run",
     },
     {
         "task_key": "tabular_regression",
@@ -259,12 +212,10 @@ GENERIC_MANIFEST_CASES: tuple[dict[str, Any], ...] = (
         "modality": "tabular",
         "model_type": "randomforest",
         "input_schema": "tabular_features",
-        "source": "uci",
         "max_samples": 1600,
         "batch_size": 32,
         "learning_rate": 1e-3,
         "optimizer": "none",
-        "notes": "Generated UCI tabular regression run",
     },
     {
         "task_key": "clustering",
@@ -276,763 +227,14 @@ GENERIC_MANIFEST_CASES: tuple[dict[str, Any], ...] = (
         "modality": "tabular",
         "model_type": "kmeans",
         "input_schema": "tabular_features",
-        "source": "sklearn_synthetic",
         "max_samples": 1200,
         "batch_size": 64,
         "learning_rate": 1e-3,
         "optimizer": "none",
-        "notes": "Generated synthetic sklearn clustering run",
+        "clustering_k": 3,
     },
 )
-
 GENERIC_MANIFEST_TASK_KEYS = frozenset(case["task_key"] for case in GENERIC_MANIFEST_CASES)
-
-
-def _as_int(value: Any) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except Exception:
-        return None
-
-
-def _as_float(value: Any) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except Exception:
-        return None
-
-
-def _resolve_manifest_profile(profile_name: str | None) -> ManifestProfile:
-    normalized = str(profile_name or "balanced").strip().lower()
-    return MANIFEST_PROFILES.get(normalized, MANIFEST_PROFILES["balanced"])
-
-
-def _normalise_positive_int(value: int | None, *, minimum: int = 1) -> int | None:
-    parsed = _as_int(value)
-    if parsed is None:
-        return None
-    return max(minimum, parsed)
-
-
-def _dedupe_preserve_order(items: list[str]) -> list[str]:
-    seen: set[str] = set()
-    deduped: list[str] = []
-    for item in items:
-        key = str(item).strip()
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        deduped.append(key)
-    return deduped
-
-
-def _has_required_value(value: Any) -> bool:
-    if value is None:
-        return False
-    if isinstance(value, str):
-        return bool(value.strip())
-    if isinstance(value, (list, tuple)):
-        if not value:
-            return False
-        return all(_has_required_value(item) for item in value)
-    return True
-
-
-def _log_signal(value: Any, *, scale: float = 1.0) -> float:
-    numeric = _as_float(value)
-    if numeric is None or numeric <= 0:
-        return 0.0
-    return math.log1p(numeric) / max(scale, 1e-6)
-
-
-def _minimum_samples_for_task(task_key: str, run_regime: str) -> int:
-    if run_regime == "inference_only":
-        return 16
-
-    per_task = {
-        "text_classification": 48,
-        "token_classification": 64,
-        "sentence_similarity": 48,
-        "fill_mask": 64,
-        "text_generation": 64,
-        "text2text_generation": 64,
-        "image_classification": 32,
-        "object_detection": 24,
-        "image_segmentation": 24,
-        "image_captioning": 24,
-        "text_image_retrieval": 24,
-        "visual_question_answering": 24,
-    }
-    return per_task.get(task_key, 32)
-
-
-def _max_clients_for_samples(task_key: str, max_samples: int) -> int:
-    min_samples = max(1, _minimum_samples_for_task(task_key, "finetune_transfer") // 2)
-    return max(1, int(max_samples) // min_samples)
-
-
-def _resolve_seq2seq_columns(dataset_spec: dict[str, Any]) -> tuple[str | None, str | None]:
-    column_mapping = dataset_spec.get("column_mapping")
-    mapping = column_mapping if isinstance(column_mapping, dict) else {}
-
-    source_col = mapping.get("source") or dataset_spec.get("source_column") or dataset_spec.get("text_column")
-    target_col = mapping.get("target") or dataset_spec.get("target_column") or dataset_spec.get("label_column")
-
-    source_col = str(source_col).strip() if _has_required_value(source_col) else None
-    target_col = str(target_col).strip() if _has_required_value(target_col) else None
-    return source_col, target_col
-
-
-def _normalise_dataset_ref(value: Any) -> str:
-    return str(value or "").strip().lower().replace("\\", "/")
-
-
-def _dataset_reference_aliases(dataset_spec: dict[str, Any]) -> set[str]:
-    aliases: set[str] = set()
-    for key in ("registry_id", "dataset_name", "dataset_config", "dataset_hint"):
-        value = dataset_spec.get(key)
-        if _has_required_value(value):
-            aliases.add(_normalise_dataset_ref(value))
-
-    dataset_name = _normalise_dataset_ref(dataset_spec.get("dataset_name"))
-    dataset_config = _normalise_dataset_ref(dataset_spec.get("dataset_config"))
-    if dataset_name and dataset_config:
-        aliases.add(f"{dataset_name}/{dataset_config}")
-        aliases.add(f"{dataset_name}:{dataset_config}")
-    return {alias for alias in aliases if alias}
-
-
-def _model_inference_dataset_refs(model: dict[str, Any], audit_meta: dict[str, Any]) -> set[str]:
-    refs: set[str] = set()
-    for key in (
-        "inference_dataset_keys",
-        "trained_dataset_keys",
-        "trained_on_dataset_keys",
-        "dataset_tags",
-        "audit_dataset_tags",
-    ):
-        values = model.get(key)
-        if isinstance(values, (list, tuple, set)):
-            refs.update(_normalise_dataset_ref(value) for value in values if _has_required_value(value))
-        elif _has_required_value(values):
-            refs.add(_normalise_dataset_ref(values))
-
-    model_id = str(model.get("hf_model_id") or model.get("model_id") or model.get("id") or "").strip()
-    audit_models = audit_meta.get("models", {}) if isinstance(audit_meta, dict) else {}
-    model_audit = audit_models.get(model_id, {}) if isinstance(audit_models, dict) else {}
-    for key in ("audit_dataset_tags", "dataset_tags"):
-        values = model_audit.get(key)
-        if isinstance(values, (list, tuple, set)):
-            refs.update(_normalise_dataset_ref(value) for value in values if _has_required_value(value))
-
-    return {ref for ref in refs if ref}
-
-
-def _is_strict_inference_dataset_match(
-    *,
-    model: dict[str, Any],
-    dataset_spec: dict[str, Any],
-    audit_meta: dict[str, Any],
-) -> tuple[bool, str]:
-    dataset_aliases = _dataset_reference_aliases(dataset_spec)
-    model_refs = _model_inference_dataset_refs(model, audit_meta)
-    if not model_refs:
-        return False, "missing_inference_training_dataset_metadata"
-
-    matches = dataset_aliases.intersection(model_refs)
-    if matches:
-        return True, f"strict_inference_dataset_match:{sorted(matches)[0]}"
-    return False, "model_not_marked_as_trained_on_dataset"
-
-
-def _task_dataset_validation_issues(
-    *,
-    task_key: str,
-    task_spec: TaskSpec,
-    model: dict[str, Any],
-    dataset_spec: dict[str, Any],
-    run_regime: str,
-    audit_meta: dict[str, Any],
-    strict_inference_dataset_match: bool,
-) -> list[str]:
-    issues: list[str] = []
-
-    if not _has_required_value(model.get("hf_model_id") or model.get("model_id") or model.get("id")):
-        issues.append("missing_model_id")
-    if not _has_required_value(dataset_spec.get("dataset_name")):
-        issues.append("missing_dataset_name")
-
-    allowed_run_regimes = model.get("allowed_run_regimes") or []
-    if allowed_run_regimes and run_regime not in allowed_run_regimes:
-        issues.append(f"run_regime_not_allowed:{run_regime}")
-
-    compatible_dataset_keys = model.get("dataset_keys")
-    dataset_key = str(dataset_spec.get("registry_id") or "").strip()
-    if compatible_dataset_keys and dataset_key and dataset_key not in set(compatible_dataset_keys):
-        issues.append("dataset_not_in_model_dataset_keys")
-
-    if run_regime == "inference_only" and strict_inference_dataset_match:
-        matched, reason = _is_strict_inference_dataset_match(
-            model=model,
-            dataset_spec=dataset_spec,
-            audit_meta=audit_meta,
-        )
-        if not matched:
-            issues.append(reason)
-
-    model_task = str(model.get("task_key") or "").strip()
-    dataset_task = str(dataset_spec.get("task_key") or "").strip()
-    if model_task and model_task != task_key:
-        issues.append(f"model_task_mismatch:{model_task}")
-    if dataset_task and dataset_task != task_key:
-        issues.append(f"dataset_task_mismatch:{dataset_task}")
-
-    model_modality = str(model.get("modality") or task_spec.modality).strip().lower()
-    dataset_modality = str(dataset_spec.get("modality") or task_spec.modality).strip().lower()
-    if model_modality != task_spec.modality:
-        issues.append(f"model_modality_mismatch:{model_modality}")
-    if dataset_modality != task_spec.modality:
-        issues.append(f"dataset_modality_mismatch:{dataset_modality}")
-
-    if task_key in STRICT_VALIDATION_TASK_KEYS and not dataset_spec.get("manifest_validated"):
-        issues.append("task_requires_manifest_validated_dataset")
-
-    if (
-        run_regime == "finetune_transfer"
-        and task_key in FINETUNE_VALIDATION_TASK_KEYS
-        and not model.get("finetune_validated")
-    ):
-        issues.append("task_requires_finetune_validated_model")
-
-    if task_spec.modality == "text":
-        if not _has_required_value(dataset_spec.get("text_column")):
-            issues.append("missing_text_column")
-        if task_key == "sentence_similarity":
-            text_column = dataset_spec.get("text_column")
-            if not isinstance(text_column, (list, tuple)) or len(text_column) != 2 or not _has_required_value(list(text_column)):
-                issues.append("sentence_similarity_requires_text_pair")
-        if task_key == "text2text_generation":
-            source_col, target_col = _resolve_seq2seq_columns(dataset_spec)
-            if not source_col or not target_col or source_col == target_col:
-                issues.append("seq2seq_requires_distinct_source_and_target_columns")
-        if not _has_required_value(dataset_spec.get("label_column")):
-            issues.append("missing_label_column")
-
-    elif task_spec.modality == "image":
-        if not _has_required_value(dataset_spec.get("image_column")):
-            issues.append("missing_image_column")
-        if task_key == "image_classification" and not _has_required_value(dataset_spec.get("label_column")):
-            issues.append("missing_label_column")
-        if task_key == "object_detection":
-            has_label_container = _has_required_value(dataset_spec.get("label_column"))
-            has_box_columns = _has_required_value(dataset_spec.get("boxes_column")) and _has_required_value(dataset_spec.get("classes_column"))
-            if not has_label_container and not has_box_columns:
-                issues.append("missing_detection_annotations")
-        if task_key == "image_segmentation" and not _has_required_value(dataset_spec.get("mask_column") or dataset_spec.get("label_column")):
-            issues.append("missing_segmentation_mask_column")
-        if task_key == "image_classification" and run_regime == "inference_only":
-            is_compatible, reason = _is_image_classification_inference_pair_compatible(
-                model=model,
-                dataset_spec=dataset_spec,
-            )
-            if not is_compatible:
-                issues.append(reason)
-
-    elif task_spec.modality == "multimodal":
-        if not _has_required_value(dataset_spec.get("image_column")):
-            issues.append("missing_image_column")
-        if not _has_required_value(dataset_spec.get("text_column")):
-            issues.append("missing_text_column")
-        if task_key == "visual_question_answering" and not _has_required_value(dataset_spec.get("label_column")):
-            issues.append("missing_vqa_label_column")
-
-    return issues
-
-
-def _model_priority_score(model: dict[str, Any], *, audit_meta: dict[str, Any], profile: ManifestProfile) -> float:
-    model_id = str(model.get("hf_model_id") or model.get("model_id") or model.get("id") or "").strip()
-    audit_models = audit_meta.get("models", {}) if isinstance(audit_meta, dict) else {}
-    model_audit = audit_models.get(model_id, {}) if isinstance(audit_models, dict) else {}
-
-    allowed_run_regimes = model.get("allowed_run_regimes") or []
-    explainability = model.get("explainability") if isinstance(model.get("explainability"), dict) else {}
-    score = 1.0
-    score += 0.35 * _log_signal(model.get("downloads", model_audit.get("downloads")), scale=4.0)
-    score += 0.15 * _log_signal(model.get("likes", model_audit.get("likes")), scale=3.0)
-    score += 0.10 * len(model.get("dataset_keys") or [])
-    score += 0.20 if "finetune_transfer" in allowed_run_regimes else 0.0
-    score += 0.10 if "inference_only" in allowed_run_regimes else 0.0
-    score += 0.10 if explainability.get("supported", explainability.get("supports_gradients")) else 0.0
-    if profile.name == "benchmark":
-        score += 0.05 * _log_signal(model.get("downloads", model_audit.get("downloads")), scale=2.5)
-    return score
-
-
-def _model_registry_key(model: dict[str, Any]) -> str:
-    return str(
-        model.get("registry_id")
-        or model.get("hf_model_id")
-        or model.get("model_id")
-        or model.get("id")
-        or ""
-    ).strip()
-
-
-def _model_family_key(model: dict[str, Any]) -> str:
-    family = str(model.get("family") or "").strip().lower()
-    if family:
-        return family
-    return _model_registry_key(model).lower() or "unknown"
-
-
-def _select_diverse_models(
-    ranked_models: list[dict[str, Any]],
-    *,
-    models_per_task: int,
-    max_models_per_family: int | None,
-) -> list[dict[str, Any]]:
-    limit = max(0, models_per_task)
-    if limit <= 0:
-        return []
-
-    family_cap = _normalise_positive_int(max_models_per_family) if max_models_per_family is not None else None
-    selected: list[dict[str, Any]] = []
-    selected_keys: set[str] = set()
-    family_counts: dict[str, int] = {}
-
-    def maybe_add(model: dict[str, Any], *, distinct_family_only: bool) -> bool:
-        registry_key = _model_registry_key(model)
-        family_key = _model_family_key(model)
-        if registry_key in selected_keys:
-            return False
-        if distinct_family_only and family_counts.get(family_key, 0) > 0:
-            return False
-        if family_cap is not None and family_counts.get(family_key, 0) >= family_cap:
-            return False
-
-        selected.append(model)
-        selected_keys.add(registry_key)
-        family_counts[family_key] = family_counts.get(family_key, 0) + 1
-        return True
-
-    for model in ranked_models:
-        if len(selected) >= limit:
-            return selected
-        maybe_add(model, distinct_family_only=True)
-
-    for model in ranked_models:
-        if len(selected) >= limit:
-            break
-        maybe_add(model, distinct_family_only=False)
-
-    return selected
-
-
-def _dataset_priority_score(dataset_spec: dict[str, Any], *, target_avg_sample_size: int | None) -> float:
-    realism = _as_float(dataset_spec.get("realism_score"))
-    if realism is None:
-        realism = 1.0
-
-    max_samples = max(1, _as_int(dataset_spec.get("max_samples")) or 1)
-    target_fit = 1.0
-    if target_avg_sample_size and target_avg_sample_size > 0:
-        target_fit = 1.0 / (1.0 + abs(math.log((max_samples + 1.0) / (target_avg_sample_size + 1.0))))
-
-    domain_alignment = str(dataset_spec.get("domain_alignment") or "registry_curated").strip().lower()
-    domain_bonus = 0.20 if domain_alignment in {"registry_curated", "curated", "benchmark"} else 0.0
-    explainability = dataset_spec.get("explainability") if isinstance(dataset_spec.get("explainability"), dict) else {}
-    explainability_bonus = 0.10 if explainability.get("supported", explainability.get("supports_feature_attribution")) else 0.0
-    return realism + (0.75 * target_fit) + domain_bonus + explainability_bonus
-
-
-def _pair_priority_score(
-    *,
-    task_key: str,
-    model: dict[str, Any],
-    dataset_spec: dict[str, Any],
-    run_regime: str,
-    audit_meta: dict[str, Any],
-    profile: ManifestProfile,
-    target_avg_sample_size: int | None,
-    strict_inference_dataset_match: bool = False,
-) -> tuple[float, str]:
-    model_score = _model_priority_score(model, audit_meta=audit_meta, profile=profile)
-    dataset_score = _dataset_priority_score(dataset_spec, target_avg_sample_size=target_avg_sample_size)
-    regime_bonus = 0.25 if run_regime == "finetune_transfer" else 0.10
-    score = model_score + dataset_score + regime_bonus
-    reason = (
-        f"selected score={score:.3f} "
-        f"(model={model_score:.3f}, dataset={dataset_score:.3f}, regime={run_regime})"
-    )
-    if task_key in STRICT_VALIDATION_TASK_KEYS:
-        reason += "; strict multimodal validation passed"
-    if run_regime == "inference_only" and strict_inference_dataset_match:
-        matched, match_reason = _is_strict_inference_dataset_match(
-            model=model,
-            dataset_spec=dataset_spec,
-            audit_meta=audit_meta,
-        )
-        if matched:
-            reason += f"; {match_reason}"
-    return score, reason
-
-
-def _is_image_classification_inference_pair_compatible(
-    *,
-    model: dict[str, Any],
-    dataset_spec: dict[str, Any],
-) -> tuple[bool, str]:
-    dataset_key = str(dataset_spec.get("registry_id") or "").strip()
-    explicit_allow = model.get("inference_dataset_keys")
-    if isinstance(explicit_allow, (list, tuple, set)):
-        if dataset_key and dataset_key in set(explicit_allow):
-            return True, "explicit_inference_dataset_allowlist"
-        return False, "dataset_not_in_model_inference_allowlist"
-
-    model_labels = _as_int(model.get("inference_num_labels"))
-    dataset_labels = _as_int(dataset_spec.get("num_classes") or dataset_spec.get("num_labels"))
-    if model_labels is not None and dataset_labels is not None:
-        if model_labels == dataset_labels:
-            return True, "matching_label_space"
-        return False, f"label_space_mismatch:model={model_labels},dataset={dataset_labels}"
-
-    # Conservative fallback: if registry lacks explicit compatibility metadata,
-    # do not emit inference-only image classification rows.
-    return False, "missing_inference_compatibility_metadata"
-
-
-def _dataset_split_variants(dataset_spec: dict[str, Any]) -> list[dict[str, Any]]:
-    variants: list[dict[str, Any]] = []
-    configured = dataset_spec.get("split_variants")
-    if isinstance(configured, (list, tuple)):
-        for item in configured:
-            if not isinstance(item, dict):
-                continue
-            train_split = item.get("train_split")
-            test_split = item.get("test_split")
-            if _has_required_value(train_split) and _has_required_value(test_split):
-                variants.append({"train_split": train_split, "test_split": test_split})
-
-    base_train = dataset_spec.get("train_split", "train")
-    base_test = dataset_spec.get("test_split", "validation")
-    if _has_required_value(base_train) and _has_required_value(base_test):
-        variants.insert(0, {"train_split": base_train, "test_split": base_test})
-
-    train_split = str(base_train or "").strip()
-    if train_split and "[" not in train_split and "]" not in train_split:
-        variants.extend(
-            [
-                {"train_split": f"{train_split}[:80%]", "test_split": f"{train_split}[80%:]"},
-                {"train_split": f"{train_split}[:90%]", "test_split": f"{train_split}[90%:]"},
-            ]
-        )
-
-    deduped: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
-    for variant in variants:
-        key = (str(variant["train_split"]), str(variant["test_split"]))
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(variant)
-    return deduped or [{"train_split": "train", "test_split": "validation"}]
-
-
-def _apply_dataset_variant(dataset_spec: dict[str, Any], variant_index: int) -> dict[str, Any]:
-    dataset_variant = dict(dataset_spec)
-    split_variants = _dataset_split_variants(dataset_spec)
-    split_variant = split_variants[variant_index % len(split_variants)]
-    dataset_variant.update(split_variant)
-    dataset_variant["_variant_index"] = variant_index
-    dataset_variant["_split_variant_index"] = variant_index % len(split_variants)
-    return dataset_variant
-
-
-def _resolved_dataset_variant_budget(dataset_spec: dict[str, Any], requested_variants: int) -> int:
-    requested = _normalise_positive_int(requested_variants) or 1
-    return min(requested, len(_dataset_split_variants(dataset_spec)))
-
-
-def _batch_size_choices(per_client_budget: int) -> list[int]:
-    choices = [choice for choice in [4, 8, 16, 32] if choice <= max(4, per_client_budget)]
-    return choices or [max(1, min(4, per_client_budget))]
-
-
-def _sample_training_knobs(
-    rng: random.Random,
-    *,
-    seed: int,
-    task_key: str | None = None,
-    run_regime: str | None = None,
-    max_samples: int | None = None,
-    num_clients: int = 1,
-) -> dict[str, Any]:
-    task_key = str(task_key or "").strip().lower()
-    run_regime = str(run_regime or "").strip().lower()
-    effective_max_samples = max(1, _as_int(max_samples) or 1)
-    per_client_budget = effective_max_samples
-
-    if run_regime == "inference_only":
-        return {
-            "batch_size": rng.choice(_batch_size_choices(per_client_budget)),
-            "learning_rate": NOT_APPLICABLE,
-            "optimizer": NOT_APPLICABLE,
-            "seed": seed,
-            "distribution": "iid",
-            "weight_decay": NOT_APPLICABLE,
-            "momentum": NOT_APPLICABLE,
-            "dirichlet_alpha": NOT_APPLICABLE,
-            "save_weights": False,
-        }
-
-    effective_total_samples = effective_max_samples * max(1, int(num_clients))
-    allow_dirichlet = per_client_budget >= 24 and effective_total_samples >= 64
-    distribution = rng.choice(["iid", "dirichlet"]) if allow_dirichlet else "iid"
-    dirichlet_alpha = rng.choice([0.1, 0.3, 0.5]) if distribution == "dirichlet" else None
-
-    if task_key == "object_detection" and run_regime == "finetune_transfer":
-        return {
-            "batch_size": rng.choice([2, 4, 8]),
-            "learning_rate": rng.choice([2e-5, 5e-5, 1e-4]),
-            "optimizer": "adamw",
-            "seed": seed,
-            "distribution": distribution,
-            "weight_decay": rng.choice([0.0, 0.01, 0.05]),
-            "momentum": 0.0,
-            "dirichlet_alpha": dirichlet_alpha,
-            "save_weights": False,
-        }
-
-    learning_rate = rng.choice([1e-5, 2e-5, 3e-5, 5e-5, 1e-4])
-
-    optimizer = rng.choice(["adamw", "sgd", "rmsprop"])
-
-    if optimizer == "adamw":
-        learning_rate = rng.choice([1e-5, 2e-5, 3e-5, 5e-5, 1e-4])
-        weight_decay = rng.choice([0.0, 0.01, 0.05])
-        momentum = 0.0
-
-    elif optimizer == "sgd":
-        learning_rate = rng.choice([1e-3, 5e-3, 1e-2, 5e-2])
-        weight_decay = rng.choice([0.0, 1e-4, 5e-4])
-        momentum = rng.choice([0.0, 0.9])
-
-    else:  # rmsprop
-        learning_rate = rng.choice([1e-4, 5e-4, 1e-3, 5e-3])
-        weight_decay = rng.choice([0.0, 1e-4, 1e-3])
-        momentum = rng.choice([0.0, 0.9])
-
-
-    return {
-        "batch_size": rng.choice(_batch_size_choices(per_client_budget)),
-        "learning_rate": learning_rate,
-        "optimizer": optimizer,
-        "seed": seed,
-        "distribution": distribution,
-        "weight_decay": weight_decay,
-        "momentum": momentum,
-        "dirichlet_alpha": dirichlet_alpha,
-        "save_weights": False,
-    }
-
-
-def _apply_inference_only_placeholders(row: dict[str, Any]) -> dict[str, Any]:
-    if str(row.get("run_regime") or "").strip().lower() != "inference_only":
-        return row
-
-    for column in INFERENCE_ONLY_TRAINING_COLUMNS:
-        row[column] = NOT_APPLICABLE
-    row["save_weights"] = False
-    return row
-
-
-def _sample_run_workload(
-    rng: random.Random,
-    *,
-    task_key: str,
-    run_regime: str,
-    profile: ManifestProfile,
-) -> dict[str, Any]:
-    if run_regime == "inference_only":
-        return {
-            "num_rounds": 1,
-            "num_clients": 1,
-            "client_participation_rate": 1.0,
-            "local_epochs": 1,
-            "num_workers": 2,
-            "timeout_s": profile.timeout_s,
-            "mixed_precision": task_key in {"image_classification", "object_detection", "image_segmentation"},
-            "measure_system_metrics": True,
-        }
-
-    requested_clients = rng.choice(profile.finetune_clients)
-    num_clients = max(1, requested_clients)
-    return {
-        "num_rounds": rng.choice(profile.finetune_rounds),
-        "num_clients": num_clients,
-        "client_participation_rate": rng.choice(profile.finetune_participation),
-        "local_epochs": rng.choice(profile.finetune_local_epochs),
-        "num_workers": 2,
-        "timeout_s": profile.timeout_s,
-        "mixed_precision": task_key in {"image_classification", "object_detection", "image_segmentation"},
-        "measure_system_metrics": True,
-    }
-
-
-def _resolve_candidate_sample_sizes(
-    candidates: list[ManifestCandidate],
-    *,
-    avg_sample_size: int | None,
-    seed: int,
-) -> list[int]:
-    if not candidates:
-        return []
-
-    base_caps = [max(1, _as_int(candidate.dataset_spec.get("max_samples")) or 1) for candidate in candidates]
-    if not avg_sample_size or avg_sample_size <= 0:
-        return base_caps
-
-    baseline_avg = sum(base_caps) / len(base_caps)
-    scale = float(avg_sample_size) / baseline_avg if baseline_avg > 0 else 1.0
-
-    resolved: list[int] = []
-    for candidate, base_cap in zip(candidates, base_caps):
-        sample_rng = random.Random(
-            f"{seed}:samples:{candidate.task_key}:{candidate.model.get('hf_model_id')}:{candidate.dataset_spec.get('registry_id')}:"
-            f"{candidate.run_regime}:{candidate.dataset_variant_index}:{candidate.service_variant_index}"
-        )
-        jitter = sample_rng.uniform(0.85, 1.15)
-        minimum = min(base_cap, _minimum_samples_for_task(candidate.task_key, candidate.run_regime))
-        proposed = int(round(base_cap * scale * jitter))
-        resolved.append(max(minimum, min(base_cap, proposed)))
-
-    return resolved
-
-
-def _select_manifest_candidates(
-    *,
-    requested_task_keys: list[str],
-    models_per_task: int,
-    datasets_per_model: int,
-    selected_run_regimes: list[str],
-    max_models_per_family: int | None,
-    target_avg_sample_size: int | None,
-    audit_meta: dict[str, Any],
-    profile: ManifestProfile,
-    strict_inference_dataset_match: bool,
-) -> list[ManifestCandidate]:
-    candidates: list[ManifestCandidate] = []
-
-    for task_key in requested_task_keys:
-        task_spec = TASK_SPECS.get(task_key)
-        if task_spec is None:
-            continue
-
-        models = [
-            {"registry_id": registry_id, **dict(model)}
-            for registry_id, model in MODEL_REGISTRY.items()
-            if model.get("task_key") == task_key
-        ]
-        datasets = [
-            {"registry_id": registry_id, **dict(dataset)}
-            for registry_id, dataset in DATASET_REGISTRY.items()
-            if dataset.get("task_key") == task_key
-        ]
-        if not models or not datasets:
-            continue
-
-        ranked_models = sorted(
-            models,
-            key=lambda model: (
-                -_model_priority_score(model, audit_meta=audit_meta, profile=profile),
-                str(model.get("registry_id") or ""),
-            ),
-        )
-
-        compatible_by_model: dict[str, list[tuple[dict[str, Any], float, list[str], str]]] = {}
-        for model in ranked_models:
-            compatible_datasets: list[tuple[dict[str, Any], float, list[str], str]] = []
-            for dataset in datasets:
-                valid_run_regimes: list[str] = []
-                best_score = float("-inf")
-                best_reason = ""
-                for run_regime in selected_run_regimes:
-                    issues = _task_dataset_validation_issues(
-                        task_key=task_key,
-                        task_spec=task_spec,
-                        model=model,
-                        dataset_spec=dataset,
-                        run_regime=run_regime,
-                        audit_meta=audit_meta,
-                        strict_inference_dataset_match=strict_inference_dataset_match,
-                    )
-                    if issues:
-                        continue
-                    pair_score, fit_reason = _pair_priority_score(
-                        task_key=task_key,
-                        model=model,
-                        dataset_spec=dataset,
-                        run_regime=run_regime,
-                        audit_meta=audit_meta,
-                        profile=profile,
-                        target_avg_sample_size=target_avg_sample_size,
-                        strict_inference_dataset_match=strict_inference_dataset_match,
-                    )
-                    valid_run_regimes.append(run_regime)
-                    if pair_score > best_score:
-                        best_score = pair_score
-                        best_reason = fit_reason
-
-                if valid_run_regimes:
-                    compatible_datasets.append((dataset, best_score, valid_run_regimes, best_reason))
-
-            if not compatible_datasets:
-                continue
-
-            compatible_datasets.sort(
-                key=lambda item: (-item[1], str(item[0].get("registry_id") or "")),
-            )
-            compatible_by_model[_model_registry_key(model)] = compatible_datasets
-
-        selected_models = _select_diverse_models(
-            [model for model in ranked_models if _model_registry_key(model) in compatible_by_model],
-            models_per_task=models_per_task,
-            max_models_per_family=max_models_per_family,
-        )
-        for model in selected_models:
-            chosen_datasets = compatible_by_model[_model_registry_key(model)][: max(0, datasets_per_model)]
-            if not chosen_datasets:
-                continue
-
-            for dataset, _, valid_run_regimes, _ in chosen_datasets:
-                for run_regime in valid_run_regimes:
-                    pair_score, fit_reason = _pair_priority_score(
-                        task_key=task_key,
-                        model=model,
-                        dataset_spec=dataset,
-                        run_regime=run_regime,
-                        audit_meta=audit_meta,
-                        profile=profile,
-                        target_avg_sample_size=target_avg_sample_size,
-                        strict_inference_dataset_match=strict_inference_dataset_match,
-                    )
-                    candidates.append(
-                        ManifestCandidate(
-                            task_key=task_key,
-                            task_spec=task_spec,
-                            model=model,
-                            dataset_spec=dataset,
-                            run_regime=run_regime,
-                            pair_score=pair_score,
-                            fit_reason=fit_reason,
-                        )
-                    )
-
-    return candidates
 
 
 def _parse_csv_arg(value: str | None) -> list[str] | None:
@@ -1042,198 +244,236 @@ def _parse_csv_arg(value: str | None) -> list[str] | None:
     return items or None
 
 
-def _load_audit_metadata(json_path: str | None) -> dict[str, Any]:
-    if not json_path:
-        return {}
-
-    with open(json_path, "r", encoding="utf-8") as f:
-        source = json.load(f)
-
-    tasks = source.get("tasks") if isinstance(source, dict) else None
-    if not isinstance(tasks, list):
-        return {"raw": source}
-
-    model_audit: dict[str, dict[str, Any]] = {}
-    for task in tasks:
-        for model in task.get("models", []) or []:
-            if not isinstance(model, dict):
-                continue
-            model_id = str(model.get("hf_model_id") or model.get("model_id") or model.get("id") or "").strip()
-            if model_id:
-                model_audit[model_id] = {
-                    "downloads": model.get("downloads"),
-                    "likes": model.get("likes"),
-                    "author": model.get("author"),
-                    "url": model.get("url"),
-                    "pipeline_tag": task.get("pipeline_tag"),
-                    "audit_dataset_tags": model.get("audit_dataset_tags") or model.get("dataset_tags") or [],
-                    "audit_raw_tags": model.get("audit_raw_tags") or [],
-                }
-
-    return {"models": model_audit}
+def _resolve_manifest_profile(profile_name: str | None) -> ManifestProfile:
+    return MANIFEST_PROFILES.get(str(profile_name or "balanced").strip().lower(), MANIFEST_PROFILES["balanced"])
 
 
-def _regime_defaults(run_regime: str) -> dict[str, str]:
-    if run_regime == "inference_only":
+def _normalise_positive_int(value: int | None, *, minimum: int = 1) -> int:
+    if value is None:
+        return minimum
+    return max(minimum, int(value))
+
+
+def _as_int(value: Any) -> int | None:
+    try:
+        if value is None:
+            return None
+        return int(value)
+    except Exception:
+        return None
+
+
+def _service_id(prefix: str, payload: dict[str, Any]) -> str:
+    raw = json.dumps(payload, sort_keys=True, default=str)
+    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+    safe_prefix = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in prefix.lower()).strip("_") or "svc"
+    return f"{safe_prefix}_{digest}"
+
+
+def _training_regime_defaults(training_regime: str) -> dict[str, str]:
+    if training_regime == "inference_only":
         return {"model_type": "hf", "model_role": "service"}
     return {"model_type": "hf_finetune", "model_role": "task_head"}
 
 
-def _resolve_explainability_metadata(
-    *,
-    model: dict[str, Any],
-    dataset_spec: dict[str, Any],
-    run_regime: str,
-) -> dict[str, Any]:
-    model_meta = model.get("explainability") if isinstance(model.get("explainability"), dict) else {}
-    dataset_meta = dataset_spec.get("explainability") if isinstance(dataset_spec.get("explainability"), dict) else {}
-
-    model_supported = bool(model_meta.get("supported", model_meta.get("supports_token_attribution") or model_meta.get("supports_gradients")))
-    dataset_supported = bool(dataset_meta.get("supported", dataset_meta.get("supports_feature_attribution") or dataset_meta.get("supports_example_level_rationales")))
-    enabled = model_supported and dataset_supported and run_regime in {"finetune_transfer", "inference_only"}
-
-    dataset_methods = [str(method) for method in dataset_meta.get("preferred_methods", []) if str(method).strip()]
-    model_methods = [str(method) for method in model_meta.get("preferred_methods", []) if str(method).strip()]
-    preferred_method = next((method for method in dataset_methods if method in model_methods), None)
-    if preferred_method is None:
-        preferred_method = (model_methods or dataset_methods or [None])[0]
-
-    return {
-        "explainability_enabled": enabled,
-        "explainability_method": preferred_method,
-        "explainability_target": dataset_meta.get("target_type") or model_meta.get("target_type"),
+def _service_config(row: dict[str, Any]) -> str:
+    payload = {
+        "training_epochs": row.get("training_epochs"),
+        "split_strategy": row.get("split_strategy"),
+        "distribution_type": row.get("distribution_type"),
+        "distribution_param": row.get("distribution_param"),
+        "batch_size": row.get("batch_size"),
+        "learning_rate": row.get("learning_rate"),
+        "optimizer": row.get("optimizer"),
+        "weight_decay": row.get("weight_decay"),
+        "momentum": row.get("momentum"),
+        "max_samples": row.get("max_samples"),
+        "sample_size": row.get("sample_size"),
+        "max_length": row.get("max_length"),
+        "timeout_s": row.get("timeout_s"),
+        "device": row.get("device"),
+        "mixed_precision": row.get("mixed_precision"),
+        "save_weights": row.get("save_weights"),
+        "enable_perturbation_metrics": row.get("enable_perturbation_metrics"),
+        "perturbation_sample_count": row.get("perturbation_sample_count"),
     }
+    return json.dumps({k: v for k, v in payload.items() if v is not None}, sort_keys=True)
+
+
+def _max_samples(dataset_spec: dict[str, Any], profile: ManifestProfile, avg_sample_size: int | None) -> int:
+    requested = avg_sample_size if avg_sample_size is not None else profile.default_avg_sample_size
+    dataset_cap = _as_int(dataset_spec.get("max_samples")) or requested
+    return max(1, min(dataset_cap, int(requested)))
+
+
+def _split_value(dataset_spec: dict[str, Any], key: str, variant: int) -> Any:
+    value = dataset_spec.get(key)
+    if isinstance(value, (list, tuple)) and value:
+        return value[variant % len(value)]
+    return value
 
 
 def _row_from_registry(
     *,
-    run_group_id: str,
-    run_index: int,
+    task_key: str,
     task_spec: TaskSpec,
     model: dict[str, Any],
     dataset_spec: dict[str, Any],
-    service_variant_index: int,
-    knobs: dict[str, Any],
-    workload: dict[str, Any],
-    resolved_max_samples: int,
-    run_regime: str,
-    audit_meta: dict[str, Any],
-    pair_score: float,
-    fit_reason: str,
+    profile: ManifestProfile,
+    training_regime: str,
+    dataset_variant: int,
+    split_variant: int,
+    knob_variant: int,
+    rng: random.Random,
+    avg_sample_size: int | None,
 ) -> dict[str, Any]:
-    model_id = str(model.get("hf_model_id") or model.get("model_id") or model.get("id") or "").strip()
-    audit_models = audit_meta.get("models", {}) if isinstance(audit_meta, dict) else {}
-    model_audit = audit_models.get(model_id, {}) if isinstance(audit_models, dict) else {}
-    author = model.get("author") or model_audit.get("author")
-    if not author and "/" in model_id:
-        author = model_id.split("/", 1)[0]
-
-    model_defaults = _regime_defaults(run_regime)
-    service_payload = {
-        "source": "registry",
-        "registry_task": next((task_key for task_key, spec in TASK_SPECS.items() if spec == task_spec), None),
-        "run_regime": run_regime,
-        "audit_json_used": bool(audit_meta),
-        "pair_score": round(pair_score, 4),
-        "variant_index": service_variant_index,
-        "service_variant_index": service_variant_index,
-        "dataset_variant_index": dataset_spec.get("_variant_index", 0),
-        "split_variant_index": dataset_spec.get("_split_variant_index", 0),
-        "finetune_validated": bool(model.get("finetune_validated")),
-        "vqa_label_mode": model.get("vqa_label_mode") or dataset_spec.get("vqa_label_mode"),
-        "retrieval_positive_policy": (
-            model.get("retrieval_positive_policy") or dataset_spec.get("retrieval_positive_policy")
-        ),
-    }
-    explainability = _resolve_explainability_metadata(model=model, dataset_spec=dataset_spec, run_regime=run_regime)
-    resolved_modality = str(dataset_spec.get("modality") or "").strip().lower()
-    if resolved_modality not in {"text", "image", "multimodal"} or (
-        task_spec.modality and resolved_modality != task_spec.modality
-    ):
-        resolved_modality = task_spec.modality or "text"
-
+    defaults = _training_regime_defaults(training_regime)
+    epochs = 0 if training_regime == "inference_only" else rng.choice(profile.training_epochs)
     row = {
-        "external_run_id": f"hf_{task_spec.task_label}_{run_index:06d}",
-        "dataset": "hf",
-        "run_group_id": run_group_id,
-        "case_name": (
-            f"{model_id.replace('/', '_')}__{dataset_spec.get('registry_id', dataset_spec.get('dataset_name'))}"
-            f"__{run_regime}__split{dataset_spec.get('_split_variant_index', 0)}__svc{service_variant_index}"
-        ),
-        "notes": "Generated from scored registry-defined HF model and dataset compatibility",
         "enabled": True,
-        "measure_system_metrics": workload["measure_system_metrics"],
-        "mixed_precision": workload["mixed_precision"],
-        "num_rounds": workload["num_rounds"],
-        "num_clients": workload["num_clients"],
-        "client_participation_rate": workload["client_participation_rate"],
-        "local_epochs": workload["local_epochs"],
-        "batch_size": knobs["batch_size"],
-        "earning_rate": knobs["learning_rate"],
-        "learning_rate": knobs["learning_rate"],
-        "optimizer": knobs["optimizer"],
-        "seed": knobs["seed"],
-        "distribution": knobs["distribution"],
-        "sample_size": resolved_max_samples,
-        "max_samples": resolved_max_samples,
-        "max_length": dataset_spec.get("max_length", 128),
-        "num_workers": workload["num_workers"],
-        "timeout_s": workload["timeout_s"],
-        "weight_decay": knobs["weight_decay"],
-        "momentum": knobs["momentum"],
-        "dirichlet_alpha": knobs["dirichlet_alpha"],
-        "aggregation": "",
-        "device": "",
-        "save_weights": knobs["save_weights"],
-        "save_final_model_params": run_regime == "finetune_transfer",
-        "model_type": model_defaults["model_type"] if run_regime == "inference_only" else (model.get("model_type") or model_defaults["model_type"]),
-        "hf_task": task_spec.hf_task,
-        "task_type": dataset_spec.get("task_type", task_spec.task_type),
-        "modality": resolved_modality,
+        "dataset": "hf",
         "dataset_name": dataset_spec.get("dataset_name"),
         "dataset_config": dataset_spec.get("dataset_config"),
-        "hf_model_id": model_id,
-        "train_split": dataset_spec.get("train_split", "train"),
-        "test_split": dataset_spec.get("test_split", "validation"),
-        "label_column": dataset_spec.get("label_column", "label"),
-        "mask_column": dataset_spec.get("mask_column"),
-        "text_column": dataset_spec.get("text_column", "text"),
+        "train_split": _split_value(dataset_spec, "train_split", split_variant),
+        "test_split": _split_value(dataset_spec, "test_split", split_variant),
+        "benchmark_split": _split_value(dataset_spec, "test_split", split_variant),
+        "model_type": defaults["model_type"],
+        "hf_task": task_spec.hf_task,
+        "hf_model_id": model.get("hf_model_id"),
+        "task_type": task_spec.task_type,
+        "task": task_key,
+        "task_tag": task_spec.task_tag,
+        "modality": task_spec.modality,
+        "input_schema": dataset_spec.get("input_schema") or model.get("input_schema"),
+        "output_schema": dataset_spec.get("label_format"),
+        "training_regime": training_regime,
+        "dataset_variant": dataset_variant,
+        "split_variant": split_variant,
+        "knob_variant": knob_variant,
+        "split_strategy": "iid",
+        "distribution_type": "iid",
+        "distribution_param": None,
+        "custom_distributions": None,
+        "training_epochs": epochs,
+        "batch_size": rng.choice(profile.batch_sizes),
+        "learning_rate": (None if training_regime == "inference_only" else rng.choice(profile.learning_rates)),
+        "optimizer": ("none" if training_regime == "inference_only" else "adam"),
+        "weight_decay": 0.0,
+        "momentum": 0.0,
+        "sample_size": None,
+        "max_samples": _max_samples(dataset_spec, profile, avg_sample_size),
+        "max_length": dataset_spec.get("max_length") or model.get("max_length"),
+        "timeout_s": profile.timeout_s,
+        "device": "auto",
+        "mixed_precision": False,
+        "save_weights": False,
+        "num_workers": 0,
+        "text_column": dataset_spec.get("text_column"),
         "image_column": dataset_spec.get("image_column"),
+        "label_column": dataset_spec.get("label_column"),
+        "mask_column": dataset_spec.get("mask_column"),
         "question_column": dataset_spec.get("question_column"),
         "answer_column": dataset_spec.get("answer_column"),
         "ranking_label_column": dataset_spec.get("ranking_label_column"),
-        "vqa_label_mode": model.get("vqa_label_mode") or dataset_spec.get("vqa_label_mode"),
-        "vqa_answer_vocab_size": dataset_spec.get("vqa_answer_vocab_size") or model.get("vqa_answer_vocab_size"),
-        "vqa_unseen_answer_policy": (
-            dataset_spec.get("vqa_unseen_answer_policy")
-            or model.get("vqa_unseen_answer_policy")
-            or ("ignore" if task_spec.hf_task == "visual_question_answering" else None)
+        "vqa_label_mode": dataset_spec.get("vqa_label_mode"),
+        "vqa_answer_vocab_size": dataset_spec.get("vqa_answer_vocab_size"),
+        "vqa_unseen_answer_policy": dataset_spec.get("vqa_unseen_answer_policy"),
+        "retrieval_positive_policy": dataset_spec.get("retrieval_positive_policy"),
+        "missing_pair_handling": dataset_spec.get("missing_pair_handling"),
+        "on_decode_error": dataset_spec.get("on_decode_error"),
+        "report_decode_errors": dataset_spec.get("report_decode_errors"),
+        "source_max_length": dataset_spec.get("source_max_length"),
+        "target_max_length": dataset_spec.get("target_max_length"),
+        "dynamic_padding": dataset_spec.get("dynamic_padding"),
+        "column_mapping": json.dumps(dataset_spec.get("column_mapping"), sort_keys=True) if dataset_spec.get("column_mapping") else None,
+        "explainability_enabled": bool((model.get("explainability") or dataset_spec.get("explainability") or {}).get("supported", True)),
+        "enable_perturbation_metrics": bool((model.get("explainability") or dataset_spec.get("explainability") or {}).get("supported", True)),
+        "perturbation_stage_logging": True,
+        "perturbation_progress_logging": False,
+        "perturbation_sample_count": 1,
+        "perturbation_candidate_units": 4,
+        "perturbation_target_units": 1,
+        "perturbation_trust_trials": 2,
+        "perturbation_progress_sample_interval": 1,
+        "perturbation_random_strength": 0.02,
+        "explainability_method": _preferred_explainability(model, dataset_spec),
+        "explainability_target": (model.get("explainability") or dataset_spec.get("explainability") or {}).get("target_type"),
+        "service_source": "hf_registry",
+        "model_role": defaults["model_role"],
+        "fit_decision": "compatible",
+        "fit_reason": f"registry-compatible task={task_key} training_regime={training_regime}",
+        "realism_score": model.get("realism_score"),
+        "domain_alignment": dataset_spec.get("domain_alignment"),
+        "dataset_hint": dataset_spec.get("dataset_hint"),
+        "hf_pipeline_tag": model.get("pipeline_tag") or task_spec.pipeline_tag,
+        "hf_downloads": model.get("downloads"),
+        "hf_likes": model.get("likes"),
+        "hf_author": model.get("author"),
+        "hf_url": model.get("url"),
+        "hf_service_meta_json": json.dumps(
+            {
+                "model_family": model.get("family"),
+                "dataset_registry_key": dataset_spec.get("registry_key"),
+                "model_registry_key": model.get("registry_key"),
+                "training_regime": training_regime,
+                "dataset_variant": dataset_variant,
+                "split_variant": split_variant,
+                "knob_variant": knob_variant,
+            },
+            sort_keys=True,
         ),
-        "retrieval_positive_policy": (
-            model.get("retrieval_positive_policy")
-            or dataset_spec.get("retrieval_positive_policy")
-            or ("diagonal_in_batch" if task_spec.hf_task == "text_image_retrieval" else None)
-        ),
-        "task_tag": dataset_spec.get("task_tag", task_spec.task_tag),
-        "run_regime": run_regime,
-        "explainability_enabled": explainability["explainability_enabled"],
-        "explainability_method": explainability["explainability_method"],
-        "explainability_target": explainability["explainability_target"],
-        "model_role": model_defaults["model_role"] if run_regime == "inference_only" else (model.get("model_role") or model_defaults["model_role"]),
-        "input_schema": dataset_spec.get("input_schema", "single_text"),
-        "fit_decision": "selected",
-        "fit_reason": fit_reason,
-        "realism_score": round(pair_score, 4),
-        "domain_alignment": dataset_spec.get("domain_alignment", "registry_curated"),
-        "dataset_hint": dataset_spec.get("dataset_hint") or dataset_spec.get("dataset_name"),
-        "hf_pipeline_tag": task_spec.pipeline_tag,
-        "hf_downloads": model.get("downloads", model_audit.get("downloads")),
-        "hf_likes": model.get("likes", model_audit.get("likes")),
-        "hf_author": author,
-        "hf_url": model.get("url") or model_audit.get("url") or (f"https://huggingface.co/{model_id}" if model_id else None),
-        "hf_service_meta_json": json.dumps(service_payload),
     }
-    return _apply_inference_only_placeholders(row)
+    row["case_name"] = (
+        f"{task_spec.task_label}__{model.get('hf_model_id')}__{dataset_spec.get('dataset_name')}"
+        f"__{training_regime}__d{dataset_variant}__s{split_variant}__k{knob_variant}"
+    )
+    row["notes"] = "Reviewed service row generated from model and dataset registries"
+    row["service_id"] = _service_id(
+        f"hf_{task_spec.task_label}",
+        {
+            "model": row["hf_model_id"],
+            "dataset": row["dataset_name"],
+            "dataset_config": row["dataset_config"],
+            "training_regime": training_regime,
+            "dataset_variant": dataset_variant,
+            "split_variant": split_variant,
+            "knob_variant": knob_variant,
+        },
+    )
+    row["service_config"] = _service_config(row)
+    return row
+
+
+def _preferred_explainability(model: dict[str, Any], dataset_spec: dict[str, Any]) -> str | None:
+    payload = model.get("explainability") or dataset_spec.get("explainability") or {}
+    methods = payload.get("preferred_methods")
+    if isinstance(methods, list) and methods:
+        return str(methods[0])
+    return None
+
+
+def _model_candidates(task_key: str) -> list[dict[str, Any]]:
+    candidates = []
+    for registry_key, model in MODEL_REGISTRY.items():
+        if model.get("task_key") == task_key:
+            copied = dict(model)
+            copied["registry_key"] = registry_key
+            candidates.append(copied)
+    return candidates
+
+
+def _dataset_candidates(task_key: str, model: dict[str, Any]) -> list[dict[str, Any]]:
+    allowed = set(model.get("dataset_keys") or [])
+    candidates = []
+    for registry_key, dataset in DATASET_REGISTRY.items():
+        if dataset.get("task_key") != task_key:
+            continue
+        if allowed and registry_key not in allowed:
+            continue
+        copied = dict(dataset)
+        copied["registry_key"] = registry_key
+        candidates.append(copied)
+    return candidates
 
 
 def _selected_generic_cases(requested_task_keys: list[str]) -> list[dict[str, Any]]:
@@ -1241,449 +481,214 @@ def _selected_generic_cases(requested_task_keys: list[str]) -> list[dict[str, An
     return [case for case in GENERIC_MANIFEST_CASES if case["task_key"] in requested]
 
 
-def _allocate_even_quotas(total_runs: int, task_keys: list[str]) -> dict[str, int]:
-    eligible_task_keys = _dedupe_preserve_order(task_keys)
-    if not eligible_task_keys or total_runs <= 0:
-        return {}
-
-    base_quota = total_runs // len(eligible_task_keys)
-    remainder = total_runs % len(eligible_task_keys)
-    quotas = {task_key: base_quota for task_key in eligible_task_keys}
-    for task_key in eligible_task_keys[:remainder]:
-        quotas[task_key] += 1
-    return quotas
-
-
-def _balanced_hf_candidates(
-    *,
-    base_candidates: list[ManifestCandidate],
-    requested_task_keys: list[str],
-    total_runs: int | None,
-    service_variants_per_pair: int,
-    dataset_split_variants_per_pair: int,
-) -> list[ManifestCandidate]:
-    if total_runs is None:
-        expanded: list[ManifestCandidate] = []
-        service_budget = _normalise_positive_int(service_variants_per_pair) or 1
-        for candidate in base_candidates:
-            dataset_budget = _resolved_dataset_variant_budget(candidate.dataset_spec, dataset_split_variants_per_pair)
-            for dataset_variant_index in range(dataset_budget):
-                for service_variant_index in range(service_budget):
-                    expanded.append(
-                        ManifestCandidate(
-                            task_key=candidate.task_key,
-                            task_spec=candidate.task_spec,
-                            model=candidate.model,
-                            dataset_spec=candidate.dataset_spec,
-                            run_regime=candidate.run_regime,
-                            pair_score=candidate.pair_score,
-                            fit_reason=candidate.fit_reason,
-                            service_variant_index=service_variant_index,
-                            dataset_variant_index=dataset_variant_index,
-                        )
-                    )
-        return expanded
-
-    by_task: dict[str, list[ManifestCandidate]] = {}
-    for candidate in base_candidates:
-        by_task.setdefault(candidate.task_key, []).append(candidate)
-
-    eligible_task_keys = [task_key for task_key in requested_task_keys if task_key in by_task]
-    quotas = _allocate_even_quotas(total_runs, eligible_task_keys)
-
-    selected: list[ManifestCandidate] = []
-    for task_key in eligible_task_keys:
-        pool = by_task[task_key]
-        quota = quotas.get(task_key, 0)
-        for run_offset in range(quota):
-            base_candidate = pool[run_offset % len(pool)]
-            variant_ordinal = run_offset // len(pool)
-            service_budget = _normalise_positive_int(service_variants_per_pair) or 1
-            dataset_budget = _resolved_dataset_variant_budget(base_candidate.dataset_spec, dataset_split_variants_per_pair)
-            service_variant_index = variant_ordinal % service_budget
-            dataset_variant_index = (variant_ordinal // service_budget) % dataset_budget
-            selected.append(
-                ManifestCandidate(
-                    task_key=base_candidate.task_key,
-                    task_spec=base_candidate.task_spec,
-                    model=base_candidate.model,
-                    dataset_spec=base_candidate.dataset_spec,
-                    run_regime=base_candidate.run_regime,
-                    pair_score=base_candidate.pair_score,
-                    fit_reason=base_candidate.fit_reason,
-                    service_variant_index=service_variant_index,
-                    dataset_variant_index=dataset_variant_index,
-                )
-            )
-    return selected
-
-
-def _balanced_generic_candidates(
-    *,
-    cases: list[dict[str, Any]],
-    requested_task_keys: list[str],
-    total_runs: int | None,
-    variants_per_pair: int,
-) -> list[GenericManifestCandidate]:
-    if not cases:
-        return []
-
-    by_task: dict[str, list[dict[str, Any]]] = {}
-    for case in cases:
-        by_task.setdefault(str(case["task_key"]), []).append(case)
-
-    if total_runs is None:
-        selected: list[GenericManifestCandidate] = []
-        for task_key in requested_task_keys:
-            for case in by_task.get(task_key, []):
-                for variant_index in range(max(1, variants_per_pair)):
-                    selected.append(GenericManifestCandidate(task_key=task_key, case=case, variant_index=variant_index))
-        return selected
-
-    eligible_task_keys = [task_key for task_key in requested_task_keys if task_key in by_task]
-    quotas = _allocate_even_quotas(total_runs, eligible_task_keys)
-    selected = []
-    for task_key in eligible_task_keys:
-        pool = by_task[task_key]
-        quota = quotas.get(task_key, 0)
-        for run_offset in range(quota):
-            selected.append(
-                GenericManifestCandidate(
-                    task_key=task_key,
-                    case=pool[run_offset % len(pool)],
-                    variant_index=run_offset // len(pool),
-                )
-            )
-    return selected
-
-
-def _split_total_runs_by_family(
-    *,
-    total_runs: int | None,
-    requested_task_keys: list[str],
-    hf_candidates: list[ManifestCandidate],
-    generic_cases: list[dict[str, Any]],
-) -> tuple[int | None, int | None]:
-    if total_runs is None:
-        return None, None
-
-    hf_task_keys = {candidate.task_key for candidate in hf_candidates}
-    generic_task_keys = {str(case["task_key"]) for case in generic_cases}
-    eligible_task_keys = [
-        task_key
-        for task_key in requested_task_keys
-        if task_key in hf_task_keys or task_key in generic_task_keys
-    ]
-    quotas = _allocate_even_quotas(total_runs, eligible_task_keys)
-    hf_total = sum(quota for task_key, quota in quotas.items() if task_key in hf_task_keys)
-    generic_total = sum(quota for task_key, quota in quotas.items() if task_key in generic_task_keys and task_key not in hf_task_keys)
-    return hf_total, generic_total
-
-
 def _row_from_generic_case(
     *,
-    run_group_id: str,
-    run_index: int,
     case: dict[str, Any],
     profile: ManifestProfile,
-    seed: int,
-    variant_index: int,
-    resolved_max_samples: int,
+    dataset_variant: int,
+    split_variant: int,
+    knob_variant: int,
+    rng: random.Random,
+    avg_sample_size: int | None,
 ) -> dict[str, Any]:
-    rng = random.Random(f"{seed}:generic:{case['task_key']}:{case['dataset']}:{case['model_type']}:{variant_index}")
-    is_non_federated = str(case["task_type"]).lower() == "clustering" or str(case["model_type"]).lower() == "randomforest"
-    num_clients = 1 if is_non_federated else rng.choice(profile.finetune_clients)
-    num_rounds = 1 if is_non_federated else rng.choice(profile.finetune_rounds)
-    local_epochs = 1 if is_non_federated else rng.choice(profile.finetune_local_epochs)
-    distribution = "iid" if case["task_type"] in {"regression", "clustering"} else rng.choice(["iid", "dirichlet"])
-    dirichlet_alpha = rng.choice([0.1, 0.3, 0.5]) if distribution == "dirichlet" else None
-    task_label = str(case["task_label"])
-    source = str(case.get("source") or "generic")
-    if str(case.get("optimizer") or "").lower() == "none":
-        batch_size = case.get("batch_size", 32)
-        learning_rate = case.get("learning_rate", 1e-3)
-        optimizer = case.get("optimizer", "none")
-        weight_decay = 0.0
-        momentum = 0.0
-    else:
-        knobs = _sample_training_knobs(
-            rng,
-            seed=seed,
-            task_key=str(case["task_key"]),
-            run_regime="finetune_transfer",
-            max_samples=resolved_max_samples,
-            num_clients=num_clients,
-        )
-        batch_size = knobs["batch_size"]
-        learning_rate = knobs["learning_rate"]
-        optimizer = knobs["optimizer"]
-        weight_decay = knobs["weight_decay"]
-        momentum = knobs["momentum"]
-
     row = {
-        "external_run_id": f"gen_{task_label}_{run_index:06d}",
-        "dataset": case["dataset"],
-        "run_group_id": run_group_id,
-        "case_name": f"{source}_{case['model_type']}__{case['dataset']}__v{variant_index}",
-        "notes": case.get("notes", "Generated generic registry run"),
+        **case,
         "enabled": True,
-        "measure_system_metrics": True,
-        "mixed_precision": False,
-        "num_rounds": num_rounds,
-        "num_clients": num_clients,
-        "client_participation_rate": 1.0,
-        "local_epochs": local_epochs,
-        "batch_size": batch_size,
-        "earning_rate": learning_rate,
-        "learning_rate": learning_rate,
-        "optimizer": optimizer,
-        "seed": seed,
-        "distribution": distribution,
-        "sample_size": resolved_max_samples,
-        "max_samples": resolved_max_samples,
-        "max_length": "",
-        "num_workers": 2,
+        "case_name": f"{case['task_label']}__{case['dataset_name']}__generic__d{dataset_variant}__s{split_variant}__k{knob_variant}",
+        "notes": "Reviewed generic service row",
+        "training_regime": "generic",
+        "dataset_variant": dataset_variant,
+        "split_variant": split_variant,
+        "knob_variant": knob_variant,
+        "split_strategy": "iid",
+        "distribution_type": "iid",
+        "distribution_param": None,
+        "custom_distributions": None,
+        "training_epochs": rng.choice(profile.training_epochs),
+        "batch_size": case.get("batch_size") or rng.choice(profile.batch_sizes),
+        "learning_rate": case.get("learning_rate"),
+        "optimizer": case.get("optimizer"),
+        "weight_decay": 0.0,
+        "momentum": 0.0,
+        "sample_size": None,
+        "max_samples": min(int(case.get("max_samples", profile.default_avg_sample_size)), int(avg_sample_size or profile.default_avg_sample_size)),
         "timeout_s": profile.timeout_s,
-        "weight_decay": weight_decay,
-        "momentum": momentum,
-        "dirichlet_alpha": dirichlet_alpha,
-        "aggregation": "",
-        "device": "",
+        "mixed_precision": False,
+        "num_workers": 0,
+        "service_source": "generic_registry",
+        "model_role": "service",
+        "fit_decision": "compatible",
+        "fit_reason": "generic manifest-compatible task runner",
+        "explainability_enabled": True,
+        "enable_perturbation_metrics": True,
+        "perturbation_stage_logging": True,
+        "perturbation_progress_logging": False,
+        "perturbation_sample_count": 1,
+        "perturbation_candidate_units": 4,
+        "perturbation_target_units": 1,
+        "perturbation_trust_trials": 2,
+        "perturbation_progress_sample_interval": 1,
+        "perturbation_random_strength": 0.02,
+        "device": "auto",
         "save_weights": False,
-        "save_final_model_params": True,
-        "model_type": case["model_type"],
-        "hf_task": "",
-        "task_type": case["task_type"],
-        "task": case["task"],
-        "modality": case["modality"],
-        "dataset_name": case["dataset_name"],
-        "dataset_config": "",
-        "hf_model_id": "",
-        "train_split": "",
-        "test_split": "",
-        "label_column": "",
-        "mask_column": "",
-        "text_column": "",
-        "image_column": "",
-        "task_tag": "",
-        "run_regime": "generic",
-        "explainability_enabled": False,
-        "explainability_method": "",
-        "explainability_target": "",
-        "model_role": "task_head",
-        "input_schema": case["input_schema"],
-        "fit_decision": "selected",
-        "fit_reason": f"selected generic {source} {case['task_type']} case",
-        "realism_score": 1.0,
-        "domain_alignment": "generic_curated",
-        "dataset_hint": case["dataset_name"],
-        "hf_pipeline_tag": "",
-        "hf_downloads": "",
-        "hf_likes": "",
-        "hf_author": "",
-        "hf_url": "",
-        "hf_service_meta_json": json.dumps(
-            {
-                "source": source,
-                "registry_task": case["task_key"],
-                "run_regime": "generic",
-                "variant_index": variant_index,
-            }
-        ),
     }
-    if case["task_type"] == "clustering":
-        row.update(
-            {
-                "fit_reason": f"selected generic {source} clustering case with kmeans",
-            }
-        )
+    row["service_id"] = _service_id(
+        f"gen_{case['task_label']}",
+        {
+            "model": row["model_type"],
+            "dataset": row["dataset_name"],
+            "training_regime": "generic",
+            "dataset_variant": dataset_variant,
+            "split_variant": split_variant,
+            "knob_variant": knob_variant,
+        },
+    )
+    row["service_config"] = _service_config(row)
     return row
 
 
 def build_hf_manifest(
-    *,
     json_path: str | None = None,
     task_keys: list[str] | None = None,
-    models_per_task: int,
-    datasets_per_model: int,
-    run_regimes: list[str] | None = None,
-    variants_per_pair: int = 1,
-    dataset_split_variants_per_pair: int = 1,
-    total_runs: int | None = None,
-    seed: int,
+    models_per_task: int = 10,
+    datasets_per_model: int = 1,
+    training_regimes: list[str] | None = None,
+    dataset_variants_per_pair: int = 1,
+    split_variants_per_pair: int = 1,
+    knob_variants_per_pair: int = 1,
+    total_services: int | None = None,
+    seed: int = 42,
     manifest_profile: str = "balanced",
     avg_sample_size: int | None = None,
     max_models_per_family: int | None = None,
     strict_inference_dataset_match: bool = False,
 ) -> pd.DataFrame:
-    requested_task_keys = _dedupe_preserve_order(
-        task_keys or [*list(TASK_SPECS.keys()), *sorted(GENERIC_MANIFEST_TASK_KEYS)]
-    )
-    audit_meta = _load_audit_metadata(json_path)
-    run_group_id = str(uuid.uuid4())
-    selected_run_regimes = run_regimes or ["finetune_transfer"]
+    del json_path, strict_inference_dataset_match
+    rng = random.Random(seed)
     profile = _resolve_manifest_profile(manifest_profile)
-    effective_avg_sample_size = avg_sample_size if avg_sample_size is not None else profile.default_avg_sample_size
-    effective_total_runs = _normalise_positive_int(total_runs) if total_runs is not None else None
-
-    candidates = _select_manifest_candidates(
-        requested_task_keys=requested_task_keys,
-        models_per_task=models_per_task,
-        datasets_per_model=datasets_per_model,
-        selected_run_regimes=selected_run_regimes,
-        max_models_per_family=max_models_per_family,
-        target_avg_sample_size=effective_avg_sample_size,
-        audit_meta=audit_meta,
-        profile=profile,
-        strict_inference_dataset_match=bool(strict_inference_dataset_match),
-    )
-    generic_cases = _selected_generic_cases(requested_task_keys)
-    hf_total_runs, generic_total_runs = _split_total_runs_by_family(
-        total_runs=effective_total_runs,
-        requested_task_keys=requested_task_keys,
-        hf_candidates=candidates,
-        generic_cases=generic_cases,
-    )
-    candidates = _balanced_hf_candidates(
-        base_candidates=candidates,
-        requested_task_keys=requested_task_keys,
-        total_runs=hf_total_runs,
-        service_variants_per_pair=variants_per_pair,
-        dataset_split_variants_per_pair=dataset_split_variants_per_pair,
-    )
-
-    resolved_sample_sizes = _resolve_candidate_sample_sizes(
-        candidates,
-        avg_sample_size=effective_avg_sample_size,
-        seed=seed,
-    )
+    requested_task_keys = task_keys or list(TASK_SPECS) + sorted(GENERIC_MANIFEST_TASK_KEYS)
+    selected_training_regimes = training_regimes or ["finetune_transfer"]
+    selected_training_regimes = [str(item).strip().lower() for item in selected_training_regimes if str(item).strip()]
 
     rows: list[dict[str, Any]] = []
-    for candidate, resolved_max_samples in zip(candidates, resolved_sample_sizes):
-        resolved_dataset_spec = _apply_dataset_variant(candidate.dataset_spec, candidate.dataset_variant_index)
-        variant_rng = random.Random(
-            f"{seed}:{candidate.task_key}:{candidate.model.get('hf_model_id')}:{candidate.dataset_spec.get('registry_id')}:"
-            f"{candidate.run_regime}:{candidate.dataset_variant_index}:{candidate.service_variant_index}"
-        )
-        workload = _sample_run_workload(
-            variant_rng,
-            task_key=candidate.task_key,
-            run_regime=candidate.run_regime,
-            profile=profile,
-        )
-        knobs = _sample_training_knobs(
-            variant_rng,
-            seed=seed,
-            task_key=candidate.task_key,
-            run_regime=candidate.run_regime,
-            max_samples=resolved_max_samples,
-            num_clients=workload["num_clients"],
-        )
-        rows.append(
-            _row_from_registry(
-                run_group_id=run_group_id,
-                run_index=len(rows) + 1,
-                task_spec=candidate.task_spec,
-                model=candidate.model,
-                dataset_spec=resolved_dataset_spec,
-                service_variant_index=candidate.service_variant_index,
-                knobs=knobs,
-                workload=workload,
-                resolved_max_samples=resolved_max_samples,
-                run_regime=candidate.run_regime,
-                audit_meta=audit_meta,
-                pair_score=candidate.pair_score,
-                fit_reason=candidate.fit_reason,
-            )
-        )
+    for task_key in requested_task_keys:
+        task_spec = TASK_SPECS.get(task_key)
+        if task_spec is None:
+            continue
+        models = _model_candidates(task_key)
+        rng.shuffle(models)
+        if max_models_per_family:
+            models = _cap_models_per_family(models, int(max_models_per_family))
+        for model in models[: _normalise_positive_int(models_per_task)]:
+            datasets = _dataset_candidates(task_key, model)
+            rng.shuffle(datasets)
+            for dataset in datasets[: _normalise_positive_int(datasets_per_model)]:
+                for training_regime in selected_training_regimes:
+                    allowed = set(model.get("allowed_training_regimes") or [])
+                    if allowed and training_regime not in allowed:
+                        continue
+                    for dataset_variant in range(_normalise_positive_int(dataset_variants_per_pair)):
+                        for split_variant in range(_normalise_positive_int(split_variants_per_pair)):
+                            for knob_variant in range(_normalise_positive_int(knob_variants_per_pair)):
+                                rows.append(
+                                    _row_from_registry(
+                                        task_key=task_key,
+                                        task_spec=task_spec,
+                                        model=model,
+                                        dataset_spec=dataset,
+                                        profile=profile,
+                                        training_regime=training_regime,
+                                        dataset_variant=dataset_variant,
+                                        split_variant=split_variant,
+                                        knob_variant=knob_variant,
+                                        rng=rng,
+                                        avg_sample_size=avg_sample_size,
+                                    )
+                                )
 
-    generic_candidates = _balanced_generic_candidates(
-        cases=generic_cases,
-        requested_task_keys=requested_task_keys,
-        total_runs=generic_total_runs,
-        variants_per_pair=variants_per_pair,
-    )
-    for generic_candidate in generic_candidates:
-        case = generic_candidate.case
-        base_cap = max(1, _as_int(case.get("max_samples")) or effective_avg_sample_size)
-        resolved_max_samples = min(base_cap, max(_minimum_samples_for_task(str(case["task_key"]), "finetune_transfer"), effective_avg_sample_size))
-        rows.append(
-            _row_from_generic_case(
-                run_group_id=run_group_id,
-                run_index=len(rows) + 1,
-                case=case,
-                profile=profile,
-                seed=seed,
-                variant_index=generic_candidate.variant_index,
-                resolved_max_samples=resolved_max_samples,
-            )
-        )
+    for case in _selected_generic_cases(requested_task_keys):
+        for dataset_variant in range(_normalise_positive_int(dataset_variants_per_pair)):
+            for split_variant in range(_normalise_positive_int(split_variants_per_pair)):
+                for knob_variant in range(_normalise_positive_int(knob_variants_per_pair)):
+                    rows.append(
+                        _row_from_generic_case(
+                            case=case,
+                            profile=profile,
+                            dataset_variant=dataset_variant,
+                            split_variant=split_variant,
+                            knob_variant=knob_variant,
+                            rng=rng,
+                            avg_sample_size=avg_sample_size,
+                        )
+                    )
 
     df = pd.DataFrame(rows)
+    if total_services is not None and total_services >= 0:
+        df = df.head(int(total_services))
     return df.reindex(columns=MANIFEST_COLUMNS)
 
 
-def save_manifest(df: pd.DataFrame, output_path: Path, sheet_name: str = "runs") -> None:
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    suffix = output_path.suffix.lower()
+def _cap_models_per_family(models: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+    counts: dict[str, int] = {}
+    selected = []
+    for model in models:
+        family = str(model.get("family") or model.get("registry_key") or "unknown")
+        if counts.get(family, 0) >= limit:
+            continue
+        counts[family] = counts.get(family, 0) + 1
+        selected.append(model)
+    return selected
 
-    if suffix == ".csv":
+
+def save_manifest(df: pd.DataFrame, output_path: Path, sheet_name: str = "services") -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if output_path.suffix.lower() == ".csv":
         df.to_csv(output_path, index=False)
         return
-
-    if suffix == ".xlsx":
-        with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-            df.to_excel(writer, index=False, sheet_name=sheet_name)
+    if output_path.suffix.lower() in {".xlsx", ".xls"}:
+        with pd.ExcelWriter(output_path) as writer:
+            df.to_excel(writer, sheet_name=sheet_name, index=False)
+            pd.DataFrame([{"enabled": True}]).to_excel(writer, sheet_name="defaults", index=False)
         return
-
     raise ValueError("Output path must end with .csv or .xlsx")
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate HF model+dataset run manifests from registries")
-    parser.add_argument("--input-json", help="Optional HF audit JSON used only for metadata enrichment")
-    parser.add_argument("--output", default="outputs/run_manifest.xlsx", help="Output .csv or .xlsx path")
-    parser.add_argument("--sheet", default="runs", help="Sheet name for xlsx output")
-    parser.add_argument("--task-keys", help="Comma-separated registry task keys")
-    parser.add_argument("--models-per-task", type=int, default=10)
-    parser.add_argument("--max-models-per-family", type=int, help="Optional cap on models selected from the same family within each task")
-    parser.add_argument("--datasets-per-model", type=int, default=1)
-    parser.add_argument("--run-regimes", help="Comma-separated run regimes")
-    parser.add_argument("--variants-per-pair", "--service-variants-per-pair", dest="variants_per_pair", type=int, default=1)
-    parser.add_argument("--dataset-split-variants-per-pair", type=int, default=1)
-    parser.add_argument("--total-runs", type=int, help="Total rows to emit, split as evenly as possible across requested task keys")
-    parser.add_argument("--manifest-profile", choices=sorted(MANIFEST_PROFILES), default="balanced")
-    parser.add_argument("--avg-sample-size", type=int, help="Target average max_samples across emitted manifest rows")
-    parser.add_argument(
-        "--strict-inference-dataset-match",
-        action="store_true",
-        help="For inference_only rows, require model metadata to identify the selected dataset as a training/eval dataset",
-    )
-    parser.add_argument("--seed", type=int, default=42)
-    return parser.parse_args()
-
-
 def main() -> None:
-    args = parse_args()
+    parser = argparse.ArgumentParser(description="Generate reviewed MLaaS service manifest rows")
+    parser.add_argument("--input-json")
+    parser.add_argument("--output", default=str(DEFAULT_MANIFEST_PATH))
+    parser.add_argument("--sheet", default="services")
+    parser.add_argument("--task-keys")
+    parser.add_argument("--models-per-task", type=int, default=10)
+    parser.add_argument("--max-models-per-family", type=int)
+    parser.add_argument("--datasets-per-model", type=int, default=1)
+    parser.add_argument("--training-regimes")
+    parser.add_argument("--dataset-variants-per-pair", type=int, default=1)
+    parser.add_argument("--split-variants-per-pair", type=int, default=1)
+    parser.add_argument("--knob-variants-per-pair", type=int, default=1)
+    parser.add_argument("--total-services", type=int)
+    parser.add_argument("--manifest-profile", choices=sorted(MANIFEST_PROFILES), default="balanced")
+    parser.add_argument("--avg-sample-size", type=int)
+    parser.add_argument("--seed", type=int, default=42)
+    args = parser.parse_args()
+
     df = build_hf_manifest(
         json_path=args.input_json,
         task_keys=_parse_csv_arg(args.task_keys),
         models_per_task=args.models_per_task,
         datasets_per_model=args.datasets_per_model,
-        run_regimes=_parse_csv_arg(args.run_regimes),
-        variants_per_pair=args.variants_per_pair,
-        dataset_split_variants_per_pair=args.dataset_split_variants_per_pair,
-        total_runs=args.total_runs,
+        training_regimes=_parse_csv_arg(args.training_regimes),
+        dataset_variants_per_pair=args.dataset_variants_per_pair,
+        split_variants_per_pair=args.split_variants_per_pair,
+        knob_variants_per_pair=args.knob_variants_per_pair,
+        total_services=args.total_services,
         seed=args.seed,
         manifest_profile=args.manifest_profile,
         avg_sample_size=args.avg_sample_size,
         max_models_per_family=args.max_models_per_family,
-        strict_inference_dataset_match=args.strict_inference_dataset_match,
     )
-    output_path = Path(args.output)
-    save_manifest(df, output_path, sheet_name=args.sheet)
-    avg_samples = float(df["max_samples"].mean()) if not df.empty else 0.0
-    print(f"Wrote {len(df)} rows to {output_path} (avg max_samples={avg_samples:.1f})")
+    save_manifest(df, Path(args.output), sheet_name=args.sheet)
+    print(f"Wrote {len(df)} service rows to {args.output}")
 
 
 if __name__ == "__main__":

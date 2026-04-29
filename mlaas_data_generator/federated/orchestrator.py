@@ -10,7 +10,13 @@ from ..config import CONFIG
 from ..data.master_loader import load_dataset
 from ..data.accounting import finalize_accounting
 from ..data.splitters import split_data
-from ..data.distributions import get_data_distribution, get_mlm_masked_token_stats, get_token_label_stats
+from ..data.distributions import (
+    get_data_distribution,
+    get_mlm_masked_token_stats,
+    get_retrieval_pair_stats,
+    get_token_label_stats,
+    get_vqa_answer_stats,
+)
 from ..data.sources.hf_meta import fetch_hf_model_meta
 from ..storage.writer import make_writer
 from .strategies.factory import make_task_strategy
@@ -913,6 +919,8 @@ class FederatedDataGenerator:
         client_distributions = {}
         is_fill_mask = self.task_family == "fill_mask"
         is_generation = self.task_family == "generation"
+        is_retrieval = self.task_family == "retrieval"
+        is_vqa = self.task_family == "vqa"
         ignore_index = infer_ignore_index(self.meta if isinstance(self.meta, dict) else None, default=-100)
         pad_token_id = self.meta.get("pad_token_id")
         for client_id, data in clients.items():
@@ -927,6 +935,13 @@ class FederatedDataGenerator:
                     ignore_index=ignore_index,
                     pad_token_id=pad_token_id,
                 )
+            elif is_retrieval:
+                dist = get_retrieval_pair_stats(data.get("x"))
+            elif is_vqa:
+                dist = get_vqa_answer_stats(
+                    data.get("y"),
+                    ignore_index=ignore_index,
+                )
             else:
                 dist = get_data_distribution(
                     data["y"],
@@ -936,7 +951,10 @@ class FederatedDataGenerator:
                     label_pad_value=ignore_index,
                 )
             client_distributions[client_id] = dist
-            print(f"{client_id}: {dist}")
+            if is_retrieval or is_vqa:
+                print(f"{client_id}: {json.dumps(dist, sort_keys=True)}")
+            else:
+                print(f"{client_id}: {dist}")
 
         # build global model via strategy
 

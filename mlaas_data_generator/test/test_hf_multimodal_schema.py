@@ -4,7 +4,7 @@ import types
 import numpy as np
 
 from mlaas_data_generator.data.sources.huggingface import load_huggingface_source
-from mlaas_data_generator.data.preprocessors.hf_multimodal import preprocess_hf_multimodal
+from mlaas_data_generator.data.preprocessors.hf_multimodal import _encode_vqa_token_labels, preprocess_hf_multimodal
 
 
 class DummyDS:
@@ -41,6 +41,44 @@ class BrokenRowDS(DummyDS):
         return self.rows[key]
 
 
+def test_vqa_token_label_encoding_masks_special_tokens():
+    class DummyTokenizer:
+        all_special_ids = [101, 102, 0]
+
+        def __call__(self, text, **kwargs):
+            return {
+                "input_ids": [101, 200, 201, 102, 0],
+                "attention_mask": [1, 1, 1, 1, 0],
+                "special_tokens_mask": [1, 0, 0, 1, 1],
+            }
+
+    labels = _encode_vqa_token_labels(DummyTokenizer(), ["blue car"], max_length=5, ignore_index=-100)
+
+    assert labels.tolist() == [[-100, 200, 201, -100, -100]]
+
+
+class DecodingImageDS(DummyDS):
+    def __init__(self, rows, *, decode=True):
+        super().__init__(rows)
+        self.features = {"image": types.SimpleNamespace(decode=decode)}
+        self._decode = decode
+
+    def __getitem__(self, key):
+        if isinstance(key, str):
+            if key == "image" and self._decode:
+                raise FileNotFoundError("stale decoded image path")
+            return [r.get(key) for r in self.rows]
+        return self.rows[key]
+
+    def cast_column(self, column, feature):
+        if column != "image":
+            return self
+        return DecodingImageDS(self.rows, decode=getattr(feature, "decode", True))
+
+    def select(self, idxs):
+        return DecodingImageDS([self.rows[i] for i in idxs], decode=self._decode)
+
+
 def test_hf_source_multimodal_pair_drop(monkeypatch):
     train_ds = DummyDS([
         {"image": np.zeros((8, 8, 3), dtype=np.uint8), "text": "a", "label": 0},
@@ -68,6 +106,35 @@ def test_hf_source_multimodal_pair_drop(monkeypatch):
     assert meta["schema"]["pair_validation"]["missing_pair_handling"] == "drop"
     assert meta["accounting"]["raw_record_count"] == 2
     assert meta["accounting"]["post_filter_record_count"] == 1
+
+
+def test_hf_source_multimodal_pair_check_uses_raw_image_paths(monkeypatch):
+    train_ds = DecodingImageDS([
+        {"image": {"path": "stale.jpg", "bytes": None}, "question": "q", "answers": "a"},
+    ])
+    test_ds = DecodingImageDS([
+        {"image": {"path": "stale-test.jpg", "bytes": None}, "question": "q2", "answers": "a2"},
+    ])
+    fake_mod = types.SimpleNamespace(
+        Image=lambda decode=True: types.SimpleNamespace(decode=decode),
+        load_dataset=lambda *args, **kwargs: train_ds if kwargs.get("split") == "train" else test_ds,
+    )
+    monkeypatch.setitem(sys.modules, "datasets", fake_mod)
+
+    (train, _), (test, _), meta = load_huggingface_source(
+        dataset_name="dummy",
+        modality="multimodal",
+        hf_task="visual_question_answering",
+        image_column="image",
+        text_column="question",
+        label_column="answers",
+        missing_pair_handling="drop",
+    )
+
+    assert len(train) == 1
+    assert len(test) == 1
+    assert train["image"][0]["path"] == "stale.jpg"
+    assert meta["schema"]["pair_validation"]["train"]["aligned_pairs"] == 1
 
 
 def test_hf_source_multimodal_resolves_numbered_caption_column(monkeypatch):
@@ -183,6 +250,59 @@ def test_hf_multimodal_preprocessor_skips_decode_errors(monkeypatch):
     assert y_train.tolist() == [1]
     assert meta["schema"]["decode_report"]["train"]["failed"] == 1
     assert meta["schema"]["decode_report"]["train"]["survived"] == 1
+
+
+def test_hf_multimodal_preprocessor_relocates_moved_hf_cache_paths(monkeypatch, tmp_path):
+    from PIL import Image
+
+    cache_root = tmp_path / "hf-cache"
+    relative_image = (
+        "downloads",
+        "extracted",
+        "abc123",
+        "train2014",
+        "COCO_train2014_000000192867.jpg",
+    )
+    relocated = cache_root.joinpath(*relative_image)
+    relocated.parent.mkdir(parents=True)
+    Image.new("RGB", (4, 4), color=(10, 20, 30)).save(relocated)
+    stale = tmp_path.joinpath("old-home", ".cache", "huggingface", "datasets", *relative_image)
+
+    train = DummyDS([
+        {"image": {"path": str(stale), "bytes": None}, "question": "what?", "answers": "blue"},
+    ])
+    test = DummyDS([
+        {"image": {"path": str(stale), "bytes": None}, "question": "where?", "answers": "home"},
+    ])
+
+    class DummyTokenizer:
+        def __call__(self, text, **kwargs):
+            return {"input_ids": [1, 2, 0], "attention_mask": [1, 1, 0]}
+
+    class DummyImageProcessor:
+        def __call__(self, image, **kwargs):
+            chw = np.transpose(np.asarray(image, dtype=np.float32), (2, 0, 1))
+            return {"pixel_values": chw}
+
+    fake_tr = types.SimpleNamespace(
+        AutoTokenizer=types.SimpleNamespace(from_pretrained=lambda *a, **k: DummyTokenizer()),
+        AutoImageProcessor=types.SimpleNamespace(from_pretrained=lambda *a, **k: DummyImageProcessor()),
+    )
+    monkeypatch.setenv("HF_DATASETS_CACHE", str(cache_root))
+    monkeypatch.setitem(sys.modules, "transformers", fake_tr)
+
+    (x_train, y_train), (_, _), meta = preprocess_hf_multimodal(
+        (train, None),
+        (test, None),
+        {},
+        hf_model_id="dummy/model",
+        hf_task="visual_question_answering",
+        label_column="answers",
+    )
+
+    assert x_train["pixel_values"].shape == (1, 3, 4, 4)
+    assert y_train.tolist() == ["blue"]
+    assert meta["schema"]["decode_report"]["train"]["failed"] == 0
 
 
 def test_hf_multimodal_preprocessor_skips_row_fetch_errors(monkeypatch):
@@ -682,7 +802,7 @@ def test_hf_multimodal_retrieval_ignores_caption_label_column(monkeypatch):
     )
     monkeypatch.setitem(sys.modules, "transformers", fake_tr)
 
-    (_, y_train), (_, y_test), meta = preprocess_hf_multimodal(
+    (x_train, y_train), (x_test, y_test), meta = preprocess_hf_multimodal(
         (train, None),
         (test, None),
         {},
@@ -696,3 +816,5 @@ def test_hf_multimodal_retrieval_ignores_caption_label_column(monkeypatch):
     assert meta["label_column"] is None
     assert y_train.tolist() == [0]
     assert y_test.tolist() == [0]
+    assert x_train["caption_lengths"].tolist() == [2]
+    assert x_test["image_sizes"].tolist() == [[8, 8]]
