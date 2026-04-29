@@ -25,8 +25,64 @@ def test_manifest_builder_emits_service_rows_without_federated_columns():
     assert not {"num_rounds", "client_participation_rate", "aggregation"}.intersection(df.columns)
     assert "num_clients" not in df.columns
     assert set(df["training_regime"]).issubset({"finetune_transfer", "inference_only"})
+    assert set(df["resource_tier"]) == {"light"}
     for payload in df["service_config"]:
         assert isinstance(json.loads(payload), dict)
+
+
+def test_manifest_resource_tier_caps_model_and_workload_size():
+    df = build_hf_manifest(
+        task_keys=["text_classification"],
+        models_per_task=3,
+        datasets_per_model=2,
+        training_regimes=["finetune_transfer"],
+        resource_tier="light",
+        knob_variants_per_pair=2,
+        seed=123,
+    )
+
+    assert not df.empty
+    assert set(df["resource_tier"]) == {"light"}
+    assert set(df["model_resource_tier"]) == {"light"}
+    assert df["max_samples"].max() <= 128
+    assert df["max_length"].dropna().max() <= 96
+
+
+def test_manifest_knob_variants_are_task_aware_and_distinct():
+    df = build_hf_manifest(
+        task_keys=["text_classification"],
+        models_per_task=1,
+        datasets_per_model=1,
+        training_regimes=["finetune_transfer"],
+        resource_tier="medium",
+        knob_variants_per_pair=4,
+        seed=123,
+    )
+
+    assert list(df["knob_variant"]) == [0, 1, 2, 3]
+    assert set(df["optimizer"]) == {"adamw"}
+    assert len(set(df["batch_size"])) > 1
+    assert set(df["learning_rate"]).issubset({2e-5, 3e-5, 5e-5, 1e-4})
+    for payload in df["service_config"]:
+        config = json.loads(payload)
+        assert config["resource_tier"] == "medium"
+        assert config["max_train_time_s"] == 120
+
+
+def test_manifest_inference_uses_explicit_dataset_matches():
+    df = build_hf_manifest(
+        task_keys=["object_detection"],
+        models_per_task=3,
+        datasets_per_model=5,
+        training_regimes=["inference_only"],
+        resource_tier="medium",
+        seed=123,
+    )
+
+    assert not df.empty
+    assert set(df["training_regime"]) == {"inference_only"}
+    assert set(df["dataset_name"]) == {"detection-datasets/coco"}
+    assert set(df["learning_rate"].dropna()) == set()
 
 
 def test_manifest_service_ids_are_deterministic():

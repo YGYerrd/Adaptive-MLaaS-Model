@@ -1,3 +1,5 @@
+import contextlib
+import os
 import time
 import numpy as np
 
@@ -26,6 +28,7 @@ class HFCore:
         generation_config=None,
         task_tag=None,
     ):
+        os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
         try:
             import torch
             import transformers
@@ -68,6 +71,10 @@ class HFCore:
         self.weight_format = None
         self.model_load_s = 0.0
         self.model_cache_hit = False
+        self.autocast_enabled = False
+        self.autocast_dtype = None
+        self.grad_scaler = None
+        self.gradient_checkpointing_enabled = False
         needs_num_labels = bool(getattr(self.task_spec, "requires_num_labels", True))
         if num_labels is not None or not needs_num_labels:
             model_load_start = time.time()
@@ -75,7 +82,94 @@ class HFCore:
             self.model_load_s = float(time.time() - model_load_start)
             self.weight_format = getattr(self.task_spec, "weight_format", None)
             self.model.to(self.device)
+            self._configure_memory_optimizations()
             self.sync_effective_max_length()
+
+    def _device_type(self):
+        device = self.device
+        if hasattr(device, "type"):
+            return str(device.type).lower()
+        return str(device).lower()
+
+    def _task_name(self):
+        return str(getattr(self.task_spec, "name", "") or "").strip().lower()
+
+    def _should_enable_mixed_precision(self):
+        if self._device_type() != "cuda":
+            return False
+        return self._task_name() in {
+            "image_classification",
+            "image_detection",
+            "image_segmentation",
+            "image_captioning",
+            "text_image_retrieval",
+            "visual_question_answering",
+        }
+
+    def _should_enable_gradient_checkpointing(self):
+        return self._task_name() in {
+            "image_detection",
+            "image_segmentation",
+            "image_captioning",
+            "text_image_retrieval",
+            "visual_question_answering",
+            "causal_lm_generation",
+            "seq2seq_generation",
+        }
+
+    def _make_autocast_context(self):
+        if not self.autocast_enabled:
+            return contextlib.nullcontext()
+        torch = self.torch
+        try:
+            return torch.autocast(device_type="cuda", dtype=self.autocast_dtype)
+        except Exception:
+            return contextlib.nullcontext()
+
+    def _configure_memory_optimizations(self):
+        if self.model is None:
+            return
+
+        cfg = getattr(self.model, "config", None)
+        if cfg is not None:
+            for attr, value in (("output_hidden_states", False), ("output_attentions", False)):
+                if hasattr(cfg, attr):
+                    try:
+                        setattr(cfg, attr, value)
+                    except Exception:
+                        pass
+            if hasattr(cfg, "use_cache"):
+                try:
+                    cfg.use_cache = False
+                except Exception:
+                    pass
+
+        if self._should_enable_gradient_checkpointing() and hasattr(self.model, "gradient_checkpointing_enable"):
+            try:
+                self.model.gradient_checkpointing_enable()
+                self.gradient_checkpointing_enabled = True
+            except Exception:
+                self.gradient_checkpointing_enabled = False
+
+        if self._should_enable_mixed_precision():
+            self.autocast_dtype = getattr(self.torch, "float16", None)
+            self.autocast_enabled = self.autocast_dtype is not None
+            if self.autocast_enabled:
+                try:
+                    self.grad_scaler = self.torch.amp.GradScaler("cuda")
+                except Exception:
+                    try:
+                        self.grad_scaler = self.torch.cuda.amp.GradScaler()
+                    except Exception:
+                        self.grad_scaler = None
+
+    def _release_step_memory(self):
+        if self._device_type() != "cuda":
+            return
+        try:
+            self.torch.cuda.empty_cache()
+        except Exception:
+            pass
 
     def _qos_startup(self):
         return {
@@ -547,13 +641,19 @@ class HFCore:
 
                 optimizer.zero_grad(set_to_none=True)
                 model_inputs = self.task_spec.build_forward_inputs(enc, labels_t=labels_t, inference_only=False)
-                outputs = self.model(**model_inputs)
-                logits = self._extract_logits(outputs)
-                loss = self.task_spec.extract_loss(torch, outputs, logits, labels_t, extra)
+                with self._make_autocast_context():
+                    outputs = self.model(**model_inputs)
+                    logits = self._extract_logits(outputs)
+                    loss = self.task_spec.extract_loss(torch, outputs, logits, labels_t, extra)
                 if loss is None:
                     raise ValueError("Supervised fine-tune mode requires labels/loss-capable batch")
-                loss.backward()
-                optimizer.step()
+                if self.grad_scaler is not None and self.autocast_enabled:
+                    self.grad_scaler.scale(loss).backward()
+                    self.grad_scaler.step(optimizer)
+                    self.grad_scaler.update()
+                else:
+                    loss.backward()
+                    optimizer.step()
 
                 supervised_token_count = _count_supervised_tokens(labels_t, self.label_pad_value)
                 train_supervised_token_count += supervised_token_count
@@ -573,6 +673,8 @@ class HFCore:
                 train_loss_denominator_count += int(max(1, loss_denominator_count))
 
                 step_lat_ms.append((time.time() - t0) * 1000.0)
+                del outputs, logits, loss, model_inputs, enc, labels_t, extra
+                self._release_step_memory()
             
             if timeout_hit:
                 break
@@ -725,13 +827,14 @@ class HFCore:
                     self._ensure_left_padding_for_decoder_only_generation()
                     if not first_batch_logged:
                         print("[HFCore.eval] model forward starts")
-                    pred_t = self.task_spec.generate_predictions(
-                        self.model,
-                        enc,
-                        self.tokenizer,
-                        torch,
-                        self.generation_config,
-                    )
+                    with self._make_autocast_context():
+                        pred_t = self.task_spec.generate_predictions(
+                            self.model,
+                            enc,
+                            self.tokenizer,
+                            torch,
+                            self.generation_config,
+                        )
                     if not first_batch_logged:
                         print("[HFCore.eval] first batch forward ends")
                     if hasattr(pred_t, "detach"):
@@ -746,8 +849,9 @@ class HFCore:
                             labels_t=teacher_labels_t,
                             inference_only=False,
                         )
-                        outputs = self.model(**teacher_inputs)
-                        logits = self._extract_logits(outputs)
+                        with self._make_autocast_context():
+                            outputs = self.model(**teacher_inputs)
+                            logits = self._extract_logits(outputs)
                         stat = self.task_spec.batch_metric_statistics(torch, logits, teacher_labels_t, teacher_extra)
                         if stat:
                             stats_accum = self._accumulate_metric_statistics(stats_accum, stat)
@@ -771,9 +875,10 @@ class HFCore:
                     model_inputs = self.task_spec.build_forward_inputs(enc, labels_t=labels_t, inference_only=bool(inference_only))
                     if not first_batch_logged:
                         print("[HFCore.eval] model forward starts")
-                    outputs = self.model(**model_inputs)
-                    logits = self._extract_logits(outputs)
-                    pred_t = self.task_spec.preds_from_logits(torch, logits, extra)
+                    with self._make_autocast_context():
+                        outputs = self.model(**model_inputs)
+                        logits = self._extract_logits(outputs)
+                        pred_t = self.task_spec.preds_from_logits(torch, logits, extra)
                     if not first_batch_logged:
                         print("[HFCore.eval] first batch forward ends")
                     if hasattr(pred_t, "detach"):
@@ -829,6 +934,20 @@ class HFCore:
                         f"last_batch_ms={latencies_ms[-1]:.2f}"
                     )
                 first_batch_logged = True
+                del enc, labels_t, extra
+                if 'outputs' in locals():
+                    del outputs
+                if 'logits' in locals():
+                    del logits
+                if 'pred_t' in locals():
+                    del pred_t
+                if 'loss' in locals():
+                    del loss
+                if 'model_inputs' in locals():
+                    del model_inputs
+                if 'teacher_forced' in locals():
+                    del teacher_forced
+                self._release_step_memory()
 
         duration_s = time.time() - t_start
 

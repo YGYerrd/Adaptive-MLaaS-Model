@@ -197,6 +197,7 @@ class TransformersTextClassifierAdapter:
             )
 
         core.model.to(core.device)
+        core._configure_memory_optimizations()
         core.model.eval()
         core.sync_effective_max_length()
 

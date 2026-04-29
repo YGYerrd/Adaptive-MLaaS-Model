@@ -35,24 +35,34 @@ class HFStrategy(TaskStrategy):
 
     def _apply_runtime_safety_overrides(self, ds_args):
         task = str(self.hf_task or "").strip().lower().replace("-", "_")
-        if task in {"image_segmentation", "semantic_segmentation"}:
+        batch_cap_defaults = {
+            "image_segmentation": ("max_segmentation_batch_size", 1),
+            "semantic_segmentation": ("max_segmentation_batch_size", 1),
+            "image_detection": ("max_detection_batch_size", 2),
+            "object_detection": ("max_detection_batch_size", 2),
+            "image_captioning": ("max_multimodal_batch_size", 2),
+            "text_image_retrieval": ("max_multimodal_batch_size", 2),
+            "visual_question_answering": ("max_multimodal_batch_size", 2),
+        }
+        if task in batch_cap_defaults:
             try:
                 requested_batch_size = int(self.knobs.get("batch_size", 1) or 1)
             except Exception:
                 requested_batch_size = 1
-            max_segmentation_batch_size = int(
+            cap_key, default_cap = batch_cap_defaults[task]
+            max_safe_batch_size = int(
                 self.config.get(
-                    "max_segmentation_batch_size",
-                    (ds_args or {}).get("max_segmentation_batch_size", 2),
+                    cap_key,
+                    (ds_args or {}).get(cap_key, default_cap),
                 )
-                or 2
+                or default_cap
             )
-            max_segmentation_batch_size = max(1, max_segmentation_batch_size)
-            if requested_batch_size > max_segmentation_batch_size:
+            max_safe_batch_size = max(1, max_safe_batch_size)
+            if requested_batch_size > max_safe_batch_size:
                 self.knobs["requested_batch_size"] = requested_batch_size
-                self.knobs["batch_size"] = max_segmentation_batch_size
+                self.knobs["batch_size"] = max_safe_batch_size
                 self.runtime_adjustments.append(
-                    f"capped image_segmentation batch_size {requested_batch_size}->{max_segmentation_batch_size}"
+                    f"capped {task} batch_size {requested_batch_size}->{max_safe_batch_size}"
                 )
 
         model_id = str((ds_args or {}).get("hf_model_id") or self.config.get("hf_model_id") or "").strip().lower()

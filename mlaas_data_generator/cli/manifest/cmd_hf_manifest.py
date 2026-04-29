@@ -7,7 +7,7 @@ import pandas as pd
 
 from mlaas_data_generator.config import DEFAULT_MANIFEST_PATH
 
-from .hf_manifest_builder import MANIFEST_PROFILES, build_hf_manifest, save_manifest
+from .hf_manifest_builder import MANIFEST_PROFILES, RESOURCE_TIERS, build_hf_manifest, save_manifest
 
 
 def _parse_csv_arg(value: str | None) -> list[str] | None:
@@ -55,6 +55,7 @@ def register_hf_manifest(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("--knob-variants-per-pair", type=int, default=1)
     p.add_argument("--total-services", type=int, help="Total service rows to emit")
     p.add_argument("--manifest-profile", choices=sorted(MANIFEST_PROFILES), default="balanced")
+    p.add_argument("--resource-tier", choices=sorted(RESOURCE_TIERS), help="Workload budget. Defaults from --manifest-profile.")
     p.add_argument("--avg-sample-size", type=int, help="Target average max_samples across emitted service rows")
     p.add_argument("--exclude-failures-csv", help="Drop manifest rows matching known failures from this CSV")
     p.add_argument("--seed", type=int, default=42)
@@ -72,6 +73,7 @@ def register_hf_manifest(subparsers: argparse._SubParsersAction) -> None:
             total_services=args.total_services,
             seed=args.seed,
             manifest_profile=args.manifest_profile,
+            resource_tier=args.resource_tier,
             avg_sample_size=args.avg_sample_size,
             max_models_per_family=args.max_models_per_family,
         )

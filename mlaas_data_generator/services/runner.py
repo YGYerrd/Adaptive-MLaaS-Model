@@ -424,6 +424,7 @@ class ServiceRunner:
             "dataset_config": self.config.get("dataset_config") or _nested_get(self.config, "dataset_args", "dataset_config"),
             "model_id": self.config.get("hf_model_id") or self.config.get("model_id") or getattr(model, "model_id", None),
             "training_regime": self.config.get("training_regime"),
+            "resource_tier": self.config.get("resource_tier"),
             "dataset_variant": self.config.get("dataset_variant"),
             "split_variant": self.config.get("split_variant"),
             "knob_variant": self.config.get("knob_variant"),
@@ -952,6 +953,7 @@ def _create_model(**kwargs):
 
 def _service_config(config: Mapping[str, Any]) -> dict[str, Any]:
     keys = (
+        "resource_tier",
         "batch_size",
         "learning_rate",
         "training_epochs",
@@ -965,12 +967,18 @@ def _service_config(config: Mapping[str, Any]) -> dict[str, Any]:
         "mixed_precision",
         "num_workers",
         "timeout_s",
+        "max_train_time_s",
+        "max_eval_time_s",
     )
     return {key: config.get(key) for key in keys if config.get(key) is not None}
 
 
 def _registry_metadata(config: Mapping[str, Any]) -> dict[str, Any]:
     keys = (
+        "resource_tier",
+        "model_resource_tier",
+        "dataset_resource_tier",
+        "fit_quality_score",
         "service_source",
         "model_role",
         "fit_decision",

@@ -211,6 +211,7 @@ mkdir -p outputs
 
 python -m mlaas_data_generator.cli.main hf-manifest \
   --manifest-profile test \
+  --resource-tier light \
   --task-keys text_classification,image_classification,tabular_regression \
   --models-per-task 4 \
   --datasets-per-model 1 \
@@ -266,11 +267,14 @@ Important columns:
 | `task_type`, `task`, `task_tag`, `modality` | Functional compatibility attributes. |
 | `train_split`, `test_split`, `benchmark_split` | Training and benchmark split names. |
 | `training_regime` | `finetune_transfer`, `inference_only`, or `generic`. |
+| `resource_tier` | Workload budget: `light`, `medium`, `heavy`, or `stress_test`. |
 | `training_epochs`, `batch_size`, `learning_rate`, `optimizer` | Training and runtime knobs. |
-| `max_samples`, `max_length`, `timeout_s`, `device` | Workload and runtime controls. |
+| `max_samples`, `max_length`, `timeout_s`, `max_train_time_s`, `max_eval_time_s`, `device` | Workload and runtime controls. |
 | `input_schema`, `output_schema` | Compatibility metadata for later composition work. |
 
 For first runs on a new computer, reduce risk by keeping `max_samples` low, using `--manifest-profile test`, and setting `enabled=false` for rows you do not want to run yet.
+
+`--resource-tier` controls model, dataset, and knob selection. If omitted, it follows the profile: `test -> light`, `balanced -> medium`, and `benchmark -> heavy`. Use `stress_test` only when you intentionally want the largest allowed services.
 
 For GPU runs, leave `device` blank or set it to `auto` unless you need to force a device. The runner resolves CUDA automatically when PyTorch can see it.
 
@@ -356,7 +360,7 @@ PY
 After the smoke run works:
 
 1. Increase `--total-services`.
-2. Move from `--manifest-profile test` to `balanced` or `benchmark`.
+2. Move from `--manifest-profile test` / `--resource-tier light` to `balanced` / `medium` or `benchmark` / `heavy`.
 3. Add more `--task-keys`.
 4. Increase `--models-per-task` or `--datasets-per-model`.
 5. Increase `max_samples` in the manifest or use `--avg-sample-size`.
@@ -366,6 +370,7 @@ Example larger manifest:
 ```bash
 python -m mlaas_data_generator.cli.main hf-manifest \
   --manifest-profile balanced \
+  --resource-tier medium \
   --task-keys text_classification,token_classification,sentence_similarity,image_classification,object_detection \
   --models-per-task 8 \
   --datasets-per-model 2 \

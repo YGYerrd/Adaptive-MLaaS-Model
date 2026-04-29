@@ -136,6 +136,16 @@ def _decode_token_id_batch(tokenizer, values, *, ignore_index=-100):
     return list(tokenizer.batch_decode(cleaned, skip_special_tokens=True, clean_up_tokenization_spaces=True))
 
 
+def _to_torch_tensor(torch, value, *, dtype, device=None):
+    if isinstance(value, np.ndarray):
+        arr = value
+    else:
+        arr = np.asarray(value)
+    if not arr.flags.c_contiguous:
+        arr = np.ascontiguousarray(arr)
+    return torch.as_tensor(arr, dtype=dtype, device=device)
+
+
 class HFTaskSpec:
     """
     Task-specific behaviour for HF fine-tuning/evaluation.
@@ -299,11 +309,11 @@ class SequenceClassificationSpec(HFTaskSpec):
         batch_multilabel = self._is_multilabel_mode(label_mode, {"label_mode": label_mode})
         # New loader path: already tokenised dict of arrays
         if isinstance(xb, dict):
-            enc = {k: torch.tensor(v, dtype=torch.long, device=device) for k, v in xb.items()}
+            enc = {k: _to_torch_tensor(torch, v, dtype=torch.long, device=device) for k, v in xb.items()}
             labels_t = None
             if yb is not None:
                 dtype = torch.float32 if (batch_multilabel or label_mode == "single_onehot") else torch.long
-                labels_t = torch.tensor(yb, dtype=dtype, device=device)
+                labels_t = _to_torch_tensor(torch, yb, dtype=dtype, device=device)
             return enc, labels_t, {"multilabel": batch_multilabel, "label_mode": label_mode}
 
 
@@ -320,7 +330,7 @@ class SequenceClassificationSpec(HFTaskSpec):
         labels_t = None
         if yb is not None:
             dtype = torch.float32 if (batch_multilabel or label_mode == "single_onehot") else torch.long
-            labels_t = torch.tensor(yb, dtype=dtype, device=device)
+            labels_t = _to_torch_tensor(torch, yb, dtype=dtype, device=device)
         return enc, labels_t, {
             "multilabel": batch_multilabel,
             "label_mode": label_mode,
@@ -447,7 +457,7 @@ class TokenClassificationSpec(HFTaskSpec):
         label_mode = self._infer_label_mode(yb)
 
         if isinstance(xb, dict):
-            enc = {k: torch.tensor(v, dtype=torch.long, device=device) for k, v in xb.items()}
+            enc = {k: _to_torch_tensor(torch, v, dtype=torch.long, device=device) for k, v in xb.items()}
         else:
             enc = tokenizer(
                 xb,
@@ -463,18 +473,18 @@ class TokenClassificationSpec(HFTaskSpec):
 
         if yb is not None:
             if label_mode == "single_index":
-                labels_t = torch.tensor(yb, dtype=torch.long, device=device)
+                labels_t = _to_torch_tensor(torch, yb, dtype=torch.long, device=device)
 
             elif label_mode == "single_onehot":
                 y_idx = np.asarray(yb).argmax(axis=-1)
-                labels_t = torch.tensor(y_idx, dtype=torch.long, device=device)
+                labels_t = _to_torch_tensor(torch, y_idx, dtype=torch.long, device=device)
 
             elif label_mode == "multilabel":
-                labels_t = torch.tensor(yb, dtype=torch.float32, device=device)
+                labels_t = _to_torch_tensor(torch, yb, dtype=torch.float32, device=device)
                 batch_multilabel = True
 
             else:
-                labels_t = torch.tensor(yb, dtype=torch.long, device=device)
+                labels_t = _to_torch_tensor(torch, yb, dtype=torch.long, device=device)
 
         batch_multilabel = bool(self.multilabel or batch_multilabel)
 
@@ -592,8 +602,8 @@ class ImageClassificationSpec(HFTaskSpec):
     def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
         if not isinstance(xb, dict) or "pixel_values" not in xb:
             raise ValueError("image classification expects dict input with 'pixel_values'")
-        enc = {"pixel_values": torch.tensor(xb["pixel_values"], dtype=torch.float32, device=device)}
-        labels_t = None if yb is None else torch.tensor(yb, dtype=torch.long, device=device)
+        enc = {"pixel_values": _to_torch_tensor(torch, xb["pixel_values"], dtype=torch.float32, device=device)}
+        labels_t = None if yb is None else _to_torch_tensor(torch, yb, dtype=torch.long, device=device)
         return enc, labels_t, {"top_k": 5}
 
     def loss_fn(self, torch, logits, labels_t, extra):
@@ -837,8 +847,8 @@ class ObjectDetectionSpec(HFTaskSpec):
                 batch_pixels = np.stack(padded, axis=0)
                 batch_mask = np.stack(masks, axis=0)
             enc = {
-                "pixel_values": torch.tensor(batch_pixels, dtype=torch.float32, device=device),
-                "pixel_mask": torch.tensor(batch_mask, dtype=torch.long, device=device),
+                "pixel_values": _to_torch_tensor(torch, batch_pixels, dtype=torch.float32, device=device),
+                "pixel_mask": _to_torch_tensor(torch, batch_mask, dtype=torch.long, device=device),
             }
         labels_t = None
         if yb is not None:
@@ -868,9 +878,9 @@ class ObjectDetectionSpec(HFTaskSpec):
                     )
                 labels_t.append(
                     {
-                        "class_labels": torch.tensor(class_labels, dtype=torch.long, device=device),
-                        "boxes": torch.tensor(boxes_cxcywh_norm, dtype=torch.float32, device=device),
-                        "orig_size": torch.tensor([image_h, image_w], dtype=torch.long, device=device),
+                        "class_labels": _to_torch_tensor(torch, class_labels, dtype=torch.long, device=device),
+                        "boxes": _to_torch_tensor(torch, boxes_cxcywh_norm, dtype=torch.float32, device=device),
+                        "orig_size": _to_torch_tensor(torch, [image_h, image_w], dtype=torch.long, device=device),
                     }
                 )
         return enc, labels_t, {"score_threshold": self.score_threshold}
@@ -1176,7 +1186,7 @@ class ObjectDetectionSpec(HFTaskSpec):
                 for gt in labels_t:
                     image_h, image_w = self._extract_orig_size_from_label_tensor(gt, fallback_h=1, fallback_w=1)
                     target_sizes.append([image_h, image_w])
-                target_sizes_t = torch.tensor(target_sizes, dtype=torch.long)
+                target_sizes_t = _to_torch_tensor(torch, target_sizes, dtype=torch.long)
                 post_processed = self._image_processor.post_process_object_detection(
                     outputs,
                     threshold=0.0,
@@ -1231,15 +1241,15 @@ class ObjectDetectionSpec(HFTaskSpec):
 
             preds.append(
                 {
-                    "boxes": torch.tensor(p_boxes, dtype=torch.float32),
-                    "scores": torch.tensor(p_scores, dtype=torch.float32),
-                    "labels": torch.tensor(p_cls, dtype=torch.int64),
+                    "boxes": _to_torch_tensor(torch, p_boxes, dtype=torch.float32),
+                    "scores": _to_torch_tensor(torch, p_scores, dtype=torch.float32),
+                    "labels": _to_torch_tensor(torch, p_cls, dtype=torch.int64),
                 }
             )
             targets.append(
                 {
-                    "boxes": torch.tensor(gt_boxes, dtype=torch.float32),
-                    "labels": torch.tensor(gt_classes, dtype=torch.int64),
+                    "boxes": _to_torch_tensor(torch, gt_boxes, dtype=torch.float32),
+                    "labels": _to_torch_tensor(torch, gt_classes, dtype=torch.int64),
                 }
             )
 
@@ -1422,10 +1432,10 @@ class ImageSegmentationSpec(HFTaskSpec):
     def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
         if not isinstance(xb, dict) or "pixel_values" not in xb:
             raise ValueError("image segmentation expects dict input with 'pixel_values'")
-        enc = {"pixel_values": torch.tensor(xb["pixel_values"], dtype=torch.float32, device=device)}
+        enc = {"pixel_values": _to_torch_tensor(torch, xb["pixel_values"], dtype=torch.float32, device=device)}
         labels_t = None
         if yb is not None:
-            labels_t = torch.tensor(np.asarray(yb), dtype=torch.long, device=device)
+            labels_t = _to_torch_tensor(torch, yb, dtype=torch.long, device=device)
         return enc, labels_t, {"ignore_index": int(ignore_index)}
 
     def loss_fn(self, torch, logits, labels_t, extra):
@@ -1524,7 +1534,7 @@ class SentenceSimilaritySpec(HFTaskSpec):
 
     def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
         if isinstance(xb, dict):
-            enc = {k: torch.tensor(v, dtype=torch.long, device=device) for k, v in xb.items()}
+            enc = {k: _to_torch_tensor(torch, v, dtype=torch.long, device=device) for k, v in xb.items()}
         elif isinstance(xb, (list, tuple)) and xb and isinstance(xb[0], (list, tuple)) and len(xb[0]) == 2:
             text_a = [row[0] for row in xb]
             text_b = [row[1] for row in xb]
@@ -1550,9 +1560,9 @@ class SentenceSimilaritySpec(HFTaskSpec):
         labels_t = None
         if yb is not None:
             if self.is_regression:
-                labels_t = torch.tensor(yb, dtype=torch.float32, device=device)
+                labels_t = _to_torch_tensor(torch, yb, dtype=torch.float32, device=device)
             else:
-                labels_t = torch.tensor(yb, dtype=torch.long, device=device)
+                labels_t = _to_torch_tensor(torch, yb, dtype=torch.long, device=device)
         return enc, labels_t, {"is_regression": self.is_regression}
 
     def loss_fn(self, torch, logits, labels_t, extra):
@@ -1609,7 +1619,7 @@ class FillMaskSpec(HFTaskSpec):
 
     def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
         if isinstance(xb, dict):
-            enc = {k: torch.tensor(v, dtype=torch.long, device=device) for k, v in xb.items()}
+            enc = {k: _to_torch_tensor(torch, v, dtype=torch.long, device=device) for k, v in xb.items()}
         else:
             enc = tokenizer(
                 xb,
@@ -1622,7 +1632,7 @@ class FillMaskSpec(HFTaskSpec):
 
         labels_t = None
         if yb is not None:
-            labels_t = torch.tensor(yb, dtype=torch.long, device=device)
+            labels_t = _to_torch_tensor(torch, yb, dtype=torch.long, device=device)
 
         return enc, labels_t, {"ignore_index": int(ignore_index)}
 
@@ -1766,8 +1776,8 @@ class CausalLMGenerationSpec(HFTaskSpec):
                     batch["input_ids"],
                     batch["attention_mask"],
                 )
-            enc = {k: torch.tensor(v, dtype=torch.long, device=device) for k, v in batch.items()}
-            labels_t = None if labels_np is None else torch.tensor(labels_np, dtype=torch.long, device=device)
+            enc = {k: _to_torch_tensor(torch, v, dtype=torch.long, device=device) for k, v in batch.items()}
+            labels_t = None if labels_np is None else _to_torch_tensor(torch, labels_np, dtype=torch.long, device=device)
             return enc, labels_t, {"ignore_index": int(ignore_index)}
 
         prompts = list(xb)
@@ -1791,10 +1801,10 @@ class CausalLMGenerationSpec(HFTaskSpec):
             batch_labels.append(full_labels + [-100] * pad_len)
 
         enc = {
-            "input_ids": torch.tensor(batch_ids, dtype=torch.long, device=device),
-            "attention_mask": torch.tensor(batch_masks, dtype=torch.long, device=device),
+            "input_ids": _to_torch_tensor(torch, batch_ids, dtype=torch.long, device=device),
+            "attention_mask": _to_torch_tensor(torch, batch_masks, dtype=torch.long, device=device),
         }
-        labels_t = torch.tensor(batch_labels, dtype=torch.long, device=device)
+        labels_t = _to_torch_tensor(torch, batch_labels, dtype=torch.long, device=device)
         return enc, labels_t, {"ignore_index": int(ignore_index)}
 
     def loss_fn(self, torch, logits, labels_t, extra):
@@ -1865,8 +1875,8 @@ class Seq2SeqGenerationSpec(HFTaskSpec):
 
     def encode_batch(self, tokenizer, xb, yb, max_length, torch, device, ignore_index=-100, inference_only=False):
         if isinstance(xb, dict):
-            enc = {k: torch.tensor(v, dtype=torch.long, device=device) for k, v in xb.items() if k in {"input_ids", "attention_mask", "token_type_ids"}}
-            labels_t = None if yb is None else torch.tensor(yb, dtype=torch.long, device=device)
+            enc = {k: _to_torch_tensor(torch, v, dtype=torch.long, device=device) for k, v in xb.items() if k in {"input_ids", "attention_mask", "token_type_ids"}}
+            labels_t = None if yb is None else _to_torch_tensor(torch, yb, dtype=torch.long, device=device)
             return enc, labels_t, {"ignore_index": int(ignore_index)}
 
         enc = tokenizer(xb, truncation=True, padding=True, max_length=int(max_length), return_tensors="pt")
@@ -1994,13 +2004,13 @@ class ImageCaptioningSpec(HFTaskSpec):
         enc = {}
         for k, v in xb.items():
             if k == "pixel_values":
-                enc[k] = torch.tensor(v, dtype=torch.float32, device=device)
+                enc[k] = _to_torch_tensor(torch, v, dtype=torch.float32, device=device)
             elif k in {"input_ids", "attention_mask", "decoder_input_ids"}:
-                enc[k] = torch.tensor(v, dtype=torch.long, device=device)
+                enc[k] = _to_torch_tensor(torch, v, dtype=torch.long, device=device)
 
         labels_t = None
         if yb is not None and not inference_only:
-            labels_t = torch.tensor(yb, dtype=torch.long, device=device)
+            labels_t = _to_torch_tensor(torch, yb, dtype=torch.long, device=device)
         return enc, labels_t, {"ignore_index": int(ignore_index)}
 
     def loss_fn(self, torch, logits, labels_t, extra):
@@ -2132,11 +2142,11 @@ class TextImageRetrievalSpec(HFTaskSpec):
         if not isinstance(xb, dict):
             raise TypeError("Text-image retrieval expects multimodal dict features")
         enc = {
-            "input_ids": torch.tensor(xb["input_ids"], dtype=torch.long, device=device),
-            "attention_mask": torch.tensor(xb["attention_mask"], dtype=torch.long, device=device),
-            "pixel_values": torch.tensor(xb["pixel_values"], dtype=torch.float32, device=device),
+            "input_ids": _to_torch_tensor(torch, xb["input_ids"], dtype=torch.long, device=device),
+            "attention_mask": _to_torch_tensor(torch, xb["attention_mask"], dtype=torch.long, device=device),
+            "pixel_values": _to_torch_tensor(torch, xb["pixel_values"], dtype=torch.float32, device=device),
         }
-        labels_t = None if yb is None else torch.tensor(yb, dtype=torch.long, device=device)
+        labels_t = None if yb is None else _to_torch_tensor(torch, yb, dtype=torch.long, device=device)
         return enc, labels_t, {"retrieval_positive_policy": "diagonal_in_batch"}
 
     def build_forward_inputs(self, enc, labels_t=None, inference_only=False):
@@ -2349,14 +2359,14 @@ class VQASpec(HFTaskSpec):
             return arr
 
         enc = {
-            "input_ids": torch.tensor(_text_array("input_ids"), dtype=torch.long, device=device),
-            "attention_mask": torch.tensor(_text_array("attention_mask"), dtype=torch.long, device=device),
-            "pixel_values": torch.tensor(xb["pixel_values"], dtype=torch.float32, device=device),
+            "input_ids": _to_torch_tensor(torch, _text_array("input_ids"), dtype=torch.long, device=device),
+            "attention_mask": _to_torch_tensor(torch, _text_array("attention_mask"), dtype=torch.long, device=device),
+            "pixel_values": _to_torch_tensor(torch, xb["pixel_values"], dtype=torch.float32, device=device),
         }
         if "token_type_ids" in xb:
-            enc["token_type_ids"] = torch.tensor(_text_array("token_type_ids"), dtype=torch.long, device=device)
+            enc["token_type_ids"] = _to_torch_tensor(torch, _text_array("token_type_ids"), dtype=torch.long, device=device)
         if "pixel_mask" in xb:
-            enc["pixel_mask"] = torch.tensor(xb["pixel_mask"], dtype=torch.long, device=device)
+            enc["pixel_mask"] = _to_torch_tensor(torch, xb["pixel_mask"], dtype=torch.long, device=device)
         extra = {"ignore_index": int(ignore_index)}
         labels_t = None
         if yb is not None:
@@ -2364,7 +2374,7 @@ class VQASpec(HFTaskSpec):
             if y_arr.dtype.kind in {"U", "S", "O"}:
                 extra["answer_texts"] = np.asarray(yb, dtype=object).reshape(-1)
             else:
-                labels_t = torch.tensor(yb, dtype=torch.long, device=device)
+                labels_t = _to_torch_tensor(torch, yb, dtype=torch.long, device=device)
                 extra["vqa_label_mode"] = "generation" if labels_t.ndim >= 2 else "classification"
         return enc, labels_t, extra
 
